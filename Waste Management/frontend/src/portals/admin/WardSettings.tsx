@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, MapPinned, Upload } from 'lucide-react';
@@ -15,30 +15,38 @@ const POINT_ICON = L.divIcon({
 });
 
 /**
- * Ward boundary editor (plan §2.4). The boundary is a 4-corner box — drag any
- * corner on the map to resize/reshape the area. It's still saved as a GeoJSON
- * Polygon server-side (bbox and centroid computed there); only the input
- * changed from a raw GeoJSON blob to draggable corners.
+ * Ward boundary editor (plan §2.4). The boundary is a rectangle defined by
+ * north/south/east/west bounds — dragging any corner moves that corner's two
+ * bounds, so the shape always stays a proper rectangle (never skews into an
+ * arbitrary quadrilateral). Still saved as a GeoJSON Polygon server-side.
  */
 
-type Point = { lat: string; lng: string };
-const CORNER_LABELS = ['NW', 'NE', 'SE', 'SW'];
+type Bounds = { north: string; south: string; east: string; west: string };
+type LatKey = 'north' | 'south';
+type LngKey = 'east' | 'west';
+
+const CORNERS: { label: string; latKey: LatKey; lngKey: LngKey }[] = [
+  { label: 'NW', latKey: 'north', lngKey: 'west' },
+  { label: 'NE', latKey: 'north', lngKey: 'east' },
+  { label: 'SE', latKey: 'south', lngKey: 'east' },
+  { label: 'SW', latKey: 'south', lngKey: 'west' },
+];
 
 const emptyForm = { id: '', name: '', code: '', zone: '', population: 0, slaMinutes: 1440 };
 
-/** A small default box centred on the given point. */
-function defaultBox(center: [number, number] = [23.2156, 72.6369], delta = 0.01): Point[] {
+/** A small default square centred on the given point. */
+function defaultBounds(center: [number, number] = [23.2156, 72.6369], delta = 0.01): Bounds {
   const [lat, lng] = center;
-  return [
-    { lat: String(lat + delta), lng: String(lng - delta) }, // NW
-    { lat: String(lat + delta), lng: String(lng + delta) }, // NE
-    { lat: String(lat - delta), lng: String(lng + delta) }, // SE
-    { lat: String(lat - delta), lng: String(lng - delta) }, // SW
-  ];
+  return {
+    north: String(lat + delta),
+    south: String(lat - delta),
+    east: String(lng + delta),
+    west: String(lng - delta),
+  };
 }
 
-/** Reduces any saved boundary (or an uploaded .geojson file) to its bounding box's 4 corners. */
-function boundaryToBox(geo: any): Point[] {
+/** Reduces any saved boundary (or an uploaded .geojson file) to its bounding box. */
+function boundaryToBounds(geo: any): Bounds {
   const boundary =
     geo?.type === 'Polygon'
       ? geo
@@ -49,29 +57,30 @@ function boundaryToBox(geo: any): Point[] {
           : null;
 
   const ring: [number, number][] = boundary?.coordinates?.[0] ?? [];
-  if (!ring.length) return defaultBox();
+  if (!ring.length) return defaultBounds();
 
   const lats = ring.map(([, lat]) => lat);
   const lngs = ring.map(([lng]) => lng);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-
-  return [
-    { lat: String(maxLat), lng: String(minLng) }, // NW
-    { lat: String(maxLat), lng: String(maxLng) }, // NE
-    { lat: String(minLat), lng: String(maxLng) }, // SE
-    { lat: String(minLat), lng: String(minLng) }, // SW
-  ];
+  return {
+    north: String(Math.max(...lats)),
+    south: String(Math.min(...lats)),
+    east: String(Math.max(...lngs)),
+    west: String(Math.min(...lngs)),
+  };
 }
 
-/** Keeps the whole box in view as its corners move. */
+/**
+ * Frames the box once when the editor opens. It must not re-fit on every
+ * resize — that would fight the drag gesture by re-centring/zooming the map
+ * mid-stretch.
+ */
 function FitToPoints({ positions }: { positions: [number, number][] }) {
   const map = useMap();
+  const done = useRef(false);
   useEffect(() => {
-    if (positions.length === 0) return;
+    if (done.current || positions.length === 0) return;
     map.fitBounds(L.latLngBounds(positions), { padding: [30, 30] });
+    done.current = true;
   }, [map, positions]);
   return null;
 }
@@ -80,30 +89,47 @@ export default function WardSettings() {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState(emptyForm);
-  const [points, setPoints] = useState<Point[]>(defaultBox());
+  const [bounds, setBounds] = useState<Bounds>(defaultBounds());
 
   const wards = useQuery({
     queryKey: ['admin', 'wards'],
     queryFn: async () => (await api('admin').get('/admin/wards')).data,
   });
 
-  const numericPoints = useMemo(
-    () =>
-      points.map((p, idx) => ({ idx, lat: parseFloat(p.lat), lng: parseFloat(p.lng) })).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)),
-    [points]
+  const numericBounds = useMemo(
+    () => ({
+      north: parseFloat(bounds.north),
+      south: parseFloat(bounds.south),
+      east: parseFloat(bounds.east),
+      west: parseFloat(bounds.west),
+    }),
+    [bounds]
   );
-  const polygonPositions = useMemo<[number, number][]>(() => numericPoints.map((p) => [p.lat, p.lng]), [numericPoints]);
+  const boundsValid = Object.values(numericBounds).every(Number.isFinite);
 
-  const updatePoint = (i: number, field: keyof Point, value: string) =>
-    setPoints((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
+  const corners = useMemo(
+    () =>
+      CORNERS.map((c) => ({
+        ...c,
+        lat: numericBounds[c.latKey],
+        lng: numericBounds[c.lngKey],
+      })),
+    [numericBounds]
+  );
+  const polygonPositions = useMemo<[number, number][]>(
+    () => (boundsValid ? corners.map((c) => [c.lat, c.lng] as [number, number]) : []),
+    [corners, boundsValid]
+  );
+
+  const setBound = (key: keyof Bounds, value: string) => setBounds((prev) => ({ ...prev, [key]: value }));
 
   const save = useMutation({
     mutationFn: async () => {
-      if (numericPoints.length < 4) {
-        throw new Error('All 4 corner points need valid coordinates');
+      if (!boundsValid) {
+        throw new Error('All 4 corners need valid coordinates');
       }
 
-      const coords: [number, number][] = numericPoints.map((p) => [p.lng, p.lat]);
+      const coords: [number, number][] = corners.map((c) => [c.lng, c.lat]);
       coords.push(coords[0]); // close the ring
 
       const boundary = { type: 'Polygon', coordinates: [coords] };
@@ -125,7 +151,7 @@ export default function WardSettings() {
       toast.success('Ward boundary saved');
       setUploading(false);
       setForm(emptyForm);
-      setPoints(defaultBox());
+      setBounds(defaultBounds());
     },
     onError: (err: any) => toast.error(err?.message || errorMessage(err)),
   });
@@ -144,7 +170,7 @@ export default function WardSettings() {
             className="btn-primary btn-sm"
             onClick={() => {
               setForm(emptyForm);
-              setPoints(defaultBox());
+              setBounds(defaultBounds());
               setUploading(true);
             }}
           >
@@ -191,7 +217,7 @@ export default function WardSettings() {
                   population: w.population,
                   slaMinutes: 1440,
                 });
-                setPoints(boundaryToBox(w.boundary));
+                setBounds(boundaryToBounds(w.boundary));
                 setUploading(true);
               }}
             >
@@ -209,7 +235,7 @@ export default function WardSettings() {
         footer={
           <button
             className="btn-primary w-full"
-            disabled={!form.name || !form.code || numericPoints.length < 4 || save.isPending}
+            disabled={!form.name || !form.code || !boundsValid || save.isPending}
             onClick={() => save.mutate()}
           >
             {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -244,9 +270,9 @@ export default function WardSettings() {
           </div>
 
           <div>
-            <label className="label">Boundary area (4 corners)</label>
+            <label className="label">Boundary area</label>
             <p className="mb-1.5 text-fluid-xs text-muted">
-              Drag any corner to resize or reshape the area, or type exact coordinates below.
+              Drag any corner to resize — the shape always stays a rectangle. Only these 4 corners are shown below.
             </p>
 
             <div className="h-[260px] w-full overflow-hidden rounded-xl border border-line">
@@ -255,43 +281,45 @@ export default function WardSettings() {
                 {polygonPositions.length === 4 && (
                   <Polygon positions={polygonPositions} pathOptions={{ color: '#16a34a', weight: 2, fillColor: '#16a34a', fillOpacity: 0.18 }} />
                 )}
-                {numericPoints.map((p) => (
-                  <Marker
-                    key={p.idx}
-                    position={[p.lat, p.lng]}
-                    icon={POINT_ICON}
-                    draggable
-                    eventHandlers={{
-                      dragend: (e) => {
-                        const { lat, lng } = e.target.getLatLng();
-                        updatePoint(p.idx, 'lat', lat.toFixed(6));
-                        updatePoint(p.idx, 'lng', lng.toFixed(6));
-                      },
-                    }}
-                  />
-                ))}
+                {boundsValid &&
+                  corners.map((c) => (
+                    <Marker
+                      key={c.label}
+                      position={[c.lat, c.lng]}
+                      icon={POINT_ICON}
+                      draggable
+                      eventHandlers={{
+                        // Live-update on every drag frame, not just on release —
+                        // the box visibly stretches as the corner moves.
+                        drag: (e) => {
+                          const { lat, lng } = e.target.getLatLng();
+                          setBounds((prev) => ({ ...prev, [c.latKey]: lat.toFixed(6), [c.lngKey]: lng.toFixed(6) }));
+                        },
+                      }}
+                    />
+                  ))}
               </BaseMap>
             </div>
 
             <div className="mt-2 space-y-1.5">
-              {points.map((p, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <span className="w-7 shrink-0 text-center text-fluid-xs font-semibold text-faint">{CORNER_LABELS[i]}</span>
+              {corners.map((c) => (
+                <div key={c.label} className="flex items-center gap-1.5">
+                  <span className="w-7 shrink-0 text-center text-fluid-xs font-semibold text-faint">{c.label}</span>
                   <input
                     type="number"
                     step="any"
                     className="field flex-1 py-1.5 text-fluid-xs"
                     placeholder="Latitude"
-                    value={p.lat}
-                    onChange={(e) => updatePoint(i, 'lat', e.target.value)}
+                    value={bounds[c.latKey]}
+                    onChange={(e) => setBound(c.latKey, e.target.value)}
                   />
                   <input
                     type="number"
                     step="any"
                     className="field flex-1 py-1.5 text-fluid-xs"
                     placeholder="Longitude"
-                    value={p.lng}
-                    onChange={(e) => updatePoint(i, 'lng', e.target.value)}
+                    value={bounds[c.lngKey]}
+                    onChange={(e) => setBound(c.lngKey, e.target.value)}
                   />
                 </div>
               ))}
@@ -309,7 +337,7 @@ export default function WardSettings() {
                 if (!file) return;
                 try {
                   const parsed = JSON.parse(await file.text());
-                  setPoints(boundaryToBox(parsed));
+                  setBounds(boundaryToBounds(parsed));
                 } catch {
                   toast.error('That file is not a valid GeoJSON Polygon');
                 }
