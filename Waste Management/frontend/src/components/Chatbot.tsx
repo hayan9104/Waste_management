@@ -122,11 +122,13 @@ export function Chatbot() {
           isOpen ? 'hidden' : 'flex'
         }`}
       >
-        <Sparkles className="h-6 w-6" />
-        <span className="absolute -top-1 -right-1 flex h-4 w-4">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-75"></span>
-          <span className="relative inline-flex h-4 w-4 rounded-full bg-ok"></span>
-        </span>
+        <Sparkles className="h-6 w-6 motion-reduce:animate-none" style={{ animation: 'bot-pop 1.8s ease-in-out infinite' }} />
+        <style>{`
+          @keyframes bot-pop {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.22); }
+          }
+        `}</style>
       </button>
 
       {/* Floating Chat Window Modal */}
