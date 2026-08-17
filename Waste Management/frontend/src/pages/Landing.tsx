@@ -187,7 +187,7 @@ export default function Landing() {
         ) : (
           /* Not scrolled: full-width white frosted bar with corner-to-corner layout */
           <div className="w-full border-b border-line/30 bg-surface/90 backdrop-blur-md transition-all duration-300">
-            <div className="flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8 xl:px-10">
+            <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-8 xl:px-12">
               {/* Left: Brand Logo & Title at Left Corner */}
               <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                 <div className="relative flex items-center justify-center">
@@ -465,8 +465,8 @@ export default function Landing() {
                   >
                     <div className="card group relative overflow-hidden p-5 sm:p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-brand/5 border border-line bg-surface">
                       <div
-                        className={`absolute top-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand/5 opacity-40 transition-transform duration-500 group-hover:scale-110 group-hover:opacity-70 ${
-                          i % 2 === 0 ? 'left-3' : 'right-3'
+                        className={`absolute top-3 right-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand/5 opacity-40 transition-transform duration-500 group-hover:scale-110 group-hover:opacity-70 ${
+                          i % 2 === 0 ? 'md:left-3 md:right-auto' : ''
                         }`}
                       >
                         <step.icon className="h-7 w-7 text-brand" />
@@ -497,9 +497,9 @@ export default function Landing() {
             </p>
           </Reveal>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-2">
+          <div className="mt-8 grid gap-4 md:grid-cols-2 md:auto-rows-fr">
             {DIFFERENTIATORS.map((item, i) => (
-              <Reveal key={item.key} delayMs={i * 80} className="card p-5 border border-line bg-surface shadow-xs hover:shadow-sm transition">
+              <Reveal key={item.key} delayMs={i * 80} className="card flex h-full flex-col p-5 border border-line bg-surface shadow-xs hover:shadow-sm transition">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/10 text-brand">
                   <item.icon className="h-5 w-5" />
                 </span>
