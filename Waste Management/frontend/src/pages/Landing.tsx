@@ -634,8 +634,8 @@ export default function Landing() {
             <p className="text-fluid-xs text-white/50">
               {t('landing.footer.rights', { year: new Date().getFullYear() })}
             </p>
-            <span className="text-fluid-xs text-white/40 flex items-center gap-1.5">
-              <img src="/emblem-india.png" alt="National Emblem of India" className="h-5 w-auto shrink-0 opacity-80" />
+            <span className="text-fluid-sm text-white/50 flex items-center gap-2">
+              <img src="/emblem-india.png" alt="National Emblem of India" className="h-7 w-auto shrink-0 opacity-90" />
               Satyameva Jayate &nbsp;·&nbsp; सत्यमेव जयते
             </span>
           </div>
