@@ -1,7 +1,7 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, LogOut, Menu, X, ChevronLeft, User, Settings, Shield, Sparkles, Navigation } from 'lucide-react';
-import { useAuth } from '../lib/auth';
+import { useAuth, LOGIN_ROUTE } from '../lib/auth';
 import { LanguageSwitcher, ThemeToggle } from './ui';
 import { SpotlightNav, type SpotlightNavItem } from './SpotlightNav';
 import { useT } from '../lib/i18n';
@@ -33,7 +33,7 @@ export function MobileShell({
   headerRight?: ReactNode;
   accent?: 'brand' | 'orange';
 }) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, portal } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const t = useT();
@@ -131,6 +131,7 @@ export function MobileShell({
         navigate={navigate}
         t={t}
         portalPath={user?.role === 'DRIVER' ? '/driver' : '/app'}
+        loginRoute={LOGIN_ROUTE[portal]}
       />
     </div>
   );
@@ -157,7 +158,7 @@ export function ConsoleShell({
   alertCount?: number;
   accent?: 'brand' | 'orange';
 }) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, portal } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const t = useT();
@@ -303,6 +304,7 @@ export function ConsoleShell({
         navigate={navigate}
         t={t}
         portalPath={accent === 'orange' ? '/admin' : '/officer'}
+        loginRoute={LOGIN_ROUTE[portal]}
       />
     </div>
   );
@@ -329,6 +331,7 @@ function AccountModal({
   navigate,
   t,
   portalPath,
+  loginRoute,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -337,6 +340,7 @@ function AccountModal({
   navigate: (to: string) => void;
   t: (key: string) => string;
   portalPath: string;
+  loginRoute: string;
 }) {
   if (!isOpen) return null;
 
@@ -385,7 +389,7 @@ function AccountModal({
             onClick={async () => {
               onClose();
               await signOut();
-              navigate('/login');
+              navigate(loginRoute);
             }}
             className="flex w-full items-center gap-2.5 rounded-xl border border-danger/30 bg-danger/10 p-2.5 text-fluid-xs font-semibold text-danger transition hover:bg-danger/20 cursor-pointer"
           >

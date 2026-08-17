@@ -1,47 +1,97 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import L from 'leaflet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MapPinned, Upload } from 'lucide-react';
+import { Loader2, MapPinned, Plus, Trash2, Upload } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Card, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
-import { BaseMap, WardLayer, FitBounds } from '../../components/map/Map';
+import { BaseMap, WardLayer, FitBounds, Polygon, CircleMarker, useMap } from '../../components/map/Map';
 
 /**
- * Ward boundary editor (plan §2.4). Accepts a GeoJSON Polygon or a Feature /
- * FeatureCollection containing one, computes the bbox and centroid server-side,
- * and re-attributes complaints on the next lookup.
+ * Ward boundary editor (plan §2.4). The boundary is built from a list of
+ * latitude/longitude points — added by clicking the map or typing them in —
+ * rather than a raw GeoJSON blob. It's still saved as a GeoJSON Polygon
+ * server-side (bbox and centroid computed there); only the input changed.
  */
+
+type Point = { lat: string; lng: string };
+
+const emptyForm = { id: '', name: '', code: '', zone: '', population: 0, slaMinutes: 1440 };
+
+/** Turns a saved boundary (or an uploaded .geojson file) back into editable points. */
+function boundaryToPoints(geo: any): Point[] {
+  const boundary =
+    geo?.type === 'Polygon'
+      ? geo
+      : geo?.type === 'Feature'
+        ? geo.geometry
+        : geo?.type === 'FeatureCollection'
+          ? geo.features?.[0]?.geometry
+          : null;
+
+  const ring: [number, number][] = boundary?.coordinates?.[0] ?? [];
+  const pts = ring.map(([lng, lat]: [number, number]) => ({ lat: String(lat), lng: String(lng) }));
+
+  // The stored ring is closed (first point repeated at the end); drop the
+  // repeat since the list is easier to edit without it.
+  if (pts.length > 1 && pts[0].lat === pts[pts.length - 1].lat && pts[0].lng === pts[pts.length - 1].lng) {
+    pts.pop();
+  }
+  return pts;
+}
+
+/** Clicking the map appends a point instead of dragging a single pin. */
+function ClickToAddPoint({ onAdd }: { onAdd: (lat: number, lng: number) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = (e: L.LeafletMouseEvent) => onAdd(e.latlng.lat, e.latlng.lng);
+    map.on('click', handler);
+    return () => {
+      map.off('click', handler);
+    };
+  }, [map, onAdd]);
+  return null;
+}
+
 export default function WardSettings() {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
-  const [form, setForm] = useState({ id: '', name: '', code: '', zone: '', population: 0, slaMinutes: 1440, geojson: '' });
+  const [form, setForm] = useState(emptyForm);
+  const [points, setPoints] = useState<Point[]>([]);
 
   const wards = useQuery({
     queryKey: ['admin', 'wards'],
     queryFn: async () => (await api('admin').get('/admin/wards')).data,
   });
 
+  const numericPoints = useMemo(
+    () =>
+      points
+        .map((p) => ({ lat: parseFloat(p.lat), lng: parseFloat(p.lng) }))
+        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)),
+    [points]
+  );
+  const polygonPositions = useMemo<[number, number][]>(
+    () => numericPoints.map((p) => [p.lat, p.lng]),
+    [numericPoints]
+  );
+
+  const addPoint = (lat = '', lng = '') => setPoints((prev) => [...prev, { lat: String(lat), lng: String(lng) }]);
+  const removePoint = (i: number) => setPoints((prev) => prev.filter((_, idx) => idx !== i));
+  const updatePoint = (i: number, field: keyof Point, value: string) =>
+    setPoints((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
+
   const save = useMutation({
     mutationFn: async () => {
-      let parsed: any;
-      try {
-        parsed = JSON.parse(form.geojson);
-      } catch {
-        throw new Error('That is not valid JSON');
+      if (numericPoints.length < 3) {
+        throw new Error('Add at least 3 coordinate points to form an area');
       }
 
-      // Accept a bare Polygon, a Feature, or a one-feature FeatureCollection.
-      const boundary =
-        parsed.type === 'Polygon'
-          ? parsed
-          : parsed.type === 'Feature'
-            ? parsed.geometry
-            : parsed.type === 'FeatureCollection'
-              ? parsed.features?.[0]?.geometry
-              : null;
+      const coords: [number, number][] = numericPoints.map((p) => [p.lng, p.lat]);
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) coords.push(first);
 
-      if (!boundary || boundary.type !== 'Polygon') {
-        throw new Error('Provide a GeoJSON Polygon (or a Feature containing one)');
-      }
+      const boundary = { type: 'Polygon', coordinates: [coords] };
 
       return (
         await api('admin').post('/admin/wards', {
@@ -59,7 +109,8 @@ export default function WardSettings() {
       await queryClient.invalidateQueries({ queryKey: ['admin', 'wards'] });
       toast.success('Ward boundary saved');
       setUploading(false);
-      setForm({ id: '', name: '', code: '', zone: '', population: 0, slaMinutes: 1440, geojson: '' });
+      setForm(emptyForm);
+      setPoints([]);
     },
     onError: (err: any) => toast.error(err?.message || errorMessage(err)),
   });
@@ -73,8 +124,16 @@ export default function WardSettings() {
         title="Ward settings"
         subtitle="Boundaries drive complaint attribution, officer scope and the heatmap"
         action={
-          <button type="button" className="btn-primary btn-sm" onClick={() => setUploading(true)}>
-            <Upload className="h-3.5 w-3.5" /> Upload boundary
+          <button
+            type="button"
+            className="btn-primary btn-sm"
+            onClick={() => {
+              setForm(emptyForm);
+              setPoints([]);
+              setUploading(true);
+            }}
+          >
+            <Upload className="h-3.5 w-3.5" /> Add a ward
           </button>
         }
       />
@@ -116,8 +175,8 @@ export default function WardSettings() {
                   zone: w.zone,
                   population: w.population,
                   slaMinutes: 1440,
-                  geojson: JSON.stringify(w.boundary, null, 2),
                 });
+                setPoints(boundaryToPoints(w.boundary));
                 setUploading(true);
               }}
             >
@@ -135,7 +194,7 @@ export default function WardSettings() {
         footer={
           <button
             className="btn-primary w-full"
-            disabled={!form.name || !form.code || !form.geojson || save.isPending}
+            disabled={!form.name || !form.code || numericPoints.length < 3 || save.isPending}
             onClick={() => save.mutate()}
           >
             {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -170,17 +229,58 @@ export default function WardSettings() {
           </div>
 
           <div>
-            <label className="label" htmlFor="geo">GeoJSON boundary</label>
-            <textarea
-              id="geo"
-              className="field min-h-[180px] resize-y py-2.5 font-mono text-fluid-xs"
-              value={form.geojson}
-              onChange={(e) => setForm({ ...form, geojson: e.target.value })}
-              placeholder='{"type":"Polygon","coordinates":[[[72.80,21.15],[72.83,21.15],[72.83,21.18],[72.80,21.18],[72.80,21.15]]]}'
-            />
-            <p className="mt-1.5 text-fluid-xs text-muted">
-              A Polygon, or a Feature / FeatureCollection containing one. Coordinates are [longitude, latitude].
+            <label className="label">Boundary coordinates</label>
+            <p className="mb-1.5 text-fluid-xs text-muted">
+              Click the map to drop a point, or type latitude/longitude below. At least 3 points are needed to form an area.
             </p>
+
+            <div className="h-[240px] w-full overflow-hidden rounded-xl border border-line">
+              <BaseMap center={polygonPositions[0] ?? [23.2156, 72.6369]} zoom={polygonPositions.length ? 14 : 12}>
+                <ClickToAddPoint onAdd={(lat, lng) => addPoint(lat.toFixed(6), lng.toFixed(6))} />
+                {polygonPositions.length >= 3 && (
+                  <Polygon positions={polygonPositions} pathOptions={{ color: '#16a34a', weight: 2, fillColor: '#16a34a', fillOpacity: 0.18 }} />
+                )}
+                {numericPoints.map((p, i) => (
+                  <CircleMarker key={i} center={[p.lat, p.lng]} radius={5} pathOptions={{ color: '#16a34a', weight: 2, fillColor: '#fff', fillOpacity: 1 }} />
+                ))}
+              </BaseMap>
+            </div>
+
+            <div className="mt-2 max-h-[220px] space-y-1.5 overflow-y-auto pr-1">
+              {points.map((p, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span className="w-5 shrink-0 text-center text-fluid-xs text-faint tabular-nums">{i + 1}</span>
+                  <input
+                    type="number"
+                    step="any"
+                    className="field flex-1 py-1.5 text-fluid-xs"
+                    placeholder="Latitude"
+                    value={p.lat}
+                    onChange={(e) => updatePoint(i, 'lat', e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    step="any"
+                    className="field flex-1 py-1.5 text-fluid-xs"
+                    placeholder="Longitude"
+                    value={p.lng}
+                    onChange={(e) => updatePoint(i, 'lng', e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn-ghost btn-sm shrink-0 !px-2 text-danger"
+                    onClick={() => removePoint(i)}
+                    aria-label={`Remove point ${i + 1}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button type="button" className="btn-ghost btn-sm mt-2 w-full" onClick={() => addPoint()}>
+              <Plus className="h-3.5 w-3.5" /> Add point manually
+            </button>
           </div>
 
           <label className="btn-ghost w-full cursor-pointer">
@@ -192,7 +292,15 @@ export default function WardSettings() {
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                setForm({ ...form, geojson: await file.text() });
+                try {
+                  const parsed = JSON.parse(await file.text());
+                  const loaded = boundaryToPoints(parsed);
+                  if (!loaded.length) throw new Error('empty');
+                  setPoints(loaded);
+                } catch {
+                  toast.error('That file is not a valid GeoJSON Polygon');
+                }
+                e.target.value = '';
               }}
             />
           </label>

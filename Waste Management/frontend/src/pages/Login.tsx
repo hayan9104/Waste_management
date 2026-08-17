@@ -170,7 +170,7 @@ export default function Login({ portal }: { portal: Portal }) {
 
       {/* Top bar floats over the photo. No chip on the logo, so the icon starts
           on exactly the same left edge as the headline below it. */}
-      <header className="relative z-10 flex shrink-0 items-center justify-between gap-3 px-4 py-4 sm:px-8">
+      <header className="relative z-20 flex shrink-0 items-center justify-between gap-3 px-4 py-4 sm:px-8">
         <Link to="/" className="flex items-center gap-2.5">
           <img src="/icon.svg" alt="" className="h-8 w-8 drop-shadow" />
           <span className="text-fluid-base font-bold tracking-tight">
