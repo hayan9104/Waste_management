@@ -55,7 +55,7 @@ export default function Register() {
       </div>
 
       <div className="relative mx-auto w-full max-w-sm py-8">
-        <img src="/icon.svg" alt="" className="h-12 w-12" />
+        <img src="/icon.svg" alt="" className="h-12 w-12 animate-logo-pop" />
         <h1 className="mt-5 text-fluid-2xl font-bold tracking-tight">{t('register.title')}</h1>
         <p className="mt-1.5 text-fluid-sm text-muted">
           {t('register.subtitle')}

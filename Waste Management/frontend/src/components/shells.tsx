@@ -50,11 +50,9 @@ export function MobileShell({
           <div className="flex items-center gap-3">
             <Link
               to={user?.role === 'DRIVER' ? '/driver' : '/app'}
-              className="flex items-center gap-3 group transition"
+              className="flex items-center gap-2 group transition"
             >
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand/10 p-1.5 transition group-hover:scale-105 shadow-xs">
-                <img src="/icon.svg" alt="Safaai Sarathi" className="h-full w-full object-contain" />
-              </div>
+              <img src="/icon.svg" alt="Safaai Sarathi" className="h-9 w-9 shrink-0 animate-logo-pop" />
               <div className="flex flex-col">
                 <span className="text-fluid-sm font-extrabold tracking-tight text-ink leading-tight">
                   Safaai Sarathi
@@ -188,11 +186,9 @@ export function ConsoleShell({
 
             <Link
               to={accent === 'orange' ? '/admin' : '/officer'}
-              className="flex shrink-0 items-center gap-3 group transition"
+              className="flex shrink-0 items-center gap-2 group transition"
             >
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand/10 p-1.5 transition group-hover:scale-105 shadow-xs">
-                <img src="/icon.svg" alt="Safaai Sarathi" className="h-full w-full object-contain" />
-              </div>
+              <img src="/icon.svg" alt="Safaai Sarathi" className="h-9 w-9 shrink-0 animate-logo-pop" />
               <div className="flex flex-col">
                 <span className="whitespace-nowrap text-fluid-sm font-extrabold tracking-tight text-ink leading-tight">
                   Safaai Sarathi
@@ -256,7 +252,7 @@ export function ConsoleShell({
           <div className="relative w-64 max-w-[80vw] h-full bg-elevated border-r border-line p-4 space-y-4 animate-slide-in flex flex-col">
             <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2">
-                <img src="/icon.svg" alt="" className="h-7 w-7" />
+                <img src="/icon.svg" alt="" className="h-7 w-7 animate-logo-pop" />
                 <span className="font-bold text-fluid-sm text-ink">{title}</span>
               </div>
               <button onClick={() => setMobileNavOpen(false)} className="p-1 text-muted hover:bg-sunken rounded-lg cursor-pointer">

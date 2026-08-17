@@ -117,7 +117,7 @@ export default function Landing() {
             <div className="mx-auto flex h-16 max-w-5xl items-center justify-between rounded-full bg-surface/95 px-4 shadow-2xl backdrop-blur-xl ring-1 ring-line/60 sm:px-6">
               {/* Left Brand */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <img src="/icon.svg" alt="" className="h-9 w-9 shrink-0 animate-pulse" />
+                <img src="/icon.svg" alt="" className="h-9 w-9 shrink-0 animate-logo-pop" />
                 <div className="flex flex-col">
                   <span className="text-fluid-sm font-extrabold tracking-tight text-ink whitespace-nowrap">
                     Safaai <span className="text-brand">Sarathi</span>
@@ -193,7 +193,7 @@ export default function Landing() {
                 <img
                   src="/icon.svg"
                   alt=""
-                  className="h-9 w-9 shrink-0 animate-pulse transition-transform duration-300 hover:scale-105"
+                  className="h-9 w-9 shrink-0 animate-logo-pop transition-transform duration-300 hover:scale-105"
                 />
                 <div className="flex flex-col">
                   <span className="text-sm sm:text-fluid-base font-extrabold tracking-tight text-ink whitespace-nowrap leading-none">
@@ -603,7 +603,7 @@ export default function Landing() {
 
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
           <div className="flex items-center gap-3">
-            <img src="/icon.svg" alt="" className="h-8 w-8" />
+            <img src="/icon.svg" alt="" className="h-8 w-8 animate-logo-pop" />
             <div>
               <div className="text-fluid-base font-bold tracking-tight">
                 Safaai Sarathi &nbsp;<span className="font-normal opacity-70">·</span>&nbsp;{' '}
