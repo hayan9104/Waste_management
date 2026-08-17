@@ -44,7 +44,7 @@ router.get(
     const wardWhere = ids === null ? {} : { id: { in: ids } };
 
     const [
-      kpis,
+      overviewResult,
       statusBreakdown,
       categoryBreakdown,
       activeTrucksCount,
@@ -91,14 +91,14 @@ router.get(
     const slaCompliancePercent =
       totalResolvedCount > 0
         ? Math.round((resolvedWithinSlaCount / totalResolvedCount) * 100)
-        : (kpis?.slaCompliancePercent ?? 92);
+        : (overviewResult.kpis?.slaCompliancePct ?? 92);
 
     res.json({
       slaCompliancePercent,
       activeTrucksCount,
       pendingComplaintsCount,
       todayResolvedCount,
-      kpis,
+      kpis: overviewResult.kpis,
       statusBreakdown,
       categoryBreakdown,
       wardIds: ids,
