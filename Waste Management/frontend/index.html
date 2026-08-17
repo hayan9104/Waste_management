@@ -17,9 +17,9 @@
       // Apply the saved theme before first paint so there is no flash.
       (function () {
         try {
-          var t = localStorage.getItem('ss_theme');
-          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          if (t === 'dark' || (!t && prefersDark)) document.documentElement.classList.add('dark');
+          // Light is the default on first visit, regardless of the device's
+          // system theme — dark only applies once the user picks it themselves.
+          if (localStorage.getItem('ss_theme') === 'dark') document.documentElement.classList.add('dark');
         } catch (e) {}
       })();
     </script>

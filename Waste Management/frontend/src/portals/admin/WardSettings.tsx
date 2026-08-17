@@ -52,6 +52,20 @@ function ClickToAddPoint({ onAdd }: { onAdd: (lat: number, lng: number) => void 
   return null;
 }
 
+/** Keeps every currently-entered point in view — not just the first one. */
+function FitToPoints({ positions }: { positions: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (positions.length === 0) return;
+    if (positions.length === 1) {
+      map.setView(positions[0], 15);
+    } else {
+      map.fitBounds(L.latLngBounds(positions), { padding: [30, 30] });
+    }
+  }, [map, positions]);
+  return null;
+}
+
 export default function WardSettings() {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
@@ -235,8 +249,9 @@ export default function WardSettings() {
             </p>
 
             <div className="h-[240px] w-full overflow-hidden rounded-xl border border-line">
-              <BaseMap center={polygonPositions[0] ?? [23.2156, 72.6369]} zoom={polygonPositions.length ? 14 : 12}>
+              <BaseMap center={[23.2156, 72.6369]} zoom={12}>
                 <ClickToAddPoint onAdd={(lat, lng) => addPoint(lat.toFixed(6), lng.toFixed(6))} />
+                <FitToPoints positions={polygonPositions} />
                 {polygonPositions.length >= 3 && (
                   <Polygon positions={polygonPositions} pathOptions={{ color: '#16a34a', weight: 2, fillColor: '#16a34a', fillOpacity: 0.18 }} />
                 )}
