@@ -208,13 +208,15 @@ export function ConsoleShell({
             </Link>
           </div>
 
-          {/* Desktop Interactive Spotlight Navigation Bar */}
-          <div className="hidden xl:flex items-center justify-center">
-            <SpotlightNav items={nav} accent={accent} />
+          {/* Desktop Interactive Spotlight Navigation Bar — scrolls horizontally
+              rather than squeezing the logo or account controls when a portal
+              (like the officer console) has too many items to fit. */}
+          <div className="no-scrollbar hidden min-w-0 flex-1 items-center justify-start overflow-x-auto xl:flex">
+            <SpotlightNav items={nav} accent={accent} className="shrink-0" />
           </div>
 
           {/* Right Header Actions */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex shrink-0 items-center gap-2.5">
             {headerRight}
             {alertCount > 0 && (
               <span className="chip border-danger/30 bg-danger/10 text-danger text-fluid-xs font-bold">
