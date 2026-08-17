@@ -101,7 +101,7 @@ export default function OfficerDashboard() {
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ok" />
               {Object.values(liveTrucks).filter((t: any) => t.online || t.status === 'ON_ROUTE').length} trucks live
             </Badge>
-            <Badge tone="neutral">{heatmap.data?.length ?? 0} complaints</Badge>
+            <Badge tone="neutral">{heatmap.data?.points?.length ?? 0} complaints</Badge>
           </div>
 
           <div className="h-[52dvh] min-h-[320px] w-full xl:h-[560px]">
@@ -113,7 +113,7 @@ export default function OfficerDashboard() {
                   colorFor={(w: any) => (w.load > 60 ? '#dc2626' : w.load > 30 ? '#f59e0b' : '#16a34a')}
                 />
               )}
-              {heatmap.data && <ComplaintLayer points={heatmap.data} />}
+              {heatmap.data?.points && <ComplaintLayer points={heatmap.data.points} />}
               {Object.values(liveTrucks).map((truck: any) =>
                 truck.latitude != null ? (
                   <TruckMarker
