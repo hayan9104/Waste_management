@@ -368,11 +368,11 @@ router.post(
 
     await prisma.auditLog.create({
       data: {
-        actorId: req.user.id,
+        actor: { connect: { id: req.user.id } },
         action: 'reward_redeem',
         targetTable: 'green_credits',
         targetId: rewardId,
-        details: { rewardId, voucherCode, pointsRequired, newBalance: updatedUser.greenCredits },
+        after: { rewardId, voucherCode, pointsRequired, newBalance: updatedUser.greenCredits },
       },
     });
 
