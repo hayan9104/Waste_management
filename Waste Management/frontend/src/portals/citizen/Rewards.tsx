@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, ErrorState, Loading, SectionTitle, toast } from '../../components/ui';
+import { ScratchCard } from '../../components/ScratchCard';
+import { ConfettiBurst } from '../../components/ConfettiBurst';
 import { timeAgo } from '../../lib/format';
 
 interface RewardItem {
@@ -85,6 +87,13 @@ export default function Rewards() {
   const queryClient = useQueryClient();
   const [redeemed, setRedeemed] = useState<{ [id: string]: string }>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+  const [confettiActive, setConfettiActive] = useState(false);
+
+  const handleScratchReveal = (id: string) => {
+    setRevealedIds((prev) => new Set(prev).add(id));
+    setConfettiActive(true);
+  };
 
   const credits = useQuery({
     queryKey: ['citizen', 'credits'],
@@ -137,6 +146,8 @@ export default function Rewards() {
 
   return (
     <div className="space-y-6">
+      {confettiActive && <ConfettiBurst onDone={() => setConfettiActive(false)} />}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-fluid-xl font-bold tracking-tight">Green Credits & Civic Rewards</h1>
@@ -189,6 +200,8 @@ export default function Rewards() {
             const canAfford = currentBalance >= reward.pointsRequired;
             const code = redeemed[reward.id];
             const isClaiming = redeemMutation.isPending && redeemMutation.variables?.id === reward.id;
+            const justRevealed = revealedIds.has(reward.id);
+            const showScratch = canAfford && !code && !justRevealed;
 
             return (
               <Card
@@ -197,6 +210,14 @@ export default function Rewards() {
                   code ? 'border-ok/50 bg-ok/5' : 'hover:border-brand/40 hover:shadow-md'
                 }`}
               >
+                {showScratch && <ScratchCard onReveal={() => handleScratchReveal(reward.id)} />}
+
+                {justRevealed && !code && (
+                  <div className="mb-2 flex items-center gap-1.5 rounded-xl border border-ok/30 bg-ok/10 px-3 py-2 text-fluid-xs font-bold text-ok">
+                    <Sparkles className="h-4 w-4" /> Congratulations! Claim your voucher below.
+                  </div>
+                )}
+
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <span

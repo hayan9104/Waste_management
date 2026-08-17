@@ -9,7 +9,7 @@ export async function recordAudit({ actorId, action, targetTable, targetId, befo
   try {
     await prisma.auditLog.create({
       data: {
-        actorId: actorId ?? null,
+        actor: actorId ? { connect: { id: actorId } } : undefined,
         action,
         targetTable,
         targetId: targetId ? String(targetId) : null,
