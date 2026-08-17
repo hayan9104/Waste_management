@@ -6,7 +6,7 @@
  * cached — a queued report must reach the server, not a cache.
  */
 
-const CACHE = 'safaai-v1';
+const CACHE = 'safaai-v2';
 const SHELL = ['/', '/index.html', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -43,7 +43,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Everything else: cache first, refresh in the background.
+  // Page loads and hashed JS/CSS chunks: network first. A cache-first
+  // strategy here means a fresh deploy's index.html can keep pointing at
+  // chunk files a previous deploy already deleted from the server, which
+  // crashes the app on load. Only fall back to cache when truly offline.
+  if (request.mode === 'navigate' || /\.(js|css)$/.test(url.pathname)) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Static assets (icons, manifest, images): cache first, refresh in the background.
   event.respondWith(
     caches.match(request).then((cached) => {
       const network = fetch(request)
