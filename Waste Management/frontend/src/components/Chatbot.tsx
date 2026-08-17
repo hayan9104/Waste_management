@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
 import { Bot, MessageSquare, X, Send, Sparkles, User, HelpCircle, PhoneCall, Award, Trash2, Loader2 } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
-import { api } from '../lib/api';
-import { Card } from './ui';
+import { BASE } from '../lib/api';
 
 interface Message {
   id: string;
@@ -81,7 +81,7 @@ export function Chatbot() {
     setIsTyping(true);
 
     try {
-      const res = await api('citizen').post('/citizen/chatbot', { message: text, lang: currentLang });
+      const res = await axios.post(`${BASE}/api/public/chatbot`, { message: text, lang: currentLang });
       const botReply = res.data?.reply || 'I am your Safaai Sahayak. Please tap the Report tab to file a waste complaint.';
 
       const botMsg: Message = {

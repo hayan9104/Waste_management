@@ -56,4 +56,12 @@ export const reportLimiter = rateLimit({
   message: { error: 'Report limit reached for this hour.' },
 });
 
-export default { loginLimiter, otpLimiter, writeLimiter, reportLimiter };
+/** Chatbot — public and unauthenticated, so this is what stands between it and abuse of the Groq key. */
+export const chatLimiter = rateLimit({
+  ...base,
+  windowMs: 10 * 60_000,
+  max: 20,
+  message: { error: 'Too many messages. Try again in a few minutes.' },
+});
+
+export default { loginLimiter, otpLimiter, writeLimiter, reportLimiter, chatLimiter };

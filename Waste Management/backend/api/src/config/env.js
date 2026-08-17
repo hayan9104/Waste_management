@@ -58,6 +58,12 @@ export const env = {
     .filter(Boolean),
 
   aiServiceUrl: process.env.AI_SERVICE_URL || 'http://127.0.0.1:8100',
+
+  // AI Safaai Sahayak chatbot. Empty key = deterministic keyword replies only.
+  groq: {
+    apiKey: process.env.GROQ_API_KEY || '',
+    model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+  },
   routingServiceUrl: process.env.ROUTING_SERVICE_URL || '',
   redisUrl: process.env.REDIS_URL || '',
 

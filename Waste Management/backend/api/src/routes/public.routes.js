@@ -1,9 +1,33 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { asyncHandler } from '../middleware/error.js';
 import { prisma } from '../lib/prisma.js';
 import { WASTE_CATEGORIES } from '../config/constants.js';
+import { getChatReply } from '../services/chatbot.service.js';
+import { chatLimiter } from '../middleware/rateLimit.js';
 
 const router = Router();
+
+/**
+ * AI Safaai Sahayak — public because the chat widget is shown on every page,
+ * logged in or not (landing, driver, officer, admin all mount the same
+ * component). Groq-backed when GROQ_API_KEY is set, keyword-matched otherwise.
+ */
+router.post(
+  '/chatbot',
+  chatLimiter,
+  asyncHandler(async (req, res) => {
+    const { message, lang } = z
+      .object({
+        message: z.string().min(1).max(500),
+        lang: z.enum(['en', 'hi', 'gu']).optional(),
+      })
+      .parse(req.body);
+
+    const { reply, source } = await getChatReply(message, lang || 'en');
+    res.json({ reply, source });
+  })
+);
 
 /**
  * Landing-page impact counters. Aggregate only — no personal data, no auth.
