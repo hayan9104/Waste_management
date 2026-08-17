@@ -7,7 +7,7 @@ import { audited, recordAudit } from '../middleware/audit.js';
 import { prisma } from '../lib/prisma.js';
 import { PORTALS, ROLES, WASTE_CATEGORIES } from '../config/constants.js';
 import analytics from '../services/analytics.service.js';
-import { serializeVehicle } from '../services/tracking.service.js';
+import { serializeVehicle, today, locationHistory } from '../services/tracking.service.js';
 import { hashPassword } from '../lib/password.js';
 import { revokeAllSessions } from '../lib/tokens.js';
 import { polygonBBox, polygonCentroid } from '../lib/geo.js';
@@ -125,6 +125,55 @@ router.patch(
       req,
     });
     res.json(serializeVehicle(vehicle, vehicle.ward));
+  })
+);
+
+/** GET /api/admin/fleet/:id/route — today's published route for one vehicle, with stop-by-stop status. */
+router.get(
+  '/fleet/:id/route',
+  asyncHandler(async (req, res) => {
+    const vehicle = await prisma.vehicle.findUnique({
+      where: { id: req.params.id },
+      include: { ward: true, driver: { select: { id: true, name: true, phone: true } } },
+    });
+    if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+
+    const [route, history] = await Promise.all([
+      prisma.route.findFirst({ where: { vehicleId: vehicle.id, date: today() } }),
+      locationHistory(vehicle.id, {}),
+    ]);
+    const stops = route?.orderedStops ?? [];
+
+    res.json({
+      vehicle: serializeVehicle(vehicle, vehicle.ward),
+      route: route
+        ? {
+            id: route.id,
+            label: route.label,
+            status: route.status,
+            polyline: route.polylineGeometry,
+            distanceKm: route.distanceKm,
+            durationMin: route.durationMin,
+            solver: route.solver,
+          }
+        : null,
+      stops: stops.map((s, idx) => ({
+        seq: s.seq || idx + 1,
+        complaintId: s.complaintId || s.id,
+        category: s.category || 'GARBAGE_PILE',
+        address: s.address || 'Reported Location',
+        latitude: s.latitude,
+        longitude: s.longitude,
+        status: s.status || 'PENDING',
+        isEmergency: s.isEmergency || false,
+      })),
+      stopsDone: stops.filter((s) => s.status === 'DONE').length,
+      stopsTotal: stops.length,
+      // The vehicle's actual GPS breadcrumb today — where it has really been,
+      // as opposed to `route.polyline` which is the planned path.
+      trail: history.points.map((p) => [p.longitude, p.latitude]),
+      trailDistanceKm: history.distanceKm,
+    });
   })
 );
 

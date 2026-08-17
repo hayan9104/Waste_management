@@ -9,7 +9,7 @@ import { PORTALS, SOCKET_EVENTS } from '../config/constants.js';
 import analytics from '../services/analytics.service.js';
 import { transition, serializeComplaint } from '../services/complaint.service.js';
 import { escalate, slaCountdown } from '../services/escalation.service.js';
-import { optimizeRoute, drivablePolyline } from '../services/routing.service.js';
+import { optimizeRoute, roadSnappedPolyline } from '../services/routing.service.js';
 import { serializeVehicle, today, startOfToday } from '../services/tracking.service.js';
 import { emitTo } from '../sockets/realtime.js';
 import { notify } from '../services/notification.service.js';
@@ -747,7 +747,8 @@ router.post(
       })),
     });
 
-    res.json({ ...solved, polyline: drivablePolyline(solved.polyline), vehicleId, complaintIds: complaints.map((c) => c.id) });
+    const polyline = await roadSnappedPolyline(solved.polyline);
+    res.json({ ...solved, polyline, vehicleId, complaintIds: complaints.map((c) => c.id) });
   })
 );
 

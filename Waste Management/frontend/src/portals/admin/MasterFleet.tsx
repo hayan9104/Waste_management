@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Truck, Wifi, WifiOff, Wrench, MapPin, Filter } from 'lucide-react';
+import { Loader2, Plus, Truck, Wifi, WifiOff, Wrench, MapPin, Filter, Route as RouteIcon, X } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
-import { BaseMap, TruckMarker, PinMarker, FitBounds } from '../../components/map/Map';
+import { BaseMap, TruckMarker, PinMarker, FitBounds, RouteLine, Polyline } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
-import { timeAgo } from '../../lib/format';
+import { timeAgo, CATEGORY_LABELS } from '../../lib/format';
 
 export default function MasterFleet() {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [selectedWard, setSelectedWard] = useState<string>('');
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [livePositions, setLivePositions] = useState<Record<string, any>>({});
   const [form, setForm] = useState({
     registrationNumber: '',
@@ -35,6 +36,13 @@ export default function MasterFleet() {
   const drivers = useQuery({
     queryKey: ['admin', 'users', 'DRIVER'],
     queryFn: async () => (await api('admin').get('/admin/users', { params: { role: 'DRIVER', pageSize: 100 } })).data,
+  });
+
+  const route = useQuery({
+    queryKey: ['admin', 'fleet-route', selectedVehicleId],
+    queryFn: async () => (await api('admin').get(`/admin/fleet/${selectedVehicleId}/route`)).data,
+    enabled: Boolean(selectedVehicleId),
+    refetchInterval: 15_000,
   });
 
   // Subscribe to all ward rooms and city room for live truck telemetry pings
@@ -141,6 +149,29 @@ export default function MasterFleet() {
         <div className="h-[44dvh] min-h-[320px] w-full xl:h-[420px]">
           <BaseMap center={[23.2156, 72.6369]} zoom={12}>
             {mapPoints.length > 0 && <FitBounds points={mapPoints} />}
+
+            {/* The selected vehicle's actual planned route, drawn on the road. */}
+            {route.data?.route?.polyline?.length > 1 && (
+              <RouteLine polyline={route.data.route.polyline} progressIndex={route.data.stopsDone} />
+            )}
+            {/* Where the vehicle has actually been today, as GPS recorded it —
+                distinct from the planned path above. */}
+            {route.data?.trail?.length > 1 && (
+              <Polyline
+                positions={route.data.trail.map(([lng, lat]: [number, number]) => [lat, lng])}
+                pathOptions={{ color: '#2563eb', weight: 3, opacity: 0.7, dashArray: '2 8' }}
+              />
+            )}
+            {route.data?.stops?.map((s: any) => (
+              <PinMarker
+                key={s.seq}
+                latitude={s.latitude}
+                longitude={s.longitude}
+                tone={s.status === 'DONE' ? 'brand' : s.isEmergency ? 'danger' : 'brand'}
+                label={`${s.seq}. ${s.address} — ${s.status === 'DONE' ? 'Completed' : 'Pending'}`}
+              />
+            ))}
+
             {vehicles
               .filter((v: any) => v.latitude != null)
               .map((v: any) => (
@@ -149,14 +180,89 @@ export default function MasterFleet() {
                   latitude={v.latitude}
                   longitude={v.longitude}
                   heading={v.heading ?? 0}
-                  registrationNumber={v.registrationNumber}
-                  driverName={v.driver?.name}
-                  status={v.status}
-                />
+                  active={v.status === 'ON_ROUTE'}
+                  onClick={() => setSelectedVehicleId(v.id)}
+                >
+                  <div className="space-y-0.5">
+                    <p className="font-semibold">{v.registrationNumber}</p>
+                    <p className="text-xs text-muted">{v.driver?.name ?? 'Unassigned'}</p>
+                    <p className="text-xs">{v.status}</p>
+                  </div>
+                </TruckMarker>
               ))}
           </BaseMap>
         </div>
       </Card>
+
+      {/* Selected vehicle's route: path + stop-by-stop status */}
+      {selectedVehicleId && (
+        <Card className="overflow-hidden p-0 shadow-sm">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-sunken/40">
+            <div className="flex items-center gap-2">
+              <RouteIcon className="h-4 w-4 text-brand" />
+              <h3 className="text-fluid-sm font-bold">
+                {route.data?.vehicle?.registrationNumber ?? 'Vehicle'} — today's route
+              </h3>
+            </div>
+            <div className="flex items-center gap-3">
+              {route.data?.route && (
+                <span className="text-fluid-xs font-semibold text-muted">
+                  {route.data.stopsDone} / {route.data.stopsTotal} stops completed
+                </span>
+              )}
+              <button type="button" className="btn-ghost btn-sm !px-2" onClick={() => setSelectedVehicleId(null)} aria-label="Close route view">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {route.data && (
+            <div className="flex flex-wrap items-center gap-4 border-b border-line px-4 py-2 text-fluid-xs">
+              <span className="flex items-center gap-1.5 text-muted">
+                <span className="h-0.5 w-5 rounded bg-[#16a34a]" /> Planned route to destinations
+              </span>
+              <span className="flex items-center gap-1.5 text-muted">
+                <span className="h-0.5 w-5 rounded bg-[#2563eb]" style={{ backgroundImage: 'repeating-linear-gradient(90deg,#2563eb 0 4px,transparent 4px 8px)' }} /> Actual path driven today
+                {route.data.trailDistanceKm != null && ` (${route.data.trailDistanceKm} km)`}
+              </span>
+            </div>
+          )}
+
+          {route.isLoading ? (
+            <div className="p-6"><Loading /></div>
+          ) : !route.data?.route ? (
+            <p className="p-6 text-center text-fluid-sm text-muted">No route published for this vehicle today.</p>
+          ) : (
+            <div className="divide-y divide-line max-h-[320px] overflow-y-auto">
+              {route.data.stops.map((s: any) => {
+                const isDone = s.status === 'DONE';
+                return (
+                  <div key={s.seq} className="flex items-center justify-between p-3.5">
+                    <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+                      <span
+                        className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-fluid-xs font-bold ${
+                          isDone ? 'bg-ok/20 text-ok' : 'bg-sunken text-muted'
+                        }`}
+                      >
+                        {isDone ? '✓' : s.seq}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-fluid-xs font-semibold truncate ${isDone ? 'line-through text-muted' : 'text-ink'}`}>
+                          {s.address}
+                        </p>
+                        <p className="text-[10px] text-muted">{CATEGORY_LABELS[s.category] ?? s.category}</p>
+                      </div>
+                    </div>
+                    <Badge tone={isDone ? 'ok' : s.isEmergency ? 'danger' : 'neutral'}>
+                      {isDone ? 'Completed' : s.status === 'SKIPPED' ? 'Skipped' : 'On the way'}
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Fleet Table */}
       <Card className="overflow-hidden p-0">
@@ -212,14 +318,23 @@ export default function MasterFleet() {
                   </td>
                   <td className="px-4 py-2.5 text-fluid-xs text-muted">{v.lastPingAt ? timeAgo(v.lastPingAt) : '—'}</td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      type="button"
-                      className="btn-ghost btn-sm"
-                      onClick={() => update.mutate({ id: v.id, patch: { maintenanceFlag: !v.maintenanceFlag } })}
-                    >
-                      <Wrench className="h-3.5 w-3.5" />
-                      {v.maintenanceFlag ? 'Clear flag' : 'Flag maintenance'}
-                    </button>
+                    <div className="flex justify-end gap-1.5">
+                      <button
+                        type="button"
+                        className={`btn-ghost btn-sm ${selectedVehicleId === v.id ? 'border-brand text-brand' : ''}`}
+                        onClick={() => setSelectedVehicleId(v.id)}
+                      >
+                        <RouteIcon className="h-3.5 w-3.5" /> View route
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm"
+                        onClick={() => update.mutate({ id: v.id, patch: { maintenanceFlag: !v.maintenanceFlag } })}
+                      >
+                        <Wrench className="h-3.5 w-3.5" />
+                        {v.maintenanceFlag ? 'Clear flag' : 'Flag maintenance'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
