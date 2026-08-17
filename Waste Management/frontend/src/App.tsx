@@ -45,7 +45,7 @@ function BootLoader() {
     <div className="fixed inset-0 z-[100] flex min-h-dvh w-full flex-col items-center justify-center gap-4 bg-surface">
       <div className="relative flex h-14 w-14 items-center justify-center">
         <span className="absolute inset-0 animate-ping rounded-full bg-brand/20" />
-        <img src="/icon.svg" alt="" className="relative h-9 w-9" />
+        <img src="/icon.svg" alt="" className="relative h-9 w-9 animate-logo-pop" />
       </div>
       <div className="h-1 w-40 overflow-hidden rounded-full bg-line/60">
         <div className="h-full w-1/2 animate-[boot-bar_0.9s_ease-in-out_infinite] rounded-full bg-brand" />

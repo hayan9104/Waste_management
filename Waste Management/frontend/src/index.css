@@ -182,6 +182,18 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  /* The brand mark's gentle "pop" — reused on every page's header logo. */
+  .animate-logo-pop {
+    animation: logo-pop 2s ease-in-out infinite;
+  }
+}
+
+@keyframes logo-pop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.16); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-logo-pop { animation: none; }
 }
 
 /* ---- Leaflet: theme the map instead of shipping two basemaps ---- */

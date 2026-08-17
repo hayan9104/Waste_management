@@ -172,7 +172,7 @@ export default function Login({ portal }: { portal: Portal }) {
           on exactly the same left edge as the headline below it. */}
       <header className="relative z-20 flex shrink-0 items-center justify-between gap-3 px-4 py-4 sm:px-8">
         <Link to="/" className="flex items-center gap-2.5">
-          <img src="/icon.svg" alt="" className="h-8 w-8 drop-shadow" />
+          <img src="/icon.svg" alt="" className="h-8 w-8 animate-logo-pop drop-shadow" />
           <span className="text-fluid-base font-bold tracking-tight">
             Safaai <span className="text-brand">Sarathi</span>
           </span>
