@@ -464,7 +464,11 @@ export default function Landing() {
                     }`}
                   >
                     <div className="card group relative overflow-hidden p-5 sm:p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-brand/5 border border-line bg-surface">
-                      <div className="absolute -right-3 -top-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand/5 opacity-40 transition-transform duration-500 group-hover:scale-110 group-hover:opacity-70">
+                      <div
+                        className={`absolute -top-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand/5 opacity-40 transition-transform duration-500 group-hover:scale-110 group-hover:opacity-70 ${
+                          i % 2 === 0 ? '-left-3' : '-right-3'
+                        }`}
+                      >
                         <step.icon className="h-7 w-7 text-brand" />
                       </div>
                       <span className="mb-2 block text-xs font-bold uppercase tracking-wider text-brand">
