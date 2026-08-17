@@ -242,8 +242,9 @@ function orOpt(origin, order) {
 
 /**
  * Straight-line legs are fine for the solver, but the drawn polyline should
- * look like driving. Without OSRM we insert an L-shaped waypoint per leg, which
- * reads as street movement instead of a diagonal across buildings.
+ * look like driving. This is the last-resort fallback when OSRM cannot be
+ * reached: an L-shaped waypoint per leg, which at least reads as street
+ * movement instead of a diagonal across buildings.
  */
 export function drivablePolyline(points) {
   const out = [];
@@ -258,5 +259,29 @@ export function drivablePolyline(points) {
   return out;
 }
 
+/**
+ * Snaps the ordered waypoints to actual streets via OSRM's public routing
+ * API (the same open road network Google/Uber-style routing draws from) so
+ * the drawn line follows real roads instead of cutting through blocks.
+ * Falls back to the L-shaped approximation if OSRM is unreachable — this
+ * hits a free, unauthenticated demo server, so it must degrade gracefully.
+ */
+export async function roadSnappedPolyline(points) {
+  if (!points || points.length < 2) return drivablePolyline(points || []);
+
+  try {
+    const coordStr = points.map(([lng, lat]) => `${lng},${lat}`).join(';');
+    const { data } = await axios.get(`https://router.project-osrm.org/route/v1/driving/${coordStr}`, {
+      params: { overview: 'full', geometries: 'geojson' },
+      timeout: 8000,
+    });
+    const coords = data?.routes?.[0]?.geometry?.coordinates;
+    if (Array.isArray(coords) && coords.length > 1) return coords;
+  } catch (err) {
+    console.warn('[routing] OSRM road-snap unavailable, using L-shaped fallback:', err.message);
+  }
+  return drivablePolyline(points);
+}
+
 export { DEFAULTS, distanceKm };
-export default { optimizeRoute, solveLocal, drivablePolyline };
+export default { optimizeRoute, solveLocal, drivablePolyline, roadSnappedPolyline };

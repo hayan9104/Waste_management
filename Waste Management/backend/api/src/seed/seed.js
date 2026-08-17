@@ -12,7 +12,7 @@ import { hashPassword } from '../lib/password.js';
 import { polygonBBox } from '../lib/geo.js';
 import { CITY, WARDS, wardGeometry, pointInWard, STREETS } from './city.js';
 import { WASTE_CATEGORIES, CATEGORY_MAP, CREDIT_RULES, ROLES } from '../config/constants.js';
-import { solveLocal, drivablePolyline } from '../services/routing.service.js';
+import { solveLocal, roadSnappedPolyline } from '../services/routing.service.js';
 
 const PASSWORD = 'safaai@2026';
 const HISTORY_DAYS = 45;
@@ -425,6 +425,8 @@ async function main() {
       })),
     });
 
+    const polyline = await roadSnappedPolyline(solved.polyline);
+
     await prisma.route.create({
       data: {
         vehicleId: vehicle.id,
@@ -434,7 +436,7 @@ async function main() {
         status: 'PUBLISHED',
         label: `${ward.name} morning beat`,
         orderedStops: solved.stops,
-        polylineGeometry: drivablePolyline(solved.polyline),
+        polylineGeometry: polyline,
         distanceKm: solved.distanceKm,
         baselineKm: solved.baselineKm,
         savedKm: solved.savedKm,
