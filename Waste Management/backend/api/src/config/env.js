@@ -34,7 +34,13 @@ export const env = {
   cookie: {
     domain: process.env.COOKIE_DOMAIN || undefined,
     secure: bool(process.env.COOKIE_SECURE, false),
-    sameSite: 'strict',
+    // `Strict`/`Lax` cookies are dropped by the browser on cross-site requests,
+    // which is exactly what frontend (Vercel) -> API (Render) is. `None`
+    // requires `Secure`, which is why production deploys must set
+    // COOKIE_SECURE=true — see backend/api/.env.example.
+    get sameSite() {
+      return this.secure ? 'none' : 'strict';
+    },
   },
 
   google: {

@@ -4,7 +4,7 @@ import multer from 'multer';
 import { classify, embed, similarity, forecast, fraudScore, loadModels, MODEL, CATEGORIES } from './models.js';
 import { describe } from './imageFeatures.js';
 
-const PORT = Number(process.env.AI_PORT || 8100);
+const PORT = Number(process.env.PORT || process.env.AI_PORT || 8100);
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 
