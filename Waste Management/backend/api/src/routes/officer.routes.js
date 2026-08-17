@@ -24,6 +24,15 @@ async function scope(req) {
   return { ids, where: ids === null ? {} : { wardId: { in: ids } } };
 }
 
+/** GET /api/officer/wards — the officer's own ward(s), for filters and the map. */
+router.get(
+  '/wards',
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    res.json(await analytics.wardPerformance(ids));
+  })
+);
+
 /**
  * FEATURE 1: Main Ward Dashboard
  * GET /api/officer/dashboard & GET /api/officer/overview
