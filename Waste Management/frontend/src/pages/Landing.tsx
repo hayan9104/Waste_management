@@ -265,7 +265,7 @@ export default function Landing() {
       </header>
 
       {/* ---- Hero Section: Redesigned with Smooth, Modern Aesthetics ---- */}
-      <section className="relative overflow-hidden pt-28 pb-16 lg:pt-36 lg:pb-24">
+      <section className="relative overflow-hidden pt-20 pb-10 lg:pt-24 lg:pb-14">
         {/* Soft, modern ambient glow background */}
         <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
           <div className="absolute -top-32 left-1/2 -translate-x-1/2 h-[500px] w-[900px] rounded-full bg-gradient-to-tr from-brand/15 via-emerald-400/10 to-teal-400/5 blur-3xl" />
@@ -275,9 +275,9 @@ export default function Landing() {
         </div>
 
         <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 xl:px-12">
-          <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12">
+          <div className="grid items-center gap-8 lg:grid-cols-12 lg:gap-10">
             {/* Left Content (7 Columns) */}
-            <div className="space-y-6 text-left lg:col-span-7">
+            <Reveal as="div" className="space-y-5 text-left lg:col-span-7">
               {/* Official Badges */}
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="inline-flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/10 px-3 py-1 text-fluid-xs font-bold text-orange-700 dark:text-orange-400 shadow-xs">
@@ -322,8 +322,8 @@ export default function Landing() {
               </div>
 
               {/* Live Database Stat Metrics */}
-              <div className="pt-4 border-t border-line/60">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted mb-3 flex items-center gap-1.5">
+              <div className="pt-3 border-t border-line/60">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted mb-2.5 flex items-center gap-1.5">
                   <Activity className="h-3.5 w-3.5 text-brand" /> {t('landing.hero.telemetry')}
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -335,7 +335,7 @@ export default function Landing() {
                   ].map((item) => (
                     <div
                       key={item.label}
-                      className="rounded-2xl border border-line bg-surface/90 p-3.5 shadow-xs transition hover:shadow-sm"
+                      className="rounded-2xl border border-line bg-surface/90 p-3 shadow-xs transition hover:shadow-sm"
                     >
                       <div className="text-fluid-xl font-extrabold text-ink tracking-tight">
                         {stats ? <Counter value={item.value} suffix={item.suffix} /> : <span>{item.value}{item.suffix}</span>}
@@ -345,10 +345,10 @@ export default function Landing() {
                   ))}
                 </div>
               </div>
-            </div>
+            </Reveal>
 
             {/* Right Live Interactive Showcase Visual Card (5 Columns) */}
-            <div className="lg:col-span-5">
+            <Reveal as="div" delayMs={150} className="lg:col-span-5">
               <div className="relative mx-auto max-w-md lg:max-w-none rounded-3xl border border-line bg-surface/80 p-5 shadow-2xl backdrop-blur-xl ring-1 ring-white/10 space-y-4">
                 {/* Visual Image with Neural Detection Box */}
                 <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-slate-950 border border-line/80 shadow-inner">
@@ -418,7 +418,7 @@ export default function Landing() {
                   <span className="font-bold text-brand">{t('landing.showcase.credits')}</span>
                 </div>
               </div>
-            </div>
+            </Reveal>
           </div>
         </div>
       </section>
