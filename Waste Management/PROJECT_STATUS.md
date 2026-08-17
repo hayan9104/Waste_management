@@ -3,7 +3,28 @@
 > Read this first in a new session.
 
 - **Root:** `D:\Tirth\SafaaiSarathi2.0-main\SafaaiSarathi2.0-main\Waste Management`
-- **Last updated:** 2026-08-17 — re-verified end to end on this machine/clone
+- **Last updated:** 2026-08-18 — now deployed and live (see §0), plus a full bug-fix + feature pass (see §7 Session 4)
+
+---
+
+## 0. Live deployment
+
+| Service | Where | URL |
+| --- | --- | --- |
+| Frontend | Vercel | `https://waste-management-black.vercel.app` |
+| API | Render | `https://safaai-api.onrender.com` |
+| Database | Neon (Postgres, pooled) | project `lingering-surf-60089253`, db `neondb` |
+
+Deploy = push to `origin/main` on GitHub (`hayan9104/Waste_management`) — Vercel and Render both
+auto-redeploy on push. There is no CI gate; whatever is on `main` goes live.
+
+**Local dev is a separate database from production.** `backend/api/.env`'s `DATABASE_URL` points at
+local Postgres (`waste_man_2` on port 5433) day to day. When a fix needs to reach the live Neon DB
+(e.g. re-seeding after a schema-affecting change), the pattern used all session was: edit
+`DATABASE_URL` to the Neon pooled connection string, run the one-off command (`db:push`, `seed`),
+then **immediately revert `.env` back to local and touch `src/server.js`** so `node --watch` reloads
+the local connection. Forgetting the revert step silently points the local dev server at production —
+it happened at least once this session; double-check `.env` if local data ever looks wrong.
 
 ---
 
@@ -231,6 +252,108 @@ scale and were silently doing nothing; and the seed backlog problem above.
 
 ---
 
+### Session 4 — deployment, and a large bug-fix + polish pass
+
+Shipped to production for the first time (Vercel + Render + Neon, see §0), then worked through a long
+list of live bug reports and feature requests. Grouped by area:
+
+**Real defects found and fixed (not cosmetic):**
+1. **Logout always redirected to `/login`** regardless of portal — `AccountModal` in `shells.tsx` had
+   `navigate('/login')` hardcoded. Now uses `LOGIN_ROUTE[portal]` so driver/officer/admin sign-out
+   lands back on their own login screen.
+2. **Login page language switcher was unclickable** — its dropdown and the main content grid shared
+   the same `z-10`, so the login card (later in DOM order) painted over the dropdown. Header bumped to
+   `z-20`.
+3. **`GET /api/officer/wards` didn't exist** — four officer pages (Dashboard, Fleet, Hotspots,
+   Emergencies) called it; every request 404'd and `.map()` on the error response crashed the whole
+   portal. Added the endpoint (reuses `analytics.wardPerformance`, scoped to the officer's wards).
+4. **Officer dashboard KPIs all rendered `undefined`** — `/officer/dashboard` nested
+   `analytics.overview()`'s `{generatedAt, kpis}` wrapper under its own `kpis` key instead of
+   unwrapping it, so every stat (open complaints, overdue, SLA %, fleet counts) read from one level too
+   deep. Also fixed the SLA fallback referencing a field name (`slaCompliancePercent`) that never
+   existed on the real object (`slaCompliancePct`).
+5. **Reward voucher claiming was silently broken app-wide for audit logs.** `prisma.auditLog.create()`
+   was passed a raw `actorId` scalar; Prisma's generated "checked" input type for a model with an
+   optional relation doesn't accept that (only the `actor: {connect}` relation, or the unchecked
+   variant, does) — a real, reproducible Prisma gotcha, not a stale-client issue. The shared
+   `recordAudit()` helper swallows this error everywhere else in the app (try/catch → console.error),
+   so **every audit-log write across the whole app had likely been silently failing** without ever
+   surfacing; the citizen reward-redeem route was the one place that called `auditLog.create()`
+   directly with no try/catch, so it was the only place it crashed user-facing (500). Fixed both call
+   sites to use the `actor` relation. Also dropped a `details` field on the same call that was never a
+   real column (schema only has `before`/`after`).
+6. **A stale service worker could crash the app after every deploy** — `sw.js` cached JS/CSS
+   "cache-first," so a page reload right after a new deploy could keep pointing at a chunk filename the
+   new build had already deleted server-side, throwing "Failed to fetch dynamically imported module"
+   (looked like an unexpected logout). Navigation/script requests are now network-first; `main.tsx`
+   also does one silent auto-reload if a stale chunk reference ever slips through.
+7. **Fake route paths** — `officer.routes.js`'s `/routes/optimize` and the seed script both drew
+   published routes as a naive "L-shaped" zigzag between stops (no real road data). Added
+   `roadSnappedPolyline()` (OSRM public routing API, graceful fallback to the old zigzag if
+   unreachable) so routes now follow actual streets.
+8. **CORS 500 instead of a clean rejection** — `server.js`'s cors() origin callback throws a hard
+   `Error` for a disallowed origin instead of just declining, so a `CLIENT_ORIGIN` mismatch on Render
+   surfaced as a 500 rather than a browser CORS error. (Left as-is; just noting the failure mode — the
+   fix each time was correcting `CLIENT_ORIGIN`, not the code.)
+
+**Ward boundary editor rebuilt** (`admin/WardSettings.tsx`) — raw GeoJSON textarea replaced with a
+draggable 4-corner rectangle on a live map: drag any corner and the two adjacent corners follow to
+keep it a true rectangle (bounds-based state: north/south/east/west, not 4 independent points), the
+box stretches live on every drag frame, and the map frames the box once on open rather than re-fitting
+mid-drag. Loading an existing/uploaded boundary reduces it to its bounding box automatically.
+
+**Master Fleet map made real** — `TruckMarker` was silently passing invalid props (no popup, no
+`ON_ROUTE` pulse — a pre-existing bug). Added `GET /admin/fleet/:id/route`: click a truck (or "View
+route") to see its actual planned route + stop-by-stop status, and a second polyline showing its real
+GPS breadcrumb trail today (`locationHistory`), labelled distinctly from the planned path.
+
+**Landing page pass** — header's inner container didn't share the hero content's `max-w-[1440px]`, so
+logo/Sign-in drifted out of alignment with the content below on wide screens (now matched). Hero
+padding tightened so the telemetry stat row fits on a standard laptop viewport without scrolling.
+"What existing portals don't do" cards forced to equal height across both rows (`auto-rows-fr`) instead
+of only matching within their own row. Four-steps icon badge now always sits on the right in mobile
+view (was alternating left/right by index, which only made sense in the desktop zigzag layout). Hero
+content wrapped in `Reveal` so it fades/slides into place once the splash screen clears, instead of
+popping in instantly.
+
+**Splash/loader redesigned twice** — first pass: replaced the fixed 4-second 3D react-three-fiber
+truck intro with a minimal branded loader gated on real backend readiness (a `/stats` fetch) instead
+of an arbitrary timer, with a safety-net timeout. Second pass (explicit request): background is now
+the uploaded Clean India/Green India photo (resized 2.7 MB → ~320 KB, blurred, slow Ken-Burns zoom),
+icon removed (text-only), fixed 5-second duration.
+
+**Brand mark redesigned** — recycling-triad icon replaced with a leaf-shaped location pin (reads as
+both "eco" and "civic report location"); made transparent-background instead of sitting in a solid
+green square; a shared `.animate-logo-pop` keyframe (`index.css`) applied to every header/boot-screen
+instance across the app; removed a leftover `bg-brand/10` square box that was still wrapping the logo
+in the officer/admin console and citizen/driver shells after the icon itself went transparent.
+
+**Reward vouchers are now scratch cards** (`citizen/Rewards.tsx`) — new `ScratchCard.tsx` (canvas
+drag-to-erase, fires once >50% is cleared) and `ConfettiBurst.tsx` (party-popper cannons from both top
+corners, raining down — not falling from the top edge) components. Scratching an affordable,
+not-yet-claimed reward reveals it with a "Congratulations" banner and confetti; "Claim Voucher"
+underneath is unchanged — still the real backend redemption (deducts Green Credits, writes the ledger,
+returns a server-generated code).
+
+**National Emblem in the footer** — user-supplied JPEG (white background) converted to a transparent
+PNG (luminance-based alpha so anti-aliased edges fade smoothly instead of a hard cutout or white
+fringe, autocropped, downscaled 2.7 MB → 47 KB), replacing the 🎡 emoji next to "Satyameva Jayate."
+
+**Officer console header** — logo was wrapping into 3 lines ("Safaai" / "Sarathi" / "WARD OFFICER")
+because the officer portal has more nav items than other portals, so the flex header had less spare
+room and let the logo shrink below its natural width. Fixed by pinning logo and the right-side account
+controls to `shrink-0` and letting the middle nav scroll horizontally (`overflow-x-auto`) instead —
+first fix (just protecting the logo) had only moved the squeeze onto the language/theme/avatar
+controls, silently shrinking them to near-invisible; second fix protects both ends.
+
+**Chatbot button** — removed its pulsing status dot, made the sparkle icon itself pop instead
+(matches the logo treatment).
+
+**Google OAuth wired up** — `GOOGLE_CLIENT_ID`/`SECRET` set in `.env` (previously blank/disabled per
+§9 below); citizen "Continue with Google" is live.
+
+---
+
 ## 8. Next steps
 
 1. **Visual/responsive pass** — the only thing not verified. Check all four portals at
@@ -243,22 +366,38 @@ scale and were silently doing nothing; and the seed backlog problem above.
 
 ## 9. Known loose ends
 
-- [ ] Visual/responsive QA not done — Chrome extension was not connected, no screenshots taken.
+- [x] ~~Visual/responsive QA not done~~ — done via headless Puppeteer throughout Session 4 (Chrome
+      extension still isn't connectable in this environment, but screenshots were taken and checked at
+      several widths for every visual fix). Not exhaustively re-checked at all four breakpoints since,
+      though — worth another pass before a demo.
 - [ ] **Officer and admin analytics screens are still English** — chart axes, table headers, audit
       log, compliance export (~119 of 558 keys). Deliberate: the underlying data there (ward codes,
       model versions, action names like `complaint_assign`) is English anyway, so a half-translated
       table reads worse than a consistent one. The keys exist in `en.ts` if you want them filled.
-- [ ] **Re-run `npm run seed` on the morning of a demo.** Routes are stored against a calendar date,
-      so after midnight the simulator finds none — no moving trucks, no driver route, empty tracking
-      card. Re-seeding takes about a minute and rebuilds the same city deterministically.
+- [ ] **Re-run `npm run seed` on the morning of a demo** — locally, and separately against Neon if the
+      live site needs fresh-looking data (see §0 for the DATABASE_URL-swap pattern). Routes are stored
+      against a calendar date, so after midnight the simulator finds none — no moving trucks, no driver
+      route, empty tracking card. Re-seeding takes a minute or two locally; against pooled Neon it's
+      noticeably slower (a few minutes — each route now also calls OSRM for road-snapping) and the
+      Git Bash `kill -0 <pid>` trick for polling a background process's completion is unreliable on
+      Windows against PIDs from PowerShell/WMI — poll the process's actual log output instead, not a
+      PID liveness check.
 - [ ] Classifier and duplicate-similarity models are documented stand-ins; hotspot and fraud are real.
 - [ ] Municipal phone numbers in the seed are demo placeholders on the correct 079 STD code; the
       national 100 / 101 / 108 numbers are genuine. Swap the GMC ones before any real deployment.
-- [ ] Google sign-in is wired but disabled until `GOOGLE_CLIENT_ID` / `SECRET` are set.
+- [x] ~~Google sign-in is wired but disabled~~ — `GOOGLE_CLIENT_ID`/`SECRET` are set, live on the
+      citizen portal. Confirm the redirect URI in Google Cloud Console still matches Render's URL if
+      the API is ever redeployed to a different host.
 - [ ] Email (verification, reset) and driver OTP codes log to the API console instead of sending —
       no SMTP or SMS gateway configured.
 - [ ] WhatsApp bot and voice/IVR are presented in the UI as roadmap, not implemented.
 - [ ] No `docker-compose.yml` (no Docker on this machine); no ESLint config (TS strict is on and passing).
-- [ ] Not a git repository — run `git init` when ready.
+- [x] ~~Not a git repository~~ — `git init` done, pushed to `github.com/hayan9104/Waste_management`,
+      deployed from `main` (see §0).
 - [ ] `server/` and `ai-service/` (NIRMAL) can be deleted; nothing references them.
 - [ ] `web/dist/` from the test build can be deleted or ignored.
+- [ ] **Any new direct `prisma.auditLog.create()` call must use `actor: { connect: { id } }`, never a
+      raw `actorId` scalar** — see Session 4 defect #5. `seed/reset_and_seed.js` (dead code, not wired
+      to any npm script) still has the old broken pattern; harmless as long as it stays unused.
+- [ ] Reward catalog (`citizen/Rewards.tsx`) is a hardcoded frontend array, not database-driven —
+      adding/editing vouchers means editing `REWARDS_CATALOG` directly and redeploying.
