@@ -29,7 +29,7 @@ export default function Splash({ onDone }: { onDone: () => void }) {
         src="/loading-bg.jpg"
         alt=""
         aria-hidden
-        className="absolute inset-0 h-full w-full scale-110 object-cover blur-md motion-reduce:animate-none"
+        className="absolute inset-0 h-full w-full scale-110 object-cover blur-[3px] motion-reduce:animate-none"
         style={{ animation: 'splash-kenburns 6s ease-out both' }}
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70" />
