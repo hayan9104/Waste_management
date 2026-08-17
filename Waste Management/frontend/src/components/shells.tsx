@@ -176,11 +176,11 @@ export function ConsoleShell({
       <header className="fixed inset-x-0 top-0 z-40 h-[calc(4rem+env(safe-area-inset-top))] border-b border-line bg-surface/95 pt-[env(safe-area-inset-top)] shadow-xs backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8 xl:px-10">
           {/* Logo & Console Title */}
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-line xl:hidden text-ink cursor-pointer"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-line xl:hidden text-ink cursor-pointer"
               aria-label="Open Navigation"
             >
               <Menu className="h-5 w-5" />
@@ -188,17 +188,17 @@ export function ConsoleShell({
 
             <Link
               to={accent === 'orange' ? '/admin' : '/officer'}
-              className="flex items-center gap-3 group transition"
+              className="flex shrink-0 items-center gap-3 group transition"
             >
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand/10 p-1.5 transition group-hover:scale-105 shadow-xs">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand/10 p-1.5 transition group-hover:scale-105 shadow-xs">
                 <img src="/icon.svg" alt="Safaai Sarathi" className="h-full w-full object-contain" />
               </div>
               <div className="flex flex-col">
-                <span className="text-fluid-sm font-extrabold tracking-tight text-ink leading-tight">
+                <span className="whitespace-nowrap text-fluid-sm font-extrabold tracking-tight text-ink leading-tight">
                   Safaai Sarathi
                 </span>
                 <span
-                  className={`inline-block text-[11px] font-bold uppercase tracking-wider ${
+                  className={`inline-block whitespace-nowrap text-[11px] font-bold uppercase tracking-wider ${
                     accent === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-brand'
                   }`}
                 >
