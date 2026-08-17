@@ -1,8 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Safaai Sarathi">
-  <rect width="512" height="512" rx="112" fill="#15803d" />
   <!-- Leaf-shaped location pin: the mark reads as both "eco" and "civic report location". -->
-  <path d="M256 76 C178 76 116 138 116 214 C116 322 256 446 256 446 C256 446 396 322 396 214 C396 138 334 76 256 76 Z" fill="#ffffff" />
-  <g stroke="#15803d" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.9">
+  <path d="M256 76 C178 76 116 138 116 214 C116 322 256 446 256 446 C256 446 396 322 396 214 C396 138 334 76 256 76 Z" fill="#15803d" />
+  <g stroke="#ffffff" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.9">
     <path d="M256 118 C250 200 252 300 256 380" />
     <path d="M256 168 L206 138" />
     <path d="M256 168 L306 138" />
