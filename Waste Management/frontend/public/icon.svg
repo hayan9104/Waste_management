@@ -1,10 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Safaai Sarathi">
   <rect width="512" height="512" rx="112" fill="#15803d" />
-  <g fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
-    <!-- recycling triad -->
-    <path d="M256 118 L318 224 L256 224 Z" fill="#ffffff" stroke="none" opacity="0.95" />
-    <path d="M180 356 L242 250 L272 302 Z" fill="#ffffff" stroke="none" opacity="0.72" />
-    <path d="M332 356 L270 250 L240 302 Z" fill="#ffffff" stroke="none" opacity="0.72" />
-    <circle cx="256" cy="262" r="150" opacity="0.35" />
+  <!-- Leaf-shaped location pin: the mark reads as both "eco" and "civic report location". -->
+  <path d="M256 76 C178 76 116 138 116 214 C116 322 256 446 256 446 C256 446 396 322 396 214 C396 138 334 76 256 76 Z" fill="#ffffff" />
+  <g stroke="#15803d" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M256 118 C250 200 252 300 256 380" />
+    <path d="M256 168 L206 138" />
+    <path d="M256 168 L306 138" />
+    <path d="M256 232 L196 208" />
+    <path d="M256 232 L316 208" />
+    <path d="M256 296 L214 280" />
+    <path d="M256 296 L298 280" />
   </g>
 </svg>
