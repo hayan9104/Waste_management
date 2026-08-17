@@ -116,8 +116,8 @@ export default function Landing() {
           <div className="px-4 pt-2.5 sm:px-6">
             <div className="mx-auto flex h-16 max-w-5xl items-center justify-between rounded-full bg-surface/95 px-4 shadow-2xl backdrop-blur-xl ring-1 ring-line/60 sm:px-6">
               {/* Left Brand */}
-              <div className="flex items-center gap-2.5 shrink-0">
-                <img src="/icon.svg" alt="" className="h-9 w-9 shrink-0" />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <img src="/icon.svg" alt="" className="h-9 w-9 shrink-0 animate-pulse" />
                 <div className="flex flex-col">
                   <span className="text-fluid-sm font-extrabold tracking-tight text-ink whitespace-nowrap">
                     Safaai <span className="text-brand">Sarathi</span>
@@ -189,18 +189,12 @@ export default function Landing() {
           <div className="w-full border-b border-line/30 bg-surface/90 backdrop-blur-md transition-all duration-300">
             <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-8 xl:px-12">
               {/* Left: Brand Logo & Title at Left Corner */}
-              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                <div className="relative flex items-center justify-center">
-                  <img
-                    src="/icon.svg"
-                    alt=""
-                    className="h-9 w-9 shrink-0 transition-transform duration-300 hover:scale-105"
-                  />
-                  <span className="absolute -bottom-0.5 -right-0.5 flex h-2 w-2 sm:h-2.5 sm:w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-75"></span>
-                    <span className="relative inline-flex h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full bg-brand"></span>
-                  </span>
-                </div>
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                <img
+                  src="/icon.svg"
+                  alt=""
+                  className="h-9 w-9 shrink-0 animate-pulse transition-transform duration-300 hover:scale-105"
+                />
                 <div className="flex flex-col">
                   <span className="text-sm sm:text-fluid-base font-extrabold tracking-tight text-ink whitespace-nowrap leading-none">
                     Safaai <span className="text-brand">Sarathi</span>
