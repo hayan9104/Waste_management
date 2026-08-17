@@ -1,20 +1,20 @@
-import { ConsoleShell } from '../components/shells';
-import { useAdminNav } from '../portals/admin/AdminPortal';
+import { BackLink } from '../components/shells';
 import ModelHealth from '../portals/admin/ModelHealth';
-import { useT } from '../lib/i18n';
 
 /**
- * Standalone page at /ai.health — deliberately not in the admin tab bar
- * (see useAdminNav), only reachable by URL, still gated behind the admin
- * login like every other admin surface.
+ * Standalone page at /ai.health — no console shell, no tab bar, just a way
+ * back to the admin dashboard. Only reachable by URL, still gated behind
+ * the admin login like every other admin surface.
  */
 export default function AiHealth() {
-  const t = useT();
-  const nav = useAdminNav();
-
   return (
-    <ConsoleShell nav={nav} title={t('admin.title')} subtitle={t('admin.subtitle')} accent="orange">
-      <ModelHealth />
-    </ConsoleShell>
+    <div className="min-h-dvh bg-surface">
+      <div className="mx-auto w-full max-w-[1440px] px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 lg:px-8 xl:px-10">
+        <BackLink to="/admin" />
+      </div>
+      <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
+        <ModelHealth />
+      </main>
+    </div>
   );
 }
