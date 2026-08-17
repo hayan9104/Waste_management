@@ -16,6 +16,7 @@ const CitizenPortal = lazy(() => import('./portals/citizen/CitizenPortal'));
 const DriverPortal = lazy(() => import('./portals/driver/DriverPortal'));
 const OfficerPortal = lazy(() => import('./portals/officer/OfficerPortal'));
 const AdminPortal = lazy(() => import('./portals/admin/AdminPortal'));
+const AiHealth = lazy(() => import('./pages/AiHealth'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -204,6 +205,15 @@ export default function App() {
                 element={
                   <AuthProvider portal="admin">
                     <RequireRole role="ADMIN">{suspense(<AdminPortal />)}</RequireRole>
+                  </AuthProvider>
+                }
+              />
+              {/* Moved out of the admin tab bar — reachable only by URL, still admin-gated. */}
+              <Route
+                path="/ai.health"
+                element={
+                  <AuthProvider portal="admin">
+                    <RequireRole role="ADMIN">{suspense(<AiHealth />)}</RequireRole>
                   </AuthProvider>
                 }
               />

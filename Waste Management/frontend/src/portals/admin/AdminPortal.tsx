@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
-import { Activity, BarChart3, FileDown, LayoutDashboard, ScrollText, Truck, Users, MapPinned } from 'lucide-react';
+import { BarChart3, FileDown, LayoutDashboard, ScrollText, Truck, Users, MapPinned } from 'lucide-react';
 import { ConsoleShell, type NavItem } from '../../components/shells';
 import { useT } from '../../lib/i18n';
 import AdminDashboard from './Dashboard';
@@ -8,21 +8,28 @@ import UserManagement from './UserManagement';
 import CityAnalytics from './CityAnalytics';
 import ComplianceExport from './ComplianceExport';
 import AuditLog from './AuditLog';
-import ModelHealth from './ModelHealth';
 import WardSettings from './WardSettings';
 
-export default function AdminPortal() {
+/**
+ * Shared by AdminPortal and the standalone /ai.health page, so both consoles
+ * show the same tab bar minus whichever page isn't in it.
+ */
+export function useAdminNav(): NavItem[] {
   const t = useT();
-  const nav: NavItem[] = [
+  return [
     { to: '/admin', label: t('admin.nav.dashboard'), icon: LayoutDashboard, end: true },
     { to: '/admin/fleet', label: t('admin.nav.fleet'), icon: Truck },
     { to: '/admin/users', label: t('admin.nav.users'), icon: Users },
     { to: '/admin/analytics', label: t('admin.nav.analytics'), icon: BarChart3 },
     { to: '/admin/compliance', label: t('admin.nav.compliance'), icon: FileDown },
     { to: '/admin/audit', label: t('admin.nav.audit'), icon: ScrollText },
-    { to: '/admin/model', label: t('admin.nav.model'), icon: Activity },
     { to: '/admin/wards', label: t('admin.nav.wards'), icon: MapPinned },
   ];
+}
+
+export default function AdminPortal() {
+  const t = useT();
+  const nav = useAdminNav();
 
   return (
     <ConsoleShell
@@ -38,7 +45,6 @@ export default function AdminPortal() {
         <Route path="analytics" element={<CityAnalytics />} />
         <Route path="compliance" element={<ComplianceExport />} />
         <Route path="audit" element={<AuditLog />} />
-        <Route path="model" element={<ModelHealth />} />
         <Route path="wards" element={<WardSettings />} />
       </Routes>
     </ConsoleShell>
