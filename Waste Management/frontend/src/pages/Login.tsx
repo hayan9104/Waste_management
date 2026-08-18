@@ -39,13 +39,13 @@ const PORTAL_ORDER: Portal[] = ['citizen', 'driver', 'officer', 'admin'];
 function PortalTabs({ portal, stretch = false, className = '' }: { portal: Portal; stretch?: boolean; className?: string }) {
   const t = useT();
   return (
-    <div className={`flex items-center gap-1 rounded-full border border-line bg-elevated/80 p-1 backdrop-blur ${className}`}>
+    <div className={`flex items-center gap-1.5 rounded-full border border-line bg-elevated/80 p-1.5 backdrop-blur ${className}`}>
       {PORTAL_ORDER.map((p) => (
         <Link
           key={p}
           to={PORTAL_LOGIN_ROUTE[p]}
           aria-current={p === portal ? 'page' : undefined}
-          className={`rounded-full px-3 py-1.5 text-fluid-xs font-semibold whitespace-nowrap transition ${stretch ? 'flex-1 text-center' : ''} ${
+          className={`rounded-full px-5 py-2 text-fluid-sm font-semibold whitespace-nowrap transition ${stretch ? 'flex-1 text-center' : ''} ${
             p === portal ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
           }`}
         >
