@@ -5,7 +5,7 @@ import { Truck, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card, EmptyState, ErrorState, Loading } from '../../components/ui';
 import { BackLink } from '../../components/shells';
-import { BaseMap, TruckMarker, PinMarker, FitBounds, RouteLine } from '../../components/map/Map';
+import { BaseMap, TruckMarker, PinMarker, FitBounds, RouteLine, CITY_CENTER } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { formatDistance } from '../../lib/format';
 
@@ -64,9 +64,17 @@ export default function TrackTruck() {
   const distance = live && data.target ? haversine(live, data.target) : data.distanceMeters;
   const eta = distance != null ? Math.max(1, Math.round((distance / 1000 / 20) * 60)) : data.etaMinutes;
 
+  const hasTarget = data.target?.latitude != null && data.target?.longitude != null;
+
   const points: Array<[number, number]> = [];
   if (live) points.push([live.latitude, live.longitude]);
-  if (data.target) points.push([data.target.latitude, data.target.longitude]);
+  if (hasTarget) points.push([data.target.latitude, data.target.longitude]);
+
+  const center: [number, number] = live
+    ? [live.latitude, live.longitude]
+    : hasTarget
+      ? [data.target.latitude, data.target.longitude]
+      : CITY_CENTER;
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
@@ -74,11 +82,11 @@ export default function TrackTruck() {
 
       <Card className="overflow-hidden p-0 border-line shadow-md">
         <div className="h-[55dvh] min-h-[320px] w-full relative">
-          <BaseMap center={live ? [live.latitude, live.longitude] : [data.target.latitude, data.target.longitude]} zoom={16}>
+          <BaseMap center={center} zoom={16}>
             <FitBounds points={points} />
-            
+
             {/* Live Navigation Polyline from Truck to Citizen's Destination */}
-            {live && data.target && (
+            {live && hasTarget && (
               <RouteLine
                 polyline={[
                   [live.longitude, live.latitude],
@@ -90,7 +98,7 @@ export default function TrackTruck() {
             )}
 
             {/* Destination Target Pin with pulsating radar */}
-            {data.target && (
+            {hasTarget && (
               <PinMarker latitude={data.target.latitude} longitude={data.target.longitude} label="Your Pickup Destination" tone="danger" />
             )}
 

@@ -294,6 +294,61 @@ router.get(
   })
 );
 
+/**
+ * Live-tracking payload for TrackTruck.tsx: whether a vehicle is actually
+ * dispatched and pingable, its last known position to seed the map before
+ * the socket's first live update arrives, and the socket room to join.
+ */
+router.get(
+  '/complaints/:id/track',
+  asyncHandler(async (req, res) => {
+    const complaint = await prisma.complaint.findUnique({
+      where: { id: req.params.id },
+      select: {
+        citizenId: true,
+        latitude: true,
+        longitude: true,
+        assignedVehicleId: true,
+        assignedVehicle: {
+          select: { id: true, registrationNumber: true, lastLat: true, lastLng: true, lastHeading: true },
+        },
+      },
+    });
+    if (!complaint) throw new HttpError(404, 'Complaint not found');
+    if (complaint.citizenId !== req.user.id) {
+      throw new HttpError(403, 'You do not own this complaint');
+    }
+
+    const vehicle = complaint.assignedVehicle;
+    if (!vehicle) {
+      return res.json({ tracking: false, reason: 'No vehicle has been dispatched to this report yet.' });
+    }
+    if (vehicle.lastLat == null || vehicle.lastLng == null) {
+      return res.json({ tracking: false, reason: 'The assigned vehicle has not reported a GPS position yet.' });
+    }
+
+    const metres = distanceMeters(
+      { latitude: complaint.latitude, longitude: complaint.longitude },
+      { latitude: vehicle.lastLat, longitude: vehicle.lastLng }
+    );
+
+    res.json({
+      tracking: true,
+      room: `truck:${vehicle.id}`,
+      target: { latitude: complaint.latitude, longitude: complaint.longitude },
+      vehicle: {
+        id: vehicle.id,
+        registrationNumber: vehicle.registrationNumber,
+        latitude: vehicle.lastLat,
+        longitude: vehicle.lastLng,
+        heading: vehicle.lastHeading,
+      },
+      distanceMeters: Math.round(metres),
+      etaMinutes: Math.max(1, Math.round((metres / 1000 / 20) * 60)),
+    });
+  })
+);
+
 /** Wallet ledger: point transactions + current balance. */
 router.get(
   '/credits',
