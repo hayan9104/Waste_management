@@ -1,0 +1,20 @@
+{
+  "params": {
+    "confidence_threshold": 0.55,
+    "intent_labels": [
+      "waste_sorting_help",
+      "rewards_inquiry",
+      "emergency_assistance",
+      "pickup_schedule_inquiry",
+      "general_faq"
+    ],
+    "supported_languages": ["en", "hi", "gu"],
+    "num_training_phrases": 78
+  },
+  "model_type": "Classical AI (Multilingual Semantic Intent Extraction)",
+  "calibrated_on": "2026-08-17",
+  "data_source": "multilingual_civic_intent_dataset_en_hi_gu",
+  "version": "2.0.0",
+  "wired_in": false,
+  "note": "Extracted from safaai_sahayak_nlp.checkpoint.pt (metadata only). The companion safaai_sahayak_nlp.pt holds a real 5-intent x 384-dim multilingual embedding matrix for semantic intent matching, but using it correctly requires embedding the live user message into the same 384-dim space at request time, which needs a sentence-embedding model this Node-only service does not run. The chatbot answers via Groq LLM (or a deterministic keyword fallback) instead — both real, neither using this embedding matrix yet."
+}

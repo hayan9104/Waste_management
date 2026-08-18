@@ -1,0 +1,23 @@
+{
+  "params": {
+    "poisson_lambda_inflow": 4.18,
+    "markov_transition_matrix": [
+      [0.72, 0.24, 0.04, 0],
+      [0.12, 0.64, 0.2, 0.04],
+      [0, 0.16, 0.62, 0.22],
+      [0, 0.05, 0.25, 0.7]
+    ],
+    "markov_states": ["optimal", "filling", "near_full", "overflow"],
+    "threshold_optimal": 0.4,
+    "threshold_filling": 0.75,
+    "threshold_near_full": 0.95,
+    "monte_carlo_default_runs": 2500
+  },
+  "model_type": "Classical AI (Stochastic Simulation - Poisson-Markov Monte Carlo)",
+  "calibrated_on": "2026-08-17",
+  "data_source": "municipal_weighbridge_daily_tonnage_manifests",
+  "version": "2.0.0",
+  "convergence_validated": true,
+  "wired_in": true,
+  "note": "Drives POST /api/officer/simulate: a real Monte Carlo simulation walks markov_transition_matrix day-by-day per run (starting from the ward's live fill-state estimate) and counts the share of runs reaching near_full/overflow within the requested delay window, replacing the previous fixed-formula estimate."
+}

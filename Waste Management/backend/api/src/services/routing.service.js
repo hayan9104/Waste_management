@@ -1,6 +1,7 @@
 import axios from 'axios';
 import env from '../config/env.js';
 import { roadKm, distanceKm } from '../lib/geo.js';
+import { CALIBRATION } from '../config/calibration/index.js';
 
 /**
  * Route optimisation (plan §7 — "a solver, not a learned model").
@@ -15,8 +16,9 @@ import { roadKm, distanceKm } from '../lib/geo.js';
  */
 
 const DEFAULTS = {
-  speedKmph: 20,
-  serviceMin: 6,
+  // Fleet-telemetry-calibrated (see config/calibration/tsp.json), not hand-guessed.
+  speedKmph: CALIBRATION.tsp.params.avg_truck_speed_kmh,
+  serviceMin: CALIBRATION.tsp.params.stop_service_time_mins,
   startTime: '07:00',
   kmPerLitre: 5.5,
   fuelCostPerLitre: 96,
