@@ -132,7 +132,7 @@ export default function Landing() {
               <nav className="hidden xl:flex items-center gap-1 rounded-full bg-surface/80 px-2 py-1 ring-1 ring-line/50 backdrop-blur-md shadow-sm">
                 <a
                   href="#how"
-                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
+                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-sm font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-brand text-xs">
                     <Zap className="h-3 w-3" />
@@ -142,7 +142,7 @@ export default function Landing() {
                 <span className="h-3.5 w-px bg-line/60" />
                 <a
                   href="#why"
-                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
+                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-sm font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-brand text-xs">
                     <Sparkles className="h-3 w-3" />
@@ -152,7 +152,7 @@ export default function Landing() {
                 <span className="h-3.5 w-px bg-line/60" />
                 <a
                   href="#faq"
-                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
+                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-sm font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-brand text-xs">
                     <HelpCircle className="h-3 w-3" />
@@ -160,15 +160,15 @@ export default function Landing() {
                   <span>{t('landing.nav.faq')}</span>
                 </a>
                 <span className="h-3.5 w-px bg-line/60" />
-                <a
-                  href="#staff"
-                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
+                <Link
+                  to="/driver/login"
+                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-sm font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-brand text-xs">
                     <Building2 className="h-3 w-3" />
                   </span>
                   <span>{t('landing.nav.staff')}</span>
-                </a>
+                </Link>
               </nav>
 
               {/* Right: Actions */}
@@ -177,7 +177,7 @@ export default function Landing() {
                 <ThemeToggle />
                 <Link
                   to="/login"
-                  className="flex min-h-touch items-center rounded-xl border border-brand/30 px-3.5 sm:px-5 text-xs sm:text-fluid-sm font-semibold text-brand whitespace-nowrap transition hover:bg-brand/10"
+                  className="btn-primary whitespace-nowrap px-3.5 sm:px-5"
                 >
                   {t('common.signIn')}
                 </Link>
@@ -209,7 +209,7 @@ export default function Landing() {
               <nav className="hidden xl:flex items-center gap-1 rounded-full bg-surface/80 px-2 py-1 ring-1 ring-line/50 backdrop-blur-md shadow-sm">
                 <a
                   href="#how"
-                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
+                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-sm font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-brand text-xs">
                     <Zap className="h-3 w-3" />
@@ -219,7 +219,7 @@ export default function Landing() {
                 <span className="h-3.5 w-px bg-line/60" />
                 <a
                   href="#why"
-                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
+                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-sm font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-brand text-xs">
                     <Sparkles className="h-3 w-3" />
@@ -229,7 +229,7 @@ export default function Landing() {
                 <span className="h-3.5 w-px bg-line/60" />
                 <a
                   href="#faq"
-                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
+                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-sm font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-brand text-xs">
                     <HelpCircle className="h-3 w-3" />
@@ -237,15 +237,15 @@ export default function Landing() {
                   <span>{t('landing.nav.faq')}</span>
                 </a>
                 <span className="h-3.5 w-px bg-line/60" />
-                <a
-                  href="#staff"
-                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
+                <Link
+                  to="/driver/login"
+                  className="flex items-center gap-2 rounded-full px-3 py-1 text-fluid-sm font-medium leading-tight text-muted transition-all duration-200 hover:bg-brand/10 hover:text-brand"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-brand text-xs">
                     <Building2 className="h-3 w-3" />
                   </span>
                   <span>{t('landing.nav.staff')}</span>
-                </a>
+                </Link>
               </nav>
 
               {/* Right: Actions at Right Corner */}
@@ -254,7 +254,7 @@ export default function Landing() {
                 <ThemeToggle />
                 <Link
                   to="/login"
-                  className="flex min-h-touch items-center rounded-xl border border-brand/30 px-3.5 sm:px-5 text-xs sm:text-fluid-sm font-semibold text-brand whitespace-nowrap transition hover:bg-brand/10"
+                  className="btn-primary whitespace-nowrap px-3.5 sm:px-5"
                 >
                   {t('common.signIn')}
                 </Link>
@@ -312,13 +312,13 @@ export default function Landing() {
                   <ArrowRight className="h-4 w-4" />
                 </Link>
 
-                <a
-                  href="#staff"
+                <Link
+                  to="/driver/login"
                   className="inline-flex items-center gap-2 rounded-2xl border border-line bg-elevated/80 px-6 py-3 text-fluid-sm font-semibold text-ink backdrop-blur shadow-xs hover:bg-sunken transition"
                 >
                   <Building2 className="h-4 w-4 text-muted" />
                   <span>{t('landing.hero.staffCta') || "I'm municipal staff"}</span>
-                </a>
+                </Link>
               </div>
 
               {/* Live Database Stat Metrics */}
@@ -557,39 +557,6 @@ export default function Landing() {
         <Reveal>
           <FaqAccordion />
         </Reveal>
-      </section>
-
-      {/* ---- Staff entry points ---- */}
-      <section id="staff" className="border-t border-line bg-elevated px-4 py-12 sm:py-16">
-        <div className="mx-auto max-w-6xl">
-          <Reveal className="mx-auto max-w-2xl text-center">
-            <h2 className="text-fluid-2xl font-bold tracking-tight text-ink">{t('landing.portals.title')}</h2>
-            <p className="mt-2 text-fluid-sm text-muted">
-              {t('landing.portals.body')}
-            </p>
-          </Reveal>
-
-          <div className="mt-10 grid gap-4 sm:grid-cols-3">
-            {[
-              { to: '/driver/login', title: t('landing.portal.driver'), body: t('landing.portal.driverBody'), icon: Truck },
-              { to: '/officer/login', title: t('landing.portal.officer'), body: t('landing.portal.officerBody'), icon: MapPinned },
-              { to: '/admin/login', title: t('landing.portal.admin'), body: t('landing.portal.adminBody'), icon: ShieldCheck },
-            ].map((portal, i) => (
-              <Reveal key={portal.to} delayMs={i * 90} as="div">
-                <Link to={portal.to} className="card group block p-5 border border-line bg-surface transition hover:shadow-md hover:border-brand/30">
-                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand/10 text-brand">
-                    <portal.icon className="h-5 w-5" />
-                  </span>
-                  <h3 className="mt-4 flex items-center gap-1.5 text-fluid-lg font-bold text-ink">
-                    {portal.title}
-                    <ArrowRight className="h-4 w-4 text-muted transition group-hover:translate-x-1 group-hover:text-brand" />
-                  </h3>
-                  <p className="mt-1.5 text-fluid-sm text-muted leading-relaxed">{portal.body}</p>
-                </Link>
-              </Reveal>
-            ))}
-          </div>
-        </div>
       </section>
 
       {/* Deep-green footer with Indian Government official styling */}
