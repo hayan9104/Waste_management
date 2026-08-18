@@ -12,6 +12,15 @@ import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Marker, Popup
 const TILE_URL = import.meta.env.VITE_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
+// Esri World Imagery — free aerial/satellite tiles, no API key or billing,
+// same "no per-request cost" constraint the street tiles were chosen for.
+const SATELLITE_TILE_URL =
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const SATELLITE_ATTRIBUTION = 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics';
+// Esri ships street/place labels as a separate transparent overlay tile set.
+const SATELLITE_LABELS_URL =
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+
 export const GANDHINAGAR: [number, number] = [23.2156, 72.6369];
 
 export function BaseMap({
@@ -20,12 +29,15 @@ export function BaseMap({
   children,
   className = 'h-full w-full',
   scrollWheelZoom = true,
+  satellite = false,
 }: {
   center?: [number, number];
   zoom?: number;
   children?: ReactNode;
   className?: string;
   scrollWheelZoom?: boolean;
+  /** Aerial imagery with place labels instead of the default street map. */
+  satellite?: boolean;
 }) {
   return (
     <MapContainer
@@ -36,7 +48,14 @@ export function BaseMap({
       zoomControl={false}
       preferCanvas
     >
-      <TileLayer url={TILE_URL} attribution={ATTRIBUTION} maxZoom={19} />
+      {satellite ? (
+        <>
+          <TileLayer url={SATELLITE_TILE_URL} attribution={SATELLITE_ATTRIBUTION} maxZoom={19} />
+          <TileLayer url={SATELLITE_LABELS_URL} maxZoom={19} />
+        </>
+      ) : (
+        <TileLayer url={TILE_URL} attribution={ATTRIBUTION} maxZoom={19} />
+      )}
       {children}
     </MapContainer>
   );
@@ -58,6 +77,7 @@ export function TruckMarker({
   active = true,
   onClick,
   children,
+  variant = 'default',
 }: {
   latitude: number;
   longitude: number;
@@ -66,32 +86,51 @@ export function TruckMarker({
   active?: boolean;
   onClick?: () => void;
   children?: ReactNode;
+  /** 'tracker' = larger glowing badge for a single vehicle being actively followed (Swiggy/Zomato style). */
+  variant?: 'default' | 'tracker';
 }) {
   const markerRef = useRef<L.Marker>(null);
   const animation = useRef<number>();
   const current = useRef<[number, number]>([latitude, longitude]);
 
-  const icon = useMemo(
-    () =>
-      L.divIcon({
+  const icon = useMemo(() => {
+    if (variant === 'tracker') {
+      return L.divIcon({
         className: 'truck-marker',
-        iconSize: [38, 38],
-        iconAnchor: [19, 19],
+        iconSize: [52, 52],
+        iconAnchor: [26, 26],
         html: `
-          <div class="relative grid h-[38px] w-[38px] place-items-center">
-            ${active ? '<span class="absolute inset-0 rounded-full bg-emerald-500/30 animate-pulse-ring"></span>' : ''}
-            <span class="truck-marker__body grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-emerald-600 shadow-lg"
-                  style="transform: rotate(${heading}deg)">
-              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="white" stroke-width="2.1"
+          <div class="relative grid h-[52px] w-[52px] place-items-center">
+            <span class="absolute inset-0 rounded-full bg-amber-500/35 animate-pulse-ring"></span>
+            <span class="grid h-11 w-11 place-items-center rounded-full border-[3px] border-white bg-amber-500 shadow-xl"
+                  style="transform: rotate(${heading}deg); box-shadow: 0 4px 14px rgba(217,119,6,0.55)">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2.4"
                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3 L12 17" />
                 <path d="M7 8 L12 3 L17 8" />
               </svg>
             </span>
           </div>`,
-      }),
-    [heading, active]
-  );
+      });
+    }
+    return L.divIcon({
+      className: 'truck-marker',
+      iconSize: [38, 38],
+      iconAnchor: [19, 19],
+      html: `
+        <div class="relative grid h-[38px] w-[38px] place-items-center">
+          ${active ? '<span class="absolute inset-0 rounded-full bg-emerald-500/30 animate-pulse-ring"></span>' : ''}
+          <span class="truck-marker__body grid h-8 w-8 place-items-center rounded-full border-2 border-white bg-emerald-600 shadow-lg"
+                style="transform: rotate(${heading}deg)">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="white" stroke-width="2.1"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3 L12 17" />
+              <path d="M7 8 L12 3 L17 8" />
+            </svg>
+          </span>
+        </div>`,
+    });
+  }, [heading, active, variant]);
 
   // Glide to each new fix instead of teleporting.
   useEffect(() => {
@@ -271,6 +310,48 @@ export function PinMarker({ latitude, longitude, tone = 'brand', label }: { lati
                </svg>`,
       }),
     [tone]
+  );
+
+  return (
+    <Marker position={[latitude, longitude]} icon={icon}>
+      {label && <Popup>{label}</Popup>}
+    </Marker>
+  );
+}
+
+/**
+ * A single stop on a route, colour-coded by where it sits in the sequence —
+ * green once completed, red for the very next stop, grey while queued.
+ * Numbered so the visit order is still readable at a glance.
+ */
+export function StopDot({
+  latitude,
+  longitude,
+  seq,
+  status,
+  label,
+}: {
+  latitude: number;
+  longitude: number;
+  seq: number | string;
+  status: 'done' | 'next' | 'queued';
+  label?: ReactNode;
+}) {
+  const color = status === 'done' ? '#16a34a' : status === 'next' ? '#dc2626' : '#9ca3af';
+  const icon = useMemo(
+    () =>
+      L.divIcon({
+        className: '',
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+        html: `
+          <div class="relative grid h-[26px] w-[26px] place-items-center">
+            ${status === 'next' ? `<span class="absolute inset-0 rounded-full animate-pulse-ring" style="background:${color}55"></span>` : ''}
+            <span class="relative grid h-[22px] w-[22px] place-items-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow-md"
+                  style="background:${color}">${seq}</span>
+          </div>`,
+      }),
+    [color, seq, status]
   );
 
   return (

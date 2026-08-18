@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, Truck, Wifi, WifiOff, Wrench, MapPin, Filter, Route as RouteIcon, X } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
-import { BaseMap, TruckMarker, PinMarker, FitBounds, RouteLine, Polyline } from '../../components/map/Map';
+import { BaseMap, TruckMarker, StopDot, FitBounds, RouteLine, Polyline } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { timeAgo, CATEGORY_LABELS } from '../../lib/format';
 
@@ -147,7 +147,7 @@ export default function MasterFleet() {
         </div>
 
         <div className="h-[44dvh] min-h-[320px] w-full xl:h-[420px]">
-          <BaseMap center={[23.2156, 72.6369]} zoom={12}>
+          <BaseMap center={[23.2156, 72.6369]} zoom={12} satellite>
             {mapPoints.length > 0 && <FitBounds points={mapPoints} />}
 
             {/* The selected vehicle's actual planned route, drawn on the road. */}
@@ -162,15 +162,25 @@ export default function MasterFleet() {
                 pathOptions={{ color: '#2563eb', weight: 3, opacity: 0.7, dashArray: '2 8' }}
               />
             )}
-            {route.data?.stops?.map((s: any) => (
-              <PinMarker
-                key={s.seq}
-                latitude={s.latitude}
-                longitude={s.longitude}
-                tone={s.status === 'DONE' ? 'brand' : s.isEmergency ? 'danger' : 'brand'}
-                label={`${s.seq}. ${s.address} — ${s.status === 'DONE' ? 'Completed' : 'Pending'}`}
-              />
-            ))}
+            {/* Every stop, colour-coded by progress: green = done, red = next up, grey = queued. */}
+            {(() => {
+              let nextMarked = false;
+              return route.data?.stops?.map((s: any) => {
+                const isDone = s.status === 'DONE';
+                const status: 'done' | 'next' | 'queued' = isDone ? 'done' : nextMarked ? 'queued' : 'next';
+                if (!isDone) nextMarked = true;
+                return (
+                  <StopDot
+                    key={s.seq}
+                    latitude={s.latitude}
+                    longitude={s.longitude}
+                    seq={s.seq}
+                    status={status}
+                    label={`${s.seq}. ${s.address} — ${isDone ? 'Completed' : status === 'next' ? 'Next stop' : 'Queued'}`}
+                  />
+                );
+              });
+            })()}
 
             {vehicles
               .filter((v: any) => v.latitude != null)
@@ -181,6 +191,7 @@ export default function MasterFleet() {
                   longitude={v.longitude}
                   heading={v.heading ?? 0}
                   active={v.status === 'ON_ROUTE'}
+                  variant={v.id === selectedVehicleId ? 'tracker' : 'default'}
                   onClick={() => setSelectedVehicleId(v.id)}
                 >
                   <div className="space-y-0.5">
@@ -224,6 +235,15 @@ export default function MasterFleet() {
               <span className="flex items-center gap-1.5 text-muted">
                 <span className="h-0.5 w-5 rounded bg-[#2563eb]" style={{ backgroundImage: 'repeating-linear-gradient(90deg,#2563eb 0 4px,transparent 4px 8px)' }} /> Actual path driven today
                 {route.data.trailDistanceKm != null && ` (${route.data.trailDistanceKm} km)`}
+              </span>
+              <span className="flex items-center gap-1.5 text-muted">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#16a34a]" /> Completed
+              </span>
+              <span className="flex items-center gap-1.5 text-muted">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#dc2626]" /> Next stop
+              </span>
+              <span className="flex items-center gap-1.5 text-muted">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#9ca3af]" /> Queued
               </span>
             </div>
           )}
