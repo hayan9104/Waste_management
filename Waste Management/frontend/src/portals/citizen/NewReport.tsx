@@ -589,10 +589,12 @@ export default function NewReport() {
               </div>
 
               <div className="h-[360px] w-full overflow-hidden rounded-2xl border border-line">
-                <BaseMap center={position ?? { lat: 23.0225, lng: 72.5714 }} zoom={16} minHeight="360px">
+                <BaseMap center={position ? [position.lat, position.lng] : [23.0225, 72.5714]} zoom={16}>
                   <LocationPicker
-                    position={position}
-                    onChange={(next) => {
+                    latitude={(position ?? { lat: 23.0225, lng: 72.5714 }).lat}
+                    longitude={(position ?? { lat: 23.0225, lng: 72.5714 }).lng}
+                    onChange={(lat, lng) => {
+                      const next = { lat, lng };
                       setPosition(next);
                       void checkForDuplicates(next);
                     }}
