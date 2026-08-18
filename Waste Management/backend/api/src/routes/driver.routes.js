@@ -558,8 +558,7 @@ router.post(
     let completionPhotoUrl = null;
     const file = fileFromRequest(req, 'photo');
     if (file) {
-      const persisted = await persist(file, 'proofs');
-      completionPhotoUrl = persisted.url;
+      completionPhotoUrl = await persist(file.buffer, file.mimetype, 'proofs');
     }
 
     const updated = await prisma.scheduledPickupRequest.update({

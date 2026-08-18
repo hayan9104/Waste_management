@@ -119,8 +119,7 @@ router.post(
     const file = fileFromRequest(req);
     let photoUrl = req.body?.photoUrl;
     if (file) {
-      const persisted = await persist(file, 'complaints');
-      photoUrl = persisted.url;
+      photoUrl = await persist(file.buffer, file.mimetype, 'complaints');
     }
     if (!photoUrl) {
       throw new HttpError(400, 'A photo is required to file a report');
@@ -163,8 +162,7 @@ router.post(
     const file = fileFromRequest(req);
     let photoUrl = req.body?.photoUrl;
     if (file) {
-      const persisted = await persist(file, 'emergencies');
-      photoUrl = persisted.url;
+      photoUrl = await persist(file.buffer, file.mimetype, 'emergencies');
     }
 
     const body = z
