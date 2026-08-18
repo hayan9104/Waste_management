@@ -204,11 +204,13 @@ export function ConsoleShell({
             </Link>
           </div>
 
-          {/* Desktop Interactive Spotlight Navigation Bar — scrolls horizontally
-              rather than squeezing the logo or account controls when a portal
-              (like the officer console) has too many items to fit. */}
-          <div className="no-scrollbar hidden min-w-0 flex-1 items-center justify-start overflow-x-auto xl:flex">
-            <SpotlightNav items={nav} accent={accent} className="shrink-0" />
+          {/* Desktop Interactive Spotlight Navigation Bar — `compact` drops labels
+              to icon+tooltip below the 2xl breakpoint so all 6-8 console tabs
+              (officer/admin) fit without squeezing the logo/account controls or
+              needing a scroll on a typical laptop window; overflow-x-auto stays
+              on as a silent fallback for genuinely narrow windows. */}
+          <div className="no-scrollbar hidden min-w-0 flex-1 items-center justify-center overflow-x-auto xl:flex">
+            <SpotlightNav items={nav} accent={accent} compact className="shrink-0" />
           </div>
 
           {/* Right Header Actions */}
