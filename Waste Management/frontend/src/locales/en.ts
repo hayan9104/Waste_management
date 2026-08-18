@@ -428,6 +428,9 @@ export const en: Record<string, string> = {
     "Call the helpline and describe the issue in Gujarati or Hindi. Speech recognition files it for you — built for people who don't use apps.",
   'citizen.profile.saved': 'Preferences saved',
   'citizen.profile.saveFailed': 'Could not save',
+  'citizen.profile.nameLabel': 'Your name',
+  'citizen.profile.namePlaceholder': 'Full name',
+  'citizen.profile.saveName': 'Save name',
 
   // ---- driver ----
   'driver.nav.route': 'Route',

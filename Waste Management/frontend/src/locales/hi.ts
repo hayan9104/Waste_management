@@ -419,6 +419,9 @@ export const hi: Record<string, string> = {
     'हेल्पलाइन पर कॉल करके गुजराती या हिंदी में समस्या बताइए। वाणी पहचान आपके लिए शिकायत दर्ज कर देती है — उन लोगों के लिए जो ऐप नहीं चलाते।',
   'citizen.profile.saved': 'सेटिंग्स सहेजी गईं',
   'citizen.profile.saveFailed': 'सहेजा नहीं जा सका',
+  'citizen.profile.nameLabel': 'आपका नाम',
+  'citizen.profile.namePlaceholder': 'पूरा नाम',
+  'citizen.profile.saveName': 'नाम सहेजें',
 
   // ---- driver ----
   'driver.nav.route': 'मार्ग',

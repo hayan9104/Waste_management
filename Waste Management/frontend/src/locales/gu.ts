@@ -418,6 +418,9 @@ export const gu: Record<string, string> = {
     'હેલ્પલાઇન પર કૉલ કરીને ગુજરાતી કે હિન્દીમાં સમસ્યા જણાવો. વાણી ઓળખ તમારા વતી ફરિયાદ નોંધે છે — જે લોકો ઍપ વાપરતા નથી તેમના માટે.',
   'citizen.profile.saved': 'સેટિંગ્સ સાચવાઈ',
   'citizen.profile.saveFailed': 'સાચવી શકાયું નહીં',
+  'citizen.profile.nameLabel': 'તમારું નામ',
+  'citizen.profile.namePlaceholder': 'પૂરું નામ',
+  'citizen.profile.saveName': 'નામ સાચવો',
 
   // ---- driver ----
   'driver.nav.route': 'રૂટ',
