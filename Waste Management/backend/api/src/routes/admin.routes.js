@@ -579,6 +579,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const days = Number(req.query.days) || 14;
     const [health, ai] = await Promise.all([analytics.modelHealth(days), aiHealth()]);
+    const models = await analytics.perModelHealth(days, !!ai.reachable);
 
     // Check low-confidence proportion flagged/rejected by officers
     const [totalPredictions, rejectedPredictions] = await Promise.all([
@@ -604,6 +605,7 @@ router.get(
       rejectedPredictions,
       falsePositiveRate,
       service: ai,
+      models,
     });
   })
 );
