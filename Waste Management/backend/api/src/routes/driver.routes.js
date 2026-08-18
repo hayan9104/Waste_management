@@ -179,10 +179,6 @@ router.post(
       resolutionPhotoUrl = await persist(file.buffer, file.mimetype, 'resolution');
     }
 
-    if (!resolutionPhotoUrl) {
-      throw new HttpError(400, 'A clean-up proof photo is strictly required to mark this task complete');
-    }
-
     const note = req.body?.note?.slice(0, 500) || 'Waste collected and area cleared by driver';
 
     const payload = await transition({
