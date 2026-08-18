@@ -122,16 +122,20 @@ export const hi: Record<string, string> = {
   'landing.why.4.title': 'सिर्फ़ दर्ज नहीं, सत्यापित',
   'landing.why.4.body':
     'हर समाधान के साथ फ़ोटो प्रमाण और अपरिवर्तनीय ऑडिट प्रविष्टि होती है। कुछ भी सिर्फ़ भरोसे पर बंद नहीं होता।',
-  'landing.channels.title': 'ऐप नहीं है? फिर भी काम चलेगा।',
-  'landing.channels.body':
-    'शिकायत करना स्मार्टफ़ोन या अंग्रेज़ी पर निर्भर नहीं होना चाहिए। दो माध्यमों को इनमें से कुछ नहीं चाहिए।',
-  'landing.channels.whatsapp': 'व्हाट्सऐप बॉट',
-  'landing.channels.whatsappBody': 'नगरपालिका नंबर पर फ़ोटो भेजें, बाकी बॉट संभाल लेगा।',
-  'landing.channels.ivr': 'गुजराती और हिंदी में वॉइस / IVR',
-  'landing.channels.ivrBody': 'कॉल करके समस्या बताइए। वाणी पहचान शिकायत दर्ज कर देती है।',
-  'landing.models.title': 'हर AI घटक मुफ़्त और स्वयं-होस्टेड है',
-  'landing.models.body':
-    'वर्गीकरण, दोहराव पहचान, हॉटस्पॉट पूर्वानुमान और धोखाधड़ी आकलन — सब नगरपालिका के अपने सर्वर पर खुले मॉडल से चलते हैं। प्रति-अनुरोध शुल्क नहीं, इसलिए कोई भी ULB इसे शून्य अतिरिक्त लागत पर अपना सकती है।',
+  'landing.citizenFeatures.title': 'नागरिकों के लिए बनाया गया',
+  'landing.citizenFeatures.body': 'चार सुविधाएं जो शिकायत फ़ॉर्म को एक वास्तविक फ़ीडबैक लूप में बदल देती हैं।',
+  'landing.citizenFeatures.tracking.title': 'लाइव ट्रक ट्रैकिंग',
+  'landing.citizenFeatures.tracking.body':
+    'नागरिक निकटतम कलेक्शन वाहन को ETA सहित मानचित्र पर देखते हैं, ठीक फ़ूड-डिलीवरी ट्रैकर की तरह।',
+  'landing.citizenFeatures.timeline.title': 'शिकायत स्थिति समयरेखा',
+  'landing.citizenFeatures.timeline.body':
+    '"दर्ज → सत्यापित → सौंपी गई → हल" — समय-मुहर सहित, ताकि लोगों को पता रहे कि उनकी शिकायत अनदेखी नहीं हुई।',
+  'landing.citizenFeatures.rewards.title': 'रिवॉर्ड / स्ट्रीक सिस्टम',
+  'landing.citizenFeatures.rewards.body':
+    'ज़िम्मेदारी से (और बिना स्पैम किए) शिकायत करने वाले नागरिकों के लिए अंक या बैज, जो नागरिक सम्मान या छोटे प्रोत्साहनों के लिए भुनाए जा सकते हैं।',
+  'landing.citizenFeatures.chatbot.title': 'सेग्रीगेशन गाइड चैटबॉट',
+  'landing.citizenFeatures.chatbot.body':
+    '"यह किस डिब्बे में जाएगा?" पूछें और उसी YOLOv8 मॉडल से तुरंत गीला/सूखा/ख़तरनाक वर्गीकरण पाएं।',
   'landing.portals.title': 'अलग पोर्टल, अलग लॉगिन',
   'landing.portals.body':
     'हर भूमिका अपनी स्क्रीन पर साइन इन करती है और ऐसा टोकन पाती है जो सिर्फ़ उसी API हिस्से पर चलता है। चालक का सत्र अधिकारी कंसोल तक नहीं पहुँच सकता।',
