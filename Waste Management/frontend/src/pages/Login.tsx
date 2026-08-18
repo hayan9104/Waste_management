@@ -35,6 +35,27 @@ const PORTAL_LOGIN_ROUTE: Record<Portal, string> = {
 };
 const PORTAL_ORDER: Portal[] = ['citizen', 'driver', 'officer', 'admin'];
 
+/** Jumps directly to another role's login screen. Rendered twice below: a header pill (desktop/tablet) and a card row (mobile, where the header has no room for it). */
+function PortalTabs({ portal, stretch = false, className = '' }: { portal: Portal; stretch?: boolean; className?: string }) {
+  const t = useT();
+  return (
+    <div className={`flex items-center gap-1 rounded-full border border-line bg-elevated/80 p-1 backdrop-blur ${className}`}>
+      {PORTAL_ORDER.map((p) => (
+        <Link
+          key={p}
+          to={PORTAL_LOGIN_ROUTE[p]}
+          aria-current={p === portal ? 'page' : undefined}
+          className={`rounded-full px-3 py-1.5 text-fluid-xs font-semibold whitespace-nowrap transition ${stretch ? 'flex-1 text-center' : ''} ${
+            p === portal ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+          }`}
+        >
+          {t(`auth.switchPortal.${p}`)}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 interface DemoAccount {
   name: string;
   email: string;
@@ -187,6 +208,12 @@ export default function Login({ portal }: { portal: Portal }) {
           </span>
         </Link>
 
+        {/* Centered on the header's own width (not just between the side items), so
+            it sits perfectly mid-line with the logo regardless of side content width. */}
+        <div className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 lg:block">
+          <PortalTabs portal={portal} />
+        </div>
+
         <div className="flex items-center gap-2">
           <Link to="/" className="btn-ghost btn-sm bg-elevated/80 backdrop-blur">
             <ArrowLeft className="h-4 w-4" /> {t('common.home')}
@@ -239,23 +266,10 @@ export default function Login({ portal }: { portal: Portal }) {
         */}
         <main className="mx-auto flex max-h-[calc(100dvh-5.5rem)] w-full max-w-md flex-col overflow-y-auto rounded-3xl border border-line/40 bg-elevated/55 p-5 shadow-lift backdrop-blur-2xl sm:p-7">
           <div className="flex w-full flex-col">
-          {/* Portal switcher — jump directly to another role's login without going back to the landing page. */}
-          <div className="mb-3.5">
+          {/* Mobile-only fallback — the header carries this centered on the logo's line at md: and up, but there's no room for it there on a phone. */}
+          <div className="mb-3.5 lg:hidden">
             <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-faint">{t('auth.switchPortal.label')}</p>
-            <div className="flex gap-1 rounded-xl border border-line bg-sunken/60 p-1">
-              {PORTAL_ORDER.map((p) => (
-                <Link
-                  key={p}
-                  to={PORTAL_LOGIN_ROUTE[p]}
-                  aria-current={p === portal ? 'page' : undefined}
-                  className={`flex-1 rounded-lg py-1.5 text-center text-fluid-xs font-semibold transition ${
-                    p === portal ? 'bg-elevated text-ink shadow-xs' : 'text-muted hover:text-ink'
-                  }`}
-                >
-                  {t(`auth.switchPortal.${p}`)}
-                </Link>
-              ))}
-            </div>
+            <PortalTabs portal={portal} stretch className="w-full bg-sunken/60" />
           </div>
 
           <div className="flex items-center gap-3">
