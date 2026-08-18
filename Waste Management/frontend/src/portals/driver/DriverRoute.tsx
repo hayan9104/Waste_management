@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Meter } from '../../components/ui';
-import { BaseMap, TruckMarker, RouteLine, PinMarker, FollowTarget } from '../../components/map/Map';
+import { BaseMap, TruckMarker, RouteLine, StopDot, FollowTarget } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { CATEGORY_LABELS, formatDistance } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -83,7 +83,7 @@ export default function DriverRoute() {
     return [];
   }, [data, assignedStops, live]);
 
-  const nextStop = data?.nextStop || assignedStops.find((s: any) => s.status !== 'RESOLVED');
+  const nextStop = data?.nextStop || assignedStops.find((s: any) => s.status !== 'DONE');
 
   if (isLoading) return <Loading label="Loading route navigation…" />;
   if (error) return <ErrorState message="Could not load your shift" onRetry={() => refetch()} />;
@@ -94,7 +94,7 @@ export default function DriverRoute() {
       ? [polyline[0][0], polyline[0][1]]
       : [23.2156, 72.6369];
 
-  const resolvedCount = assignedStops.filter((s: any) => s.status === 'RESOLVED').length;
+  const resolvedCount = assignedStops.filter((s: any) => s.status === 'DONE').length;
   const totalStops = assignedStops.length;
   const progressPct = totalStops > 0 ? (resolvedCount / totalStops) * 100 : 0;
 
@@ -148,15 +148,24 @@ export default function DriverRoute() {
                 <BaseMap center={centre} zoom={15}>
                   <FollowTarget latitude={live?.latitude} longitude={live?.longitude} enabled={follow} />
                   {polyline.length > 1 && <RouteLine polyline={polyline} progressIndex={progressIndex} />}
-                  {assignedStops.map((stop: any) => (
-                    <PinMarker
-                      key={stop.seq}
-                      latitude={stop.latitude}
-                      longitude={stop.longitude}
-                      tone={stop.isEmergency ? 'danger' : 'brand'}
-                      label={`${stop.seq}. ${stop.label}`}
-                    />
-                  ))}
+                  {(() => {
+                    let nextMarked = false;
+                    return assignedStops.map((stop: any) => {
+                      const isDone = stop.status === 'DONE';
+                      const status: 'done' | 'next' | 'queued' = isDone ? 'done' : nextMarked ? 'queued' : 'next';
+                      if (!isDone) nextMarked = true;
+                      return (
+                        <StopDot
+                          key={stop.seq}
+                          latitude={stop.latitude}
+                          longitude={stop.longitude}
+                          seq={stop.seq}
+                          status={status}
+                          label={`${stop.seq}. ${stop.label}`}
+                        />
+                      );
+                    });
+                  })()}
                   {live && (
                     <TruckMarker latitude={live.latitude} longitude={live.longitude} heading={live.heading ?? 0} />
                   )}
@@ -260,7 +269,7 @@ export default function DriverRoute() {
 
               <div className="divide-y divide-line max-h-[340px] overflow-y-auto">
                 {assignedStops.map((stop: any) => {
-                  const isDone = stop.status === 'RESOLVED';
+                  const isDone = stop.status === 'DONE';
                   const isCurrent = nextStop?.seq === stop.seq;
 
                   return (
