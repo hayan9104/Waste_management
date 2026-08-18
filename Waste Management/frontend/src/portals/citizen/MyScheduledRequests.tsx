@@ -19,7 +19,7 @@ import {
   ChevronRight,
   HelpCircle,
 } from 'lucide-react';
-import { api, errorMessage } from '../../lib/api';
+import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, toast } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 
@@ -237,7 +237,7 @@ export default function MyScheduledRequests() {
                       <CheckCircle2 className="h-4 w-4" /> Waste Cleared & Verified (+25 Green Credits)
                     </span>
                     {item.completionPhotoUrl && (
-                      <a href={item.completionPhotoUrl} target="_blank" rel="noreferrer" className="underline font-bold text-[11px]">
+                      <a href={assetUrl(item.completionPhotoUrl) ?? undefined} target="_blank" rel="noreferrer" className="underline font-bold text-[11px]">
                         View Proof Photo
                       </a>
                     )}
