@@ -284,5 +284,26 @@ export async function roadSnappedPolyline(points) {
   return drivablePolyline(points);
 }
 
+/**
+ * How far the nearest driveable road is from a point, in metres — so a
+ * citizen's pin can be checked against "can a collection vehicle actually
+ * reach this?" before the report is accepted. Returns null (never blocks)
+ * if the free OSRM demo server is unreachable; that is an availability
+ * problem, not evidence the location is unreachable.
+ */
+export async function nearestRoadDistance(latitude, longitude) {
+  try {
+    const { data } = await axios.get(
+      `https://router.project-osrm.org/nearest/v1/driving/${longitude},${latitude}`,
+      { timeout: 5000 }
+    );
+    const metres = data?.waypoints?.[0]?.distance;
+    return typeof metres === 'number' ? metres : null;
+  } catch (err) {
+    console.warn('[routing] nearest-road check unavailable:', err.message);
+    return null;
+  }
+}
+
 export { DEFAULTS, distanceKm };
-export default { optimizeRoute, solveLocal, drivablePolyline, roadSnappedPolyline };
+export default { optimizeRoute, solveLocal, drivablePolyline, roadSnappedPolyline, nearestRoadDistance };

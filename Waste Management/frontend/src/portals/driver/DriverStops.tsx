@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Camera,
@@ -13,6 +13,7 @@ import {
   MapPin,
   FileCheck,
   Truck,
+  CalendarDays,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Modal, toast } from '../../components/ui';
@@ -26,6 +27,9 @@ export default function DriverStops() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'>('ALL');
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [dateFilter, setDateFilter] = useState<string>(todayStr);
+  const [allDates, setAllDates] = useState(false);
   const [resolving, setResolving] = useState<any | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
@@ -56,10 +60,19 @@ export default function DriverStops() {
         return true;
       });
 
+      const base = res1.data?.counts || { total: 0, pending: 0, inProgress: 0, completed: 0 };
+      const counts = {
+        total: base.total + scheduledTasks.length,
+        pending: base.pending + scheduledTasks.filter((s: any) => s.status === 'ASSIGNED').length,
+        inProgress: base.inProgress + scheduledTasks.filter((s: any) => s.status === 'IN_PROGRESS').length,
+        completed: base.completed + scheduledTasks.filter((s: any) => s.status === 'COMPLETED').length,
+      };
+
       return {
         ...res1.data,
         tasks: [...normalTasks, ...filteredScheduled],
         scheduledCount: scheduledTasks.length,
+        counts,
       };
     },
     refetchInterval: 20_000,
@@ -139,11 +152,28 @@ export default function DriverStops() {
     setNote('');
   }
 
+  const allTasks = data?.tasks ?? [];
+
+  const tasks = useMemo(() => {
+    if (allDates) return allTasks;
+    return allTasks.filter((task: any) => {
+      const day = task.isScheduled ? task.scheduledDate : task.createdAt;
+      return day && String(day).slice(0, 10) === dateFilter;
+    });
+  }, [allTasks, allDates, dateFilter]);
+
+  const counts = useMemo(() => {
+    if (allDates) return data?.counts ?? { total: 0, pending: 0, inProgress: 0, completed: 0 };
+    return {
+      total: tasks.length,
+      pending: tasks.filter((t: any) => t.status === 'ASSIGNED').length,
+      inProgress: tasks.filter((t: any) => t.status === 'IN_PROGRESS').length,
+      completed: tasks.filter((t: any) => t.status === 'RESOLVED' || t.status === 'COMPLETED').length,
+    };
+  }, [tasks, allDates, data?.counts]);
+
   if (isLoading) return <Loading label="Loading assigned stops…" />;
   if (error) return <ErrorState message="Could not load your tasks" onRetry={() => refetch()} />;
-
-  const tasks = data?.tasks ?? [];
-  const counts = data?.counts ?? { total: 0, pending: 0, inProgress: 0, completed: 0 };
 
   return (
     <div className="space-y-5">
@@ -156,15 +186,38 @@ export default function DriverStops() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => refetch()}
-          disabled={isFetching}
-          className="btn-ghost btn-sm flex items-center gap-1.5 rounded-xl border border-line bg-elevated shadow-xs"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-brand' : 'text-muted'}`} />
-          <span>Refresh</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-xl border border-line bg-elevated px-2.5 py-1.5 shadow-xs">
+            <CalendarDays className="h-3.5 w-3.5 text-brand" />
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => {
+                setDateFilter(e.target.value);
+                setAllDates(false);
+              }}
+              className="bg-transparent text-fluid-xs font-semibold text-ink outline-none"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setAllDates((v) => !v)}
+            className={`btn-sm rounded-xl border px-3 text-fluid-xs font-semibold transition ${
+              allDates ? 'border-brand bg-brand text-brand-ink' : 'border-line bg-elevated text-muted hover:bg-sunken'
+            }`}
+          >
+            All Dates
+          </button>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="btn-ghost btn-sm flex items-center gap-1.5 rounded-xl border border-line bg-elevated shadow-xs"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-brand' : 'text-muted'}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Responsive Layout Grid */}
