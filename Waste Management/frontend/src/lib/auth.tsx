@@ -22,6 +22,7 @@ export interface SessionUser {
   language?: string;
   greenCredits?: number;
   avatarColor?: string;
+  avatarUrl?: string | null;
   twoFactorEnabled?: boolean;
 }
 

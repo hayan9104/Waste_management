@@ -15,7 +15,7 @@ import {
   Truck,
   CalendarDays,
 } from 'lucide-react';
-import { api, errorMessage } from '../../lib/api';
+import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Modal, toast } from '../../components/ui';
 import { STATUS_TONE, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -312,13 +312,13 @@ export default function DriverStops() {
                       {/* Photo Thumbnail if available */}
                       {task.photoUrl && (
                         <a
-                          href={task.photoUrl}
+                          href={assetUrl(task.photoUrl) ?? undefined}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="shrink-0 overflow-hidden rounded-xl border border-line"
                         >
                           <img
-                            src={task.photoUrl}
+                            src={assetUrl(task.photoUrl)}
                             alt="Waste photo"
                             className="h-20 w-20 sm:h-24 sm:w-24 object-cover transition hover:scale-105"
                           />

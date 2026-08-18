@@ -132,4 +132,8 @@ export function errorMessage(err: unknown, fallback = 'Something went wrong'): s
 /** Public endpoints need no portal token. */
 export const publicApi = axios.create({ baseURL: `${BASE}/api/public`, timeout: 120_000 });
 
-export const assetUrl = (path?: string | null) => (path ? `${BASE}${path}` : null);
+/** Storage-driver URLs are already absolute (Supabase); local-storage URLs are API-relative (`/uploads/...`) and need the API origin prefixed, or they resolve against whatever origin is rendering them (broken cross-origin on Vercel + Render). */
+export const assetUrl = (path?: string | null): string | undefined => {
+  if (!path) return undefined;
+  return /^https?:\/\//i.test(path) ? path : `${BASE}${path}`;
+};

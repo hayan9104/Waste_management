@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Check, ChevronLeft, ChevronRight, Eye, Search, Truck, X } from 'lucide-react';
-import { api, errorMessage } from '../../lib/api';
+import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, SEVERITY_TONE, timeAgo, formatDuration } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -295,7 +295,7 @@ export default function ComplaintQueue() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               {detail.data.photoUrl && (
-                <img src={detail.data.photoUrl} alt="" className="aspect-[4/3] w-full rounded-xl object-cover" />
+                <img src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-[4/3] w-full rounded-xl object-cover" />
               )}
               <div className="space-y-2.5 text-fluid-sm">
                 <Row label="Category" value={t(`category.${detail.data.category}`)} />
