@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Check, Loader2, Pencil } from 'lucide-react';
-import { api, errorMessage } from '../../lib/api';
+import { Camera, Check, Loader2, Pencil } from 'lucide-react';
+import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Card, toast } from '../../components/ui';
 import { useI18n } from '../../lib/i18n';
 import { useAuth } from '../../lib/auth';
@@ -12,6 +12,7 @@ export default function Profile() {
 
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(user?.name ?? '');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveName = useMutation({
     mutationFn: async (nextName: string) => (await api('citizen').patch('/citizen/profile', { name: nextName })).data,
@@ -23,17 +24,60 @@ export default function Profile() {
     onError: (err) => toast.error(errorMessage(err, t('citizen.profile.saveFailed'))),
   });
 
+  const uploadAvatar = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append('avatar', file);
+      return (await api('citizen').post('/citizen/profile/avatar', form)).data;
+    },
+    onSuccess: async () => {
+      await refresh();
+      toast.success(t('citizen.profile.saved'));
+    },
+    onError: (err) => toast.error(errorMessage(err, t('citizen.profile.saveFailed'))),
+  });
+
   return (
     <div className="mx-auto max-w-lg space-y-5">
       <h1 className="text-fluid-xl font-bold tracking-tight">{t('citizen.profile.title')}</h1>
 
       <Card className="flex items-center gap-3 p-4">
-        <span
-          className="grid h-14 w-14 shrink-0 place-items-center rounded-full text-fluid-lg font-bold text-white"
-          style={{ background: user?.avatarColor || '#15803d' }}
-        >
-          {user?.name?.[0]}
-        </span>
+        <div className="relative shrink-0">
+          {user?.avatarUrl ? (
+            <img
+              src={assetUrl(user.avatarUrl)}
+              alt=""
+              className="h-14 w-14 rounded-full object-cover"
+            />
+          ) : (
+            <span
+              className="grid h-14 w-14 place-items-center rounded-full text-fluid-lg font-bold text-white"
+              style={{ background: user?.avatarColor || '#15803d' }}
+            >
+              {user?.name?.[0]}
+            </span>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadAvatar.mutate(file);
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadAvatar.isPending}
+            className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full border-2 border-elevated bg-brand text-brand-ink shadow-xs disabled:opacity-60"
+            aria-label={t('citizen.profile.uploadPhoto')}
+          >
+            {uploadAvatar.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
+          </button>
+        </div>
         <div className="min-w-0 flex-1">
           {editingName ? (
             <form
