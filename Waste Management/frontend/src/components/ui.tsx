@@ -285,8 +285,9 @@ export function LanguageSwitcher({ className = '', compact = false }: { classNam
         className={`flex min-h-touch items-center gap-1.5 rounded-xl border border-line px-2.5 text-fluid-sm font-semibold text-muted transition hover:bg-sunken ${className}`}
       >
         <Globe className="h-4 w-4 shrink-0" />
-        {/* The native name, so it is recognisable to someone who cannot read the current language. */}
-        <span className={compact ? 'sr-only' : ''}>{LOCALES[locale].native}</span>
+        {/* The native name (or its short code when compact), so the currently selected
+            language is always visible at a glance, not just after opening the dropdown. */}
+        <span className={compact ? 'uppercase' : ''}>{compact ? locale : LOCALES[locale].native}</span>
       </button>
 
       {open && (
