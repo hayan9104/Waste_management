@@ -177,7 +177,7 @@ export default function Landing() {
                 <ThemeToggle />
                 <Link
                   to="/login"
-                  className="btn-primary btn-sm rounded-full px-3.5 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-fluid-sm font-semibold shadow-md shadow-brand/20 whitespace-nowrap hover:shadow-lg transition-all"
+                  className="flex min-h-touch items-center rounded-xl border border-line px-3.5 sm:px-5 text-xs sm:text-fluid-sm font-semibold text-muted whitespace-nowrap transition hover:bg-sunken"
                 >
                   {t('common.signIn')}
                 </Link>
@@ -254,7 +254,7 @@ export default function Landing() {
                 <ThemeToggle />
                 <Link
                   to="/login"
-                  className="btn-primary btn-sm rounded-full px-3.5 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-fluid-sm font-semibold shadow-md shadow-brand/20 whitespace-nowrap hover:shadow-lg transition-all"
+                  className="flex min-h-touch items-center rounded-xl border border-line px-3.5 sm:px-5 text-xs sm:text-fluid-sm font-semibold text-muted whitespace-nowrap transition hover:bg-sunken"
                 >
                   {t('common.signIn')}
                 </Link>
