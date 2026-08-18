@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Navigation,
@@ -13,19 +13,27 @@ import {
   ShieldAlert,
   Compass,
   Phone,
+  Camera,
+  Loader2,
 } from 'lucide-react';
-import { api } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading, Meter } from '../../components/ui';
+import { api, errorMessage } from '../../lib/api';
+import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
 import { BaseMap, TruckMarker, RouteLine, StopDot, FollowTarget } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
-import { CATEGORY_LABELS, formatDistance } from '../../lib/format';
+import { CATEGORY_LABELS, formatDistance, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
 export default function DriverRoute() {
   const t = useT();
+  const queryClient = useQueryClient();
+  const fileInput = useRef<HTMLInputElement>(null);
   const [live, setLive] = useState<{ latitude: number; longitude: number; heading?: number } | null>(null);
   const [progressIndex, setProgressIndex] = useState(0);
   const [follow, setFollow] = useState(true);
+  const [resolving, setResolving] = useState<any | null>(null);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [preview, setPreview] = useState('');
+  const [note, setNote] = useState('');
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['driver', 'shift'],
@@ -68,10 +76,34 @@ export default function DriverRoute() {
         longitude: c.longitude,
         status: c.status,
         isEmergency: c.isEmergency,
+        reportedAt: c.createdAt,
       }));
     }
     return [];
   }, [data]);
+
+  const resolve = useMutation({
+    mutationFn: async () => {
+      if (!photo) throw new Error('Please take a clean-up proof photo first.');
+      const form = new FormData();
+      form.append('photo', photo);
+      if (note) form.append('note', note);
+      return (await api('driver').post(`/driver/tasks/${resolving.complaintId}/complete`, form)).data;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['driver'] });
+      toast.success('Stop marked collected — citizen awarded Green Credits.');
+      closeSheet();
+    },
+    onError: (err) => toast.error(errorMessage(err)),
+  });
+
+  function closeSheet() {
+    setResolving(null);
+    setPhoto(null);
+    setPreview('');
+    setNote('');
+  }
 
   const polyline = useMemo(() => {
     if (data?.route?.polyline?.length) return data.route.polyline;
@@ -161,7 +193,44 @@ export default function DriverRoute() {
                           longitude={stop.longitude}
                           seq={stop.seq}
                           status={status}
-                          label={`${stop.seq}. ${stop.label}`}
+                          label={
+                            <div className="min-w-[220px] space-y-2 p-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                                    isDone
+                                      ? 'bg-ok/15 text-ok'
+                                      : status === 'next'
+                                        ? 'bg-danger/15 text-danger'
+                                        : 'bg-sunken text-muted'
+                                  }`}
+                                >
+                                  {isDone ? 'Completed' : status === 'next' ? 'Next stop' : 'Queued'}
+                                </span>
+                                {stop.isEmergency && <Badge tone="danger">Emergency</Badge>}
+                              </div>
+                              <p className="text-fluid-sm font-bold leading-snug text-ink">
+                                {stop.seq}. {stop.label}
+                              </p>
+                              <p className="text-fluid-xs text-muted">
+                                {t(`category.${stop.category}`) || stop.category}
+                              </p>
+                              {stop.reportedAt && (
+                                <p className="flex items-center gap-1 text-[11px] text-faint">
+                                  <Clock className="h-3 w-3" /> Reported {timeAgo(stop.reportedAt)}
+                                </p>
+                              )}
+                              {!isDone && (
+                                <button
+                                  type="button"
+                                  onClick={() => setResolving(stop)}
+                                  className="btn-sm mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg bg-ok font-bold text-white shadow-xs hover:bg-ok/90"
+                                >
+                                  <Camera className="h-3.5 w-3.5" /> Mark Collected
+                                </button>
+                              )}
+                            </div>
+                          }
                         />
                       );
                     });
@@ -329,6 +398,87 @@ export default function DriverRoute() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Completion modal — opened from a stop's map popup ("Mark Collected"). */}
+      {resolving && (
+        <Modal
+          open={Boolean(resolving)}
+          onClose={closeSheet}
+          title={`Proof of Cleanup: Stop ${resolving.seq}`}
+          footer={
+            <div className="flex w-full gap-2">
+              <button type="button" onClick={closeSheet} className="btn-ghost flex-1 rounded-xl">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => resolve.mutate()}
+                disabled={!photo || resolve.isPending}
+                className="btn-primary flex flex-1 items-center justify-center gap-1.5 rounded-xl font-bold"
+              >
+                {resolve.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Submit Proof
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <p className="text-fluid-xs text-muted">
+              Upload a clear photo of the cleaned site to notify the citizen and complete this stop.
+            </p>
+
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setPhoto(f);
+                  setPreview(URL.createObjectURL(f));
+                }
+              }}
+            />
+
+            {preview ? (
+              <div className="relative overflow-hidden rounded-2xl border border-line">
+                <img src={preview} alt="Clean proof" className="h-48 w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => fileInput.current?.click()}
+                  className="absolute bottom-2 right-2 rounded-xl bg-black/70 px-3 py-1.5 text-fluid-xs font-bold text-white backdrop-blur"
+                >
+                  Retake Photo
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                className="flex h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-brand/40 bg-brand/5 text-brand transition hover:bg-brand/10"
+              >
+                <Camera className="h-8 w-8" />
+                <span className="text-fluid-xs font-bold">Take Clean Proof Photo</span>
+              </button>
+            )}
+
+            <div>
+              <label className="label" htmlFor="route-note">
+                Cleanup Note (Optional)
+              </label>
+              <textarea
+                id="route-note"
+                className="field h-20 resize-none text-fluid-xs"
+                placeholder="e.g. Cleared 250kg debris, area sanitized."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

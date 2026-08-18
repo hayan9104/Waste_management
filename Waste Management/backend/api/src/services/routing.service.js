@@ -100,6 +100,7 @@ export function solveLocal({ stops = [], depot, options = {} } = {}) {
       category: stop.category ?? null,
       severity: stop.severity ?? null,
       isEmergency: Boolean(stop.isEmergency),
+      reportedAt: stop.reportedAt ?? null,
       latitude: stop.coordinates[1],
       longitude: stop.coordinates[0],
       serviceMin: stop.serviceMin,
