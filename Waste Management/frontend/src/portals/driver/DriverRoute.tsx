@@ -84,9 +84,8 @@ export default function DriverRoute() {
 
   const resolve = useMutation({
     mutationFn: async () => {
-      if (!photo) throw new Error('Please take a clean-up proof photo first.');
       const form = new FormData();
-      form.append('photo', photo);
+      if (photo) form.append('photo', photo);
       if (note) form.append('note', note);
       return (await api('driver').post(`/driver/tasks/${resolving.complaintId}/complete`, form)).data;
     },
@@ -414,7 +413,7 @@ export default function DriverRoute() {
               <button
                 type="button"
                 onClick={() => resolve.mutate()}
-                disabled={!photo || resolve.isPending}
+                disabled={resolve.isPending}
                 className="btn-primary flex flex-1 items-center justify-center gap-1.5 rounded-xl font-bold"
               >
                 {resolve.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -424,10 +423,6 @@ export default function DriverRoute() {
           }
         >
           <div className="space-y-4">
-            <p className="text-fluid-xs text-muted">
-              Upload a clear photo of the cleaned site to notify the citizen and complete this stop.
-            </p>
-
             <input
               ref={fileInput}
               type="file"
