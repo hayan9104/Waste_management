@@ -177,7 +177,7 @@ export default function Landing() {
                 <ThemeToggle />
                 <Link
                   to="/login"
-                  className="flex min-h-touch items-center rounded-xl border border-line px-3.5 sm:px-5 text-xs sm:text-fluid-sm font-semibold text-muted whitespace-nowrap transition hover:bg-sunken"
+                  className="flex min-h-touch items-center rounded-xl border border-brand/30 px-3.5 sm:px-5 text-xs sm:text-fluid-sm font-semibold text-brand whitespace-nowrap transition hover:bg-brand/10"
                 >
                   {t('common.signIn')}
                 </Link>
@@ -254,7 +254,7 @@ export default function Landing() {
                 <ThemeToggle />
                 <Link
                   to="/login"
-                  className="flex min-h-touch items-center rounded-xl border border-line px-3.5 sm:px-5 text-xs sm:text-fluid-sm font-semibold text-muted whitespace-nowrap transition hover:bg-sunken"
+                  className="flex min-h-touch items-center rounded-xl border border-brand/30 px-3.5 sm:px-5 text-xs sm:text-fluid-sm font-semibold text-brand whitespace-nowrap transition hover:bg-brand/10"
                 >
                   {t('common.signIn')}
                 </Link>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 
-/** The front door, on every fresh open of '/'. Fixed 5-second duration. */
+/** The front door, on every fresh open of '/'. Fixed 2.5-second duration. */
 
-const DISPLAY_MS = 5000;
+const DISPLAY_MS = 2500;
 
 export default function Splash({ onDone }: { onDone: () => void }) {
   const [fading, setFading] = useState(false);
