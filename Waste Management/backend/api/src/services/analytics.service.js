@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { CATEGORY_MAP } from '../config/constants.js';
 import { predictHotspots } from './ai.service.js';
+import { env } from '../config/env.js';
 
 /**
  * Every dashboard number is derived here from real rows — no dashboard card
@@ -351,6 +352,78 @@ export async function modelHealth(days = 14) {
   };
 }
 
+/**
+ * Per-model breakdown for the admin Model Health screen. Every number here is
+ * read straight off real rows (Complaint / Route / HotspotPrediction) or the
+ * live AI microservice reachability check — nothing hard-coded, so a model
+ * that is actually degraded shows up as degraded instead of a blanket
+ * "ACTIVE" badge.
+ */
+export async function perModelHealth(days = 14, visionReachable = false) {
+  const since = startOfDay(days - 1);
+
+  const [hotspots, routes] = await Promise.all([
+    prisma.hotspotPrediction.findMany({
+      where: { createdAt: { gte: since } },
+      select: { confidence: true, riskScore: true, createdAt: true },
+    }),
+    prisma.route.findMany({
+      where: { createdAt: { gte: since } },
+      select: { savedKm: true, distanceKm: true, baselineKm: true, solveMs: true, co2SavedKg: true, createdAt: true },
+    }),
+  ]);
+
+  const byDayCount = (rows) => {
+    const byDay = {};
+    for (const r of rows) {
+      const key = dayKey(r.createdAt);
+      byDay[key] = (byDay[key] || 0) + 1;
+    }
+    return Object.entries(byDay)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, count]) => ({ date, count }));
+  };
+
+  return {
+    visionClassifier: {
+      // Shares the FastAPI vision microservice, so its live reachability is the classifier's real status.
+      reachable: visionReachable,
+      status: visionReachable ? 'ACTIVE' : 'FALLBACK',
+    },
+    hotspotEngine: {
+      // Same microservice boundary as the classifier — degrades together.
+      reachable: visionReachable,
+      status: visionReachable ? 'ACTIVE' : 'FALLBACK',
+      predictions: hotspots.length,
+      avgConfidence: Number(avg(hotspots.map((h) => h.confidence)).toFixed(3)),
+      avgRiskScore: Number(avg(hotspots.map((h) => h.riskScore)).toFixed(1)),
+      lastGeneratedAt: hotspots.length ? hotspots.reduce((m, h) => (h.createdAt > m ? h.createdAt : m), hotspots[0].createdAt) : null,
+      daily: byDayCount(hotspots),
+    },
+    routeSolver: {
+      // Runs entirely in-process (2-opt/Or-opt over Node), no external dependency to degrade.
+      reachable: true,
+      status: 'ACTIVE',
+      routesGenerated: routes.length,
+      avgSavedKm: Number(avg(routes.map((r) => r.savedKm)).toFixed(2)),
+      avgSolveMs: Number(avg(routes.map((r) => r.solveMs)).toFixed(0)),
+      totalCo2SavedKg: Number(routes.reduce((s, r) => s + (r.co2SavedKg || 0), 0).toFixed(1)),
+      daily: byDayCount(routes),
+    },
+    whatIfSimulator: {
+      // Pure local heuristic (officer.routes.js /simulate) — cannot go down independently of the API itself.
+      reachable: true,
+      status: 'ACTIVE',
+    },
+    chatbot: {
+      // Always answers (LLM when GROQ_API_KEY is set, deterministic rule-based reply otherwise) — engine varies, never down.
+      reachable: true,
+      status: 'ACTIVE',
+      engine: env.groq.apiKey ? 'groq-llm' : 'rule-based-fallback',
+    },
+  };
+}
+
 export { startOfDay, dayKey };
 export default {
   overview,
@@ -361,4 +434,5 @@ export default {
   heatmapPoints,
   hotspotForecast,
   modelHealth,
+  perModelHealth,
 };
