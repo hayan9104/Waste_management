@@ -633,4 +633,26 @@ router.get(
 
 router.get('/categories', (_req, res) => res.json(WASTE_CATEGORIES));
 
+/**
+ * Re-seed the demo dataset (plan §8 note: routes are stored per calendar day,
+ * so a fresh morning has none until this runs). Wipes and recreates
+ * everything deterministically -- same shape the CLI `npm run seed` produces.
+ * Fires in the background rather than blocking the request/response cycle:
+ * this can take several minutes against a pooled connection with real OSRM
+ * road-snapping per route, well past any reasonable HTTP timeout. Progress
+ * and the final summary land in the server's own logs.
+ */
+router.post(
+  '/reseed-demo-data',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const { runSeed } = await import('../seed/seed.js');
+    res.json({ ok: true, message: 'Re-seed started in the background. This can take a few minutes -- check the server Logs for progress and a final summary.' });
+
+    runSeed()
+      .then((summary) => console.log('[admin] re-seed complete:', JSON.stringify(summary)))
+      .catch((err) => console.error('[admin] re-seed failed:', err));
+  })
+);
+
 export default router;

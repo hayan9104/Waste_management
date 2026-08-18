@@ -7,6 +7,7 @@
  *
  *   npm run db:push && npm run seed
  */
+import { fileURLToPath } from 'node:url';
 import { prisma, connectDB, disconnectDB } from '../lib/prisma.js';
 import { hashPassword } from '../lib/password.js';
 import { polygonBBox } from '../lib/geo.js';
@@ -543,12 +544,30 @@ async function main() {
   ${CITY.name}, ${CITY.state} — ${wards.length} wards, ${vehicles.length} vehicles, ${created} complaints.
 `);
 
-  await disconnectDB();
-  process.exit(0);
+  return {
+    city: `${CITY.name}, ${CITY.state}`,
+    wards: wards.length,
+    vehicles: vehicles.length,
+    complaints: created,
+    routes,
+  };
 }
 
-main().catch(async (err) => {
-  console.error('[seed] failed:', err);
-  await disconnectDB().catch(() => {});
-  process.exit(1);
-});
+export { main as runSeed };
+
+// CLI entrypoint only (`npm run seed`) -- disconnecting/exiting here would be
+// wrong if this module is instead imported and called from a long-running
+// process (the admin re-seed API route), since that shares the same Prisma
+// client the rest of the server depends on for every other request.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main()
+    .then(async () => {
+      await disconnectDB();
+      process.exit(0);
+    })
+    .catch(async (err) => {
+      console.error('[seed] failed:', err);
+      await disconnectDB().catch(() => {});
+      process.exit(1);
+    });
+}

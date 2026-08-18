@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Building2, CheckCircle2, Siren, Truck, Users, Clock } from 'lucide-react';
-import { api } from '../../lib/api';
-import { Badge, Card, ErrorState, Loading, SectionTitle, Stat } from '../../components/ui';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Building2, CheckCircle2, Siren, Truck, Users, Clock, RefreshCw, Loader2 } from 'lucide-react';
+import { api, errorMessage } from '../../lib/api';
+import { Badge, Card, ErrorState, Loading, SectionTitle, Stat, toast } from '../../components/ui';
 import { BaseMap, WardLayer, TruckMarker, FitBounds } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { pct, formatDuration } from '../../lib/format';
@@ -22,6 +22,12 @@ export default function AdminDashboard() {
     refetchInterval: 60_000,
   });
 
+  const reseed = useMutation({
+    mutationFn: async () => (await api('admin').post('/admin/reseed-demo-data')).data,
+    onSuccess: (data) => toast.success(data.message || 'Re-seed started — check the server Logs for progress.'),
+    onError: (err) => toast.error(errorMessage(err, 'Could not start re-seed')),
+  });
+
   useSocket('admin', ['city'], {
     [SOCKET_EVENTS.TRUCK_UPDATE]: (payload: any) => {
       if (payload?.id) setTrucks((prev) => ({ ...prev, [payload.id]: payload }));
@@ -38,6 +44,23 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm('This wipes and regenerates ALL demo data (wards, staff, complaints, routes) with fresh dates. This cannot be undone. Continue?')) {
+              reseed.mutate();
+            }
+          }}
+          disabled={reseed.isPending}
+          className="btn-ghost btn-sm disabled:opacity-60"
+          title="Routes are stored per calendar day -- run this each morning so today's demo has active routes and moving trucks."
+        >
+          {reseed.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Re-seed demo data
+        </button>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <Stat label="Open" value={kpis.openComplaints} hint={`${kpis.complaintsToday} today`} icon={<Clock className="h-4 w-4" />} />
         <Stat label="Emergencies" value={kpis.emergenciesOpen} tone={kpis.emergenciesOpen ? 'danger' : 'ok'} icon={<Siren className="h-4 w-4" />} />
