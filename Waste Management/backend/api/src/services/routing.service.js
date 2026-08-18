@@ -358,20 +358,30 @@ export async function roadSnappedRoute(points) {
  * looks broken forever even after the road-snapping code itself works.
  * Detects that case, regenerates real geometry from the route's own
  * ordered stops, and persists the fix so it only has to happen once.
+ *
+ * Point-count alone isn't enough to detect this: drivablePolyline()'s
+ * L-shaped fallback still emits several points (a corner + an endpoint per
+ * leg -- exactly `2n - 1` points for n waypoints), so a short-but-nonzero
+ * array can still be the zigzag fallback, not real road geometry. Real OSRM
+ * geometry is always far denser than that for any leg longer than a few
+ * metres, so comparing against the fallback's exact shape is the reliable
+ * signal, not just "is the array non-empty."
  */
 export async function ensureRoadSnappedPolyline(route, stops) {
   const stored = route?.polylineGeometry;
-  if (!route || Array.isArray(stored) && stored.length >= 3) return stored;
-  if (!Array.isArray(stops) || stops.length < 2) return stored;
+  if (!route || !Array.isArray(stops) || stops.length < 2) return stored;
+
+  const waypoints = stops
+    .filter((s) => s.latitude != null && s.longitude != null)
+    .map((s) => [s.longitude, s.latitude]);
+  if (waypoints.length < 2) return stored;
+
+  const fallbackShapeSize = 2 * waypoints.length; // drivablePolyline() emits exactly 2n-1 points
+  if (Array.isArray(stored) && stored.length > fallbackShapeSize) return stored;
 
   try {
-    const waypoints = stops
-      .filter((s) => s.latitude != null && s.longitude != null)
-      .map((s) => [s.longitude, s.latitude]);
-    if (waypoints.length < 2) return stored;
-
     const fresh = await roadSnappedRoute(waypoints);
-    if (fresh.polyline.length <= 1) return stored;
+    if (fresh.polyline.length <= fallbackShapeSize) return stored; // OSRM itself fell back too -- nothing to improve on right now
 
     await prisma.route.update({ where: { id: route.id }, data: { polylineGeometry: fresh.polyline } }).catch(() => {});
     return fresh.polyline;
