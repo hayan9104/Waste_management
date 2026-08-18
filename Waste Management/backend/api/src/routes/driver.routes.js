@@ -11,7 +11,7 @@ import { transition, serializeComplaint } from '../services/complaint.service.js
 import { emitTo } from '../sockets/realtime.js';
 import { notifyWardOfficers } from '../services/notification.service.js';
 import { distanceKm } from '../lib/geo.js';
-import { roadSnappedRoute } from '../services/routing.service.js';
+import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.DRIVER), loadUser);
@@ -48,28 +48,7 @@ router.get(
     ]);
 
     const stops = route?.orderedStops ?? [];
-
-    // Some stored routes (seeded, or generated while the OSRM demo server was
-    // briefly unreachable) only ever got a straight/degenerate line saved.
-    // Serving that forever looks like a bug even after the road-snapping code
-    // itself is fixed, so regenerate real road geometry here and persist it.
-    let polyline = route?.polylineGeometry;
-    if (route && stops.length > 1 && (!Array.isArray(polyline) || polyline.length < 3)) {
-      try {
-        const waypoints = stops
-          .filter((s) => s.latitude != null && s.longitude != null)
-          .map((s) => [s.longitude, s.latitude]);
-        if (waypoints.length > 1) {
-          const fresh = await roadSnappedRoute(waypoints);
-          if (fresh.polyline.length > 1) {
-            polyline = fresh.polyline;
-            await prisma.route.update({ where: { id: route.id }, data: { polylineGeometry: polyline } }).catch(() => {});
-          }
-        }
-      } catch {
-        // keep whatever was stored -- frontend still falls back to straight segments
-      }
-    }
+    const polyline = await ensureRoadSnappedPolyline(route, stops);
 
     res.json({
       vehicle: serializeVehicle(vehicle, vehicle.ward),
