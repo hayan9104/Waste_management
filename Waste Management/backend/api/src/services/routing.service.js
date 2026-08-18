@@ -1,6 +1,7 @@
 import axios from 'axios';
 import env from '../config/env.js';
 import { roadKm, distanceKm } from '../lib/geo.js';
+import { prisma } from '../lib/prisma.js';
 import { CALIBRATION } from '../config/calibration/index.js';
 
 /**
@@ -349,6 +350,36 @@ export async function roadSnappedRoute(points) {
   return { polyline, breakpoints };
 }
 
+/**
+ * Every read path that shows a Route's polyline (driver live map, admin
+ * fleet view) hit the same bug independently: some stored routes (seeded,
+ * or optimized while the OSRM demo server was briefly unreachable) only
+ * ever got a straight/degenerate line saved, and serving that verbatim
+ * looks broken forever even after the road-snapping code itself works.
+ * Detects that case, regenerates real geometry from the route's own
+ * ordered stops, and persists the fix so it only has to happen once.
+ */
+export async function ensureRoadSnappedPolyline(route, stops) {
+  const stored = route?.polylineGeometry;
+  if (!route || Array.isArray(stored) && stored.length >= 3) return stored;
+  if (!Array.isArray(stops) || stops.length < 2) return stored;
+
+  try {
+    const waypoints = stops
+      .filter((s) => s.latitude != null && s.longitude != null)
+      .map((s) => [s.longitude, s.latitude]);
+    if (waypoints.length < 2) return stored;
+
+    const fresh = await roadSnappedRoute(waypoints);
+    if (fresh.polyline.length <= 1) return stored;
+
+    await prisma.route.update({ where: { id: route.id }, data: { polylineGeometry: fresh.polyline } }).catch(() => {});
+    return fresh.polyline;
+  } catch {
+    return stored; // keep whatever was stored -- callers already handle a short/missing polyline gracefully
+  }
+}
+
 export { DEFAULTS, distanceKm };
 export default {
   optimizeRoute,
@@ -356,6 +387,7 @@ export default {
   drivablePolyline,
   roadSnappedPolyline,
   roadSnappedRoute,
+  ensureRoadSnappedPolyline,
   nearestRoadDistance,
   snapToRoad,
 };

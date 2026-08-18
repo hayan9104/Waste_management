@@ -12,6 +12,7 @@ import { hashPassword } from '../lib/password.js';
 import { revokeAllSessions } from '../lib/tokens.js';
 import { polygonBBox, polygonCentroid } from '../lib/geo.js';
 import { aiHealth } from '../services/ai.service.js';
+import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -143,6 +144,7 @@ router.get(
       locationHistory(vehicle.id, {}),
     ]);
     const stops = route?.orderedStops ?? [];
+    const polyline = await ensureRoadSnappedPolyline(route, stops);
 
     res.json({
       vehicle: serializeVehicle(vehicle, vehicle.ward),
@@ -151,7 +153,7 @@ router.get(
             id: route.id,
             label: route.label,
             status: route.status,
-            polyline: route.polylineGeometry,
+            polyline,
             distanceKm: route.distanceKm,
             durationMin: route.durationMin,
             solver: route.solver,
