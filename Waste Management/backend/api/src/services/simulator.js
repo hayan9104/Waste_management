@@ -34,11 +34,7 @@ export function simulatorStatus() {
 export async function startSimulator() {
   if (!env.simulator.enabled || state.running) return simulatorStatus();
 
-  await loadTrucks();
-  if (!state.trucks.size) {
-    console.log('[sim] no published routes for today — simulator idle (run `npm run seed`)');
-    return simulatorStatus();
-  }
+  await syncTrucks();
 
   state.running = true;
   state.timer = setInterval(() => {
@@ -56,30 +52,57 @@ export function stopSimulator() {
   return simulatorStatus();
 }
 
-async function loadTrucks() {
+/**
+ * Re-reads today's published routes and merges them into the running truck
+ * set, instead of a one-time snapshot at boot. A route created (or
+ * re-optimised) after the server started would otherwise never be picked up
+ * for demo movement until the next restart.
+ */
+async function syncTrucks() {
   const routes = await prisma.route.findMany({
     where: { date: today(), status: { in: ['PUBLISHED', 'IN_PROGRESS'] } },
     include: { vehicle: true },
   });
 
+  const active = new Set();
   for (const route of routes) {
     const path = route.polylineGeometry;
     if (!Array.isArray(path) || path.length < 2) continue;
     if (route.vehicle?.maintenanceFlag) continue;
 
-    state.trucks.set(route.vehicleId, {
-      vehicleId: route.vehicleId,
-      driverId: route.driverId,
-      path,
-      leg: 0,
-      progress: 0,
-      pausedUntil: 0,
-    });
+    active.add(route.vehicleId);
+    const existing = state.trucks.get(route.vehicleId);
+    if (existing) {
+      // Route may have been re-optimised — refresh the path, keep progress.
+      existing.path = path;
+      existing.driverId = route.driverId;
+    } else {
+      state.trucks.set(route.vehicleId, {
+        vehicleId: route.vehicleId,
+        driverId: route.driverId,
+        path,
+        leg: 0,
+        progress: 0,
+        pausedUntil: 0,
+      });
+    }
+  }
+
+  for (const vehicleId of [...state.trucks.keys()]) {
+    if (!active.has(vehicleId)) state.trucks.delete(vehicleId);
+  }
+
+  if (!state.trucks.size) {
+    console.log('[sim] no published routes for today — simulator idle (run `npm run seed`)');
   }
 }
 
+const SYNC_EVERY_TICKS = Math.max(1, Math.round(30_000 / env.simulator.intervalMs));
+
 async function tick() {
   state.ticks += 1;
+  if (state.ticks % SYNC_EVERY_TICKS === 0) await syncTrucks();
+
   const hours = env.simulator.intervalMs / 3_600_000;
   const stepKm = SPEED_KMPH * hours;
 

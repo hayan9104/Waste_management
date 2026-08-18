@@ -20,15 +20,17 @@ import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
 import { BaseMap, TruckMarker, RouteLine, StopDot, FollowTarget } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
-import { CATEGORY_LABELS, formatDistance, timeAgo } from '../../lib/format';
+import { CATEGORY_LABELS, formatDistance, timeAgo, distanceMeters } from '../../lib/format';
 import { useT } from '../../lib/i18n';
+
+/** How close (metres) the driver's live GPS must be before a stop can be marked collected. */
+const COLLECT_RADIUS_M = 150;
 
 export default function DriverRoute() {
   const t = useT();
   const queryClient = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [live, setLive] = useState<{ latitude: number; longitude: number; heading?: number } | null>(null);
-  const [progressIndex, setProgressIndex] = useState(0);
   const [follow, setFollow] = useState(true);
   const [resolving, setResolving] = useState<any | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -47,7 +49,6 @@ export default function DriverRoute() {
     [SOCKET_EVENTS.TRUCK_UPDATE]: (payload: any) => {
       if (payload?.latitude == null) return;
       setLive({ latitude: payload.latitude, longitude: payload.longitude, heading: payload.heading });
-      if (payload.routeProgress?.index != null) setProgressIndex(payload.routeProgress.index);
     },
     [SOCKET_EVENTS.ASSIGNMENT_NEW]: () => refetch(),
     new_task_assigned: () => refetch(),
@@ -104,15 +105,16 @@ export default function DriverRoute() {
     setNote('');
   }
 
+  // Only the road ahead: the driver's current fix, then whatever stops are
+  // still open, in order. A stop drops off this line the moment it's marked
+  // collected, so nothing already covered stays drawn on the map.
   const polyline = useMemo(() => {
-    if (data?.route?.polyline?.length) return data.route.polyline;
-    if (assignedStops.length) {
-      const pts = assignedStops.map((s: any) => [s.latitude, s.longitude] as [number, number]);
-      if (live) pts.unshift([live.latitude, live.longitude]);
-      return pts;
-    }
-    return [];
-  }, [data, assignedStops, live]);
+    const remaining = assignedStops.filter((s: any) => s.status !== 'DONE');
+    if (!remaining.length) return [];
+    const pts: [number, number][] = remaining.map((s: any) => [s.longitude, s.latitude]);
+    if (live) pts.unshift([live.longitude, live.latitude]);
+    return pts;
+  }, [assignedStops, live]);
 
   const nextStop = data?.nextStop || assignedStops.find((s: any) => s.status !== 'DONE');
 
@@ -122,7 +124,7 @@ export default function DriverRoute() {
   const centre: [number, number] = live
     ? [live.latitude, live.longitude]
     : polyline[0]
-      ? [polyline[0][0], polyline[0][1]]
+      ? [polyline[0][1], polyline[0][0]]
       : [23.2156, 72.6369];
 
   const resolvedCount = assignedStops.filter((s: any) => s.status === 'DONE').length;
@@ -176,15 +178,17 @@ export default function DriverRoute() {
           <div className="lg:col-span-7 xl:col-span-8 space-y-4">
             <Card className="overflow-hidden p-0 shadow-md">
               <div className="relative h-[55dvh] min-h-[380px] w-full lg:h-[580px]">
-                <BaseMap center={centre} zoom={15}>
+                <BaseMap center={centre} zoom={15} satellite>
                   <FollowTarget latitude={live?.latitude} longitude={live?.longitude} enabled={follow} />
-                  {polyline.length > 1 && <RouteLine polyline={polyline} progressIndex={progressIndex} />}
+                  {polyline.length > 1 && <RouteLine polyline={polyline} />}
                   {(() => {
                     let nextMarked = false;
                     return assignedStops.map((stop: any) => {
                       const isDone = stop.status === 'DONE';
                       const status: 'done' | 'next' | 'queued' = isDone ? 'done' : nextMarked ? 'queued' : 'next';
                       if (!isDone) nextMarked = true;
+                      const distM = !isDone && live ? distanceMeters(live, stop) : null;
+                      const inRange = distM != null && distM <= COLLECT_RADIUS_M;
                       return (
                         <StopDot
                           key={stop.seq}
@@ -220,13 +224,28 @@ export default function DriverRoute() {
                                 </p>
                               )}
                               {!isDone && (
-                                <button
-                                  type="button"
-                                  onClick={() => setResolving(stop)}
-                                  className="btn-sm mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg bg-ok font-bold text-white shadow-xs hover:bg-ok/90"
-                                >
-                                  <Camera className="h-3.5 w-3.5" /> Mark Collected
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setResolving(stop)}
+                                    disabled={!inRange}
+                                    title={!inRange ? 'Get closer to this stop to mark it collected' : undefined}
+                                    className={`btn-sm mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg font-bold shadow-xs ${
+                                      inRange
+                                        ? 'bg-ok text-white hover:bg-ok/90'
+                                        : 'cursor-not-allowed bg-sunken text-faint'
+                                    }`}
+                                  >
+                                    <Camera className="h-3.5 w-3.5" /> Mark Collected
+                                  </button>
+                                  {!inRange && (
+                                    <p className="text-center text-[10px] text-faint">
+                                      {distM == null
+                                        ? 'Waiting for your GPS location…'
+                                        : `Get within ${COLLECT_RADIUS_M}m — ${formatDistance(distM)} away`}
+                                    </p>
+                                  )}
+                                </>
                               )}
                             </div>
                           }

@@ -91,6 +91,17 @@ export function formatDuration(minutes?: number | null): string {
 export const formatDistance = (metres?: number | null) =>
   metres == null ? '—' : metres < 1000 ? `${Math.round(metres)} m` : `${(metres / 1000).toFixed(1)} km`;
 
+/** Great-circle distance in metres — used client-side for GPS-proximity gates. */
+export function distanceMeters(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const s =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
 export const formatNumber = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('en-IN').format(Math.round(n));
 

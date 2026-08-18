@@ -6,6 +6,7 @@ import { emitTo } from '../sockets/realtime.js';
 import { notify, notifyWardOfficers, awardCredits } from './notification.service.js';
 import { classifyWaste, scoreFraud } from './ai.service.js';
 import { distanceMeters, pointInPolygon, boundsAround } from '../lib/geo.js';
+import { nearestRoadDistance } from './routing.service.js';
 import { HttpError } from '../middleware/error.js';
 
 /**
@@ -25,6 +26,7 @@ import { HttpError } from '../middleware/error.js';
 const DUPLICATE_RADIUS_M = 60;
 const DUPLICATE_WINDOW_HOURS = 24;
 const DUPLICATE_THRESHOLD = 0.72;
+const MAX_ROAD_DISTANCE_M = 300;
 
 export const complaintCode = () =>
   `SS-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
@@ -44,6 +46,15 @@ export async function createComplaint({
 }) {
   const citizen = await prisma.user.findUnique({ where: { id: citizenId } });
   if (!citizen) throw new HttpError(404, 'Citizen account not found');
+
+  // ---- 0. Reachability — a collection vehicle has to actually get there ---
+  const roadDistance = await nearestRoadDistance(latitude, longitude);
+  if (roadDistance != null && roadDistance > MAX_ROAD_DISTANCE_M) {
+    throw new HttpError(
+      400,
+      `This pin doesn't look reachable by road (nearest road is ${Math.round(roadDistance)}m away). Move the pin closer to a street so a collection vehicle can reach it.`
+    );
+  }
 
   // Helper to normalize any case (e.g. 'construction_debris' -> 'CONSTRUCTION_DEBRIS')
   const normalizeCat = (c) => {

@@ -111,15 +111,22 @@ router.get(
       statusFilter = { in: ['ASSIGNED', 'IN_PROGRESS', 'RESOLVED'] };
     }
 
-    const complaints = await prisma.complaint.findMany({
-      where: {
-        assignedVehicleId: vehicle.id,
-        status: statusFilter,
-        ...(statusQuery === 'COMPLETED' ? { resolvedAt: { gte: startOfToday() } } : {}),
-      },
-      include: { ward: true },
-      orderBy: [{ isEmergency: 'desc' }, { severity: 'desc' }, { createdAt: 'desc' }],
-    });
+    const [complaints, pendingCount, inProgressCount, completedTodayCount] = await Promise.all([
+      prisma.complaint.findMany({
+        where: {
+          assignedVehicleId: vehicle.id,
+          status: statusFilter,
+          ...(statusQuery === 'COMPLETED' ? { resolvedAt: { gte: startOfToday() } } : {}),
+        },
+        include: { ward: true },
+        orderBy: [{ isEmergency: 'desc' }, { severity: 'desc' }, { createdAt: 'desc' }],
+      }),
+      prisma.complaint.count({ where: { assignedVehicleId: vehicle.id, status: 'ASSIGNED' } }),
+      prisma.complaint.count({ where: { assignedVehicleId: vehicle.id, status: 'IN_PROGRESS' } }),
+      prisma.complaint.count({
+        where: { assignedVehicleId: vehicle.id, status: 'RESOLVED', resolvedAt: { gte: startOfToday() } },
+      }),
+    ]);
 
     const from = { latitude: vehicle.lastLat, longitude: vehicle.lastLng };
     const tasks = complaints.map((c) => {
@@ -130,7 +137,14 @@ router.get(
       };
     });
 
-    res.json({ tasks, vehicleId: vehicle.id, total: tasks.length });
+    const counts = {
+      pending: pendingCount,
+      inProgress: inProgressCount,
+      completed: completedTodayCount,
+      total: pendingCount + inProgressCount + completedTodayCount,
+    };
+
+    res.json({ tasks, vehicleId: vehicle.id, total: tasks.length, counts });
   })
 );
 
