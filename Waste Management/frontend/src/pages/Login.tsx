@@ -4,6 +4,7 @@ import { ArrowLeft, Check, KeyRound, Loader2, Shield, Smartphone, Truck, User, B
 import { api, errorMessage, type Portal, BASE } from '../lib/api';
 import { useAuth, HOME_ROUTE } from '../lib/auth';
 import { LanguageSwitcher, ThemeToggle, toast } from '../components/ui';
+import { SpotlightNav, type SpotlightNavItem } from '../components/SpotlightNav';
 import { useT } from '../lib/i18n';
 
 /**
@@ -35,25 +36,19 @@ const PORTAL_LOGIN_ROUTE: Record<Portal, string> = {
 };
 const PORTAL_ORDER: Portal[] = ['citizen', 'driver', 'officer', 'admin'];
 
-/** Jumps directly to another role's login screen. Rendered twice below: a header pill (desktop/tablet) and a card row (mobile, where the header has no room for it). */
-function PortalTabs({ portal, stretch = false, className = '' }: { portal: Portal; stretch?: boolean; className?: string }) {
+/**
+ * Jumps directly to another role's login screen — the same SpotlightNav used
+ * on every console/mobile shell (spotlight hover, sliding active pill, ambient
+ * glow), so the login page's switcher doesn't look like a one-off control.
+ */
+function PortalTabs({ className = '' }: { className?: string }) {
   const t = useT();
-  return (
-    <div className={`flex items-center gap-1.5 rounded-full border border-line bg-elevated/80 p-1.5 backdrop-blur ${className}`}>
-      {PORTAL_ORDER.map((p) => (
-        <Link
-          key={p}
-          to={PORTAL_LOGIN_ROUTE[p]}
-          aria-current={p === portal ? 'page' : undefined}
-          className={`rounded-full px-5 py-2 text-fluid-sm font-semibold whitespace-nowrap transition ${stretch ? 'flex-1 text-center' : ''} ${
-            p === portal ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
-          }`}
-        >
-          {t(`auth.switchPortal.${p}`)}
-        </Link>
-      ))}
-    </div>
-  );
+  const items: SpotlightNavItem[] = PORTAL_ORDER.map((p) => ({
+    to: PORTAL_LOGIN_ROUTE[p],
+    label: t(`auth.switchPortal.${p}`),
+    icon: PORTAL_COPY[p].icon,
+  }));
+  return <SpotlightNav items={items} accent="brand" className={`bg-elevated/80 backdrop-blur ${className}`} />;
 }
 
 interface DemoAccount {
@@ -211,7 +206,7 @@ export default function Login({ portal }: { portal: Portal }) {
         {/* Centered on the header's own width (not just between the side items), so
             it sits perfectly mid-line with the logo regardless of side content width. */}
         <div className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 lg:block">
-          <PortalTabs portal={portal} />
+          <PortalTabs />
         </div>
 
         <div className="flex items-center gap-2">
@@ -266,10 +261,10 @@ export default function Login({ portal }: { portal: Portal }) {
         */}
         <main className="mx-auto flex max-h-[calc(100dvh-5.5rem)] w-full max-w-md flex-col overflow-y-auto rounded-3xl border border-line/40 bg-elevated/55 p-5 shadow-lift backdrop-blur-2xl sm:p-7">
           <div className="flex w-full flex-col">
-          {/* Mobile-only fallback — the header carries this centered on the logo's line at md: and up, but there's no room for it there on a phone. */}
-          <div className="mb-3.5 lg:hidden">
+          {/* Mobile-only fallback — the header carries this centered on the logo's line at lg: and up, but there's no room for it there on a phone. */}
+          <div className="mb-3.5 flex flex-col items-center lg:hidden">
             <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-faint">{t('auth.switchPortal.label')}</p>
-            <PortalTabs portal={portal} stretch className="w-full bg-sunken/60" />
+            <PortalTabs className="bg-sunken/60" />
           </div>
 
           <div className="flex items-center gap-3">
