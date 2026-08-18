@@ -111,6 +111,7 @@ model User {
   emailVerifiedAt DateTime?
   language        String    @default("en") // en | hi | gu
   avatarColor     String    @default("#16a34a")
+  avatarUrl       String? // uploaded profile photo; falls back to the initials/avatarColor circle when unset
 
   // Officer / Admin 2FA (plan §6.3) — TOTP via otplib, no auth SaaS.
   twoFactorSecret  String?

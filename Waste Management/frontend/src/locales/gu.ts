@@ -421,6 +421,7 @@ export const gu: Record<string, string> = {
   'citizen.profile.nameLabel': 'તમારું નામ',
   'citizen.profile.namePlaceholder': 'પૂરું નામ',
   'citizen.profile.saveName': 'નામ સાચવો',
+  'citizen.profile.uploadPhoto': 'પ્રોફાઇલ ફોટો અપલોડ કરો',
 
   // ---- driver ----
   'driver.nav.route': 'રૂટ',

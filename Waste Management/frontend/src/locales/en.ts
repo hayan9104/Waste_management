@@ -431,6 +431,7 @@ export const en: Record<string, string> = {
   'citizen.profile.nameLabel': 'Your name',
   'citizen.profile.namePlaceholder': 'Full name',
   'citizen.profile.saveName': 'Save name',
+  'citizen.profile.uploadPhoto': 'Upload profile photo',
 
   // ---- driver ----
   'driver.nav.route': 'Route',

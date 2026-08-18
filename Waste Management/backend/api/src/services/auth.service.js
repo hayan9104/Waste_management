@@ -29,6 +29,7 @@ export function publicUser(user) {
     language: user.language,
     greenCredits: user.greenCredits,
     avatarColor: user.avatarColor,
+    avatarUrl: user.avatarUrl,
     twoFactorEnabled: user.twoFactorEnabled,
     emailVerified: Boolean(user.emailVerifiedAt),
   };

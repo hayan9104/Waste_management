@@ -1,11 +1,24 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, LogOut, Menu, X, ChevronLeft, User, Settings, Shield, Sparkles, Navigation } from 'lucide-react';
-import { useAuth, LOGIN_ROUTE } from '../lib/auth';
+import { useAuth, LOGIN_ROUTE, type SessionUser } from '../lib/auth';
 import { LanguageSwitcher, ThemeToggle } from './ui';
 import { SpotlightNav, type SpotlightNavItem } from './SpotlightNav';
 import { useT } from '../lib/i18n';
 import { initials } from '../lib/format';
+import { assetUrl } from '../lib/api';
+
+/** Real photo when uploaded, otherwise the colored-initials circle. Shared by every header account button and the account modal. */
+function AccountAvatar({ user, fallbackColor, className }: { user: SessionUser | null; fallbackColor: string; className: string }) {
+  if (user?.avatarUrl) {
+    return <img src={assetUrl(user.avatarUrl)} alt="" className={`${className} object-cover`} />;
+  }
+  return (
+    <span className={`grid place-items-center font-bold text-white ${className}`} style={{ background: user?.avatarColor || fallbackColor }}>
+      {initials(user?.name)}
+    </span>
+  );
+}
 
 export interface NavItem {
   to: string;
@@ -84,12 +97,11 @@ export function MobileShell({
               className="flex items-center gap-2 rounded-xl border border-line bg-elevated p-1.5 pr-3 transition hover:bg-sunken shadow-xs cursor-pointer"
               aria-label="Account menu"
             >
-              <span
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-fluid-xs font-bold text-white shadow-xs"
-                style={{ background: user?.avatarColor || (accent === 'orange' ? '#ea580c' : '#15803d') }}
-              >
-                {initials(user?.name)}
-              </span>
+              <AccountAvatar
+                user={user}
+                fallbackColor={accent === 'orange' ? '#ea580c' : '#15803d'}
+                className="h-7 w-7 shrink-0 rounded-lg text-fluid-xs shadow-xs"
+              />
               <span className="hidden lg:block text-fluid-xs font-semibold text-ink max-w-[110px] truncate">
                 {user?.name?.split(' ')[0]}
               </span>
@@ -230,12 +242,11 @@ export function ConsoleShell({
               className="flex items-center gap-2 rounded-xl border border-line bg-elevated p-1.5 pr-3 transition hover:bg-sunken shadow-xs cursor-pointer"
               aria-label="Account menu"
             >
-              <span
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-fluid-xs font-bold text-white shadow-xs"
-                style={{ background: user?.avatarColor || (accent === 'orange' ? '#ea580c' : '#15803d') }}
-              >
-                {initials(user?.name)}
-              </span>
+              <AccountAvatar
+                user={user}
+                fallbackColor={accent === 'orange' ? '#ea580c' : '#15803d'}
+                className="h-7 w-7 shrink-0 rounded-lg text-fluid-xs shadow-xs"
+              />
               <span className="hidden lg:block text-fluid-xs font-semibold text-ink max-w-[110px] truncate">
                 {user?.name?.split(' ')[0]}
               </span>
@@ -356,12 +367,7 @@ function AccountModal({
         </div>
 
         <div className="mt-4 flex items-center gap-3">
-          <span
-            className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-fluid-base font-bold text-white shadow-sm"
-            style={{ background: user?.avatarColor || '#15803d' }}
-          >
-            {initials(user?.name)}
-          </span>
+          <AccountAvatar user={user} fallbackColor="#15803d" className="h-12 w-12 shrink-0 rounded-2xl text-fluid-base shadow-sm" />
           <div className="min-w-0 flex-1">
             <p className="font-bold text-fluid-sm text-ink truncate">{user?.name}</p>
             <p className="text-fluid-xs text-muted truncate">{user?.email || user?.phone}</p>

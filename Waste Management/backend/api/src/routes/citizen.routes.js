@@ -571,6 +571,21 @@ router.patch(
   })
 );
 
+/** Profile photo. Same upload pipeline as complaint/report photos. */
+router.post(
+  '/profile/avatar',
+  writeLimiter,
+  upload.single('avatar'),
+  asyncHandler(async (req, res) => {
+    const file = fileFromRequest(req, 'avatar');
+    if (!file) throw new HttpError(400, 'An image file is required');
+
+    const avatarUrl = await persist(file.buffer, file.mimetype, 'avatars');
+    const user = await prisma.user.update({ where: { id: req.user.id }, data: { avatarUrl } });
+    res.json({ avatarUrl: user.avatarUrl });
+  })
+);
+
 router.get(
   '/notifications',
   asyncHandler(async (req, res) => {

@@ -422,6 +422,7 @@ export const hi: Record<string, string> = {
   'citizen.profile.nameLabel': 'आपका नाम',
   'citizen.profile.namePlaceholder': 'पूरा नाम',
   'citizen.profile.saveName': 'नाम सहेजें',
+  'citizen.profile.uploadPhoto': 'प्रोफ़ाइल फ़ोटो अपलोड करें',
 
   // ---- driver ----
   'driver.nav.route': 'मार्ग',
