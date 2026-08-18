@@ -422,6 +422,7 @@ async function main() {
         isEmergency: c.isEmergency,
         latitude: c.latitude,
         longitude: c.longitude,
+        reportedAt: c.createdAt,
       })),
     });
 

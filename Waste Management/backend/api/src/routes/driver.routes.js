@@ -72,11 +72,12 @@ router.get(
         seq: s.seq || idx + 1,
         complaintId: s.complaintId || s.id,
         category: s.category || 'GARBAGE_PILE',
-        address: s.address || 'Reported Location',
+        address: s.label || s.address || 'Reported Location',
         latitude: s.latitude,
         longitude: s.longitude,
         status: s.status || 'PENDING',
         isEmergency: s.isEmergency || false,
+        reportedAt: s.reportedAt || null,
       })),
       summary: {
         stopsDone: stops.filter((s) => s.status === 'DONE').length,
