@@ -26,6 +26,15 @@ const PORTAL_COPY: Record<Portal, PortalCopy> = {
   admin: { icon: Shield, accent: 'text-danger', hasNote: true },
 };
 
+/** Each portal's own login route (plan §3 — no shared screen with a role dropdown). */
+const PORTAL_LOGIN_ROUTE: Record<Portal, string> = {
+  citizen: '/login',
+  driver: '/driver/login',
+  officer: '/officer/login',
+  admin: '/admin/login',
+};
+const PORTAL_ORDER: Portal[] = ['citizen', 'driver', 'officer', 'admin'];
+
 interface DemoAccount {
   name: string;
   email: string;
@@ -230,6 +239,25 @@ export default function Login({ portal }: { portal: Portal }) {
         */}
         <main className="mx-auto flex max-h-[calc(100dvh-5.5rem)] w-full max-w-md flex-col overflow-y-auto rounded-3xl border border-line/40 bg-elevated/55 p-5 shadow-lift backdrop-blur-2xl sm:p-7">
           <div className="flex w-full flex-col">
+          {/* Portal switcher — jump directly to another role's login without going back to the landing page. */}
+          <div className="mb-3.5">
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-faint">{t('auth.switchPortal.label')}</p>
+            <div className="flex gap-1 rounded-xl border border-line bg-sunken/60 p-1">
+              {PORTAL_ORDER.map((p) => (
+                <Link
+                  key={p}
+                  to={PORTAL_LOGIN_ROUTE[p]}
+                  aria-current={p === portal ? 'page' : undefined}
+                  className={`flex-1 rounded-lg py-1.5 text-center text-fluid-xs font-semibold transition ${
+                    p === portal ? 'bg-elevated text-ink shadow-xs' : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  {t(`auth.switchPortal.${p}`)}
+                </Link>
+              ))}
+            </div>
+          </div>
+
           <div className="flex items-center gap-3">
             <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-sunken ${copy.accent}`}>
               <Icon className="h-5 w-5" />
