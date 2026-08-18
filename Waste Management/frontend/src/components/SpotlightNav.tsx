@@ -153,9 +153,7 @@ export function SpotlightNav({
       {/* Sliding Active Pill Background Animation */}
       <div
         className={`pointer-events-none absolute h-[calc(100%-8px)] top-1 rounded-full transition-all duration-300 ease-out z-[2] ${
-          isOrange
-            ? 'bg-orange-600/15 border border-orange-500/30 shadow-xs shadow-orange-500/10'
-            : 'bg-brand/15 border border-brand/30 shadow-xs shadow-brand/10'
+          isOrange ? 'bg-orange-600/15' : 'bg-brand/15'
         }`}
         style={{
           transform: `translateX(${pillStyle.left}px)`,
@@ -194,7 +192,7 @@ export function SpotlightNav({
                 data-nav-index={idx}
                 title={compact ? item.label : undefined}
                 className={({ isActive: matchActive }) =>
-                  `relative flex items-center gap-2 rounded-full py-1.5 text-fluid-xs font-semibold transition-colors duration-200 ${
+                  `relative flex items-center gap-2 rounded-full py-1.5 text-fluid-xs font-semibold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-brand/50 ${
                     compact ? 'px-2.5 2xl:px-3.5' : 'px-3.5 sm:px-4'
                   } ${
                     matchActive || isActive

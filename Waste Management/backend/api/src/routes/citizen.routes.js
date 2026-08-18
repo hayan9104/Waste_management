@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { PORTALS, WASTE_CATEGORIES, EMERGENCY_TYPES, CREDIT_RULES } from '../config/constants.js';
 import { createComplaint, serializeComplaint, findDuplicate, wardForPoint } from '../services/complaint.service.js';
 import { distanceMeters, boundsAround } from '../lib/geo.js';
+import { roadSnappedPolyline } from '../services/routing.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.CITIZEN), loadUser);
@@ -330,10 +331,18 @@ router.get(
       { latitude: vehicle.lastLat, longitude: vehicle.lastLng }
     );
 
+    // Real road geometry (OSRM), not a fabricated curve -- so the drawn line
+    // actually follows streets instead of cutting through blocks.
+    const routePolyline = await roadSnappedPolyline([
+      [vehicle.lastLng, vehicle.lastLat],
+      [complaint.longitude, complaint.latitude],
+    ]);
+
     res.json({
       tracking: true,
       room: `truck:${vehicle.id}`,
       target: { latitude: complaint.latitude, longitude: complaint.longitude },
+      routePolyline,
       vehicle: {
         id: vehicle.id,
         registrationNumber: vehicle.registrationNumber,

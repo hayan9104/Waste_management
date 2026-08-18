@@ -85,16 +85,9 @@ export default function TrackTruck() {
           <BaseMap center={center} zoom={16}>
             <FitBounds points={points} />
 
-            {/* Live Navigation Polyline from Truck to Citizen's Destination */}
-            {live && hasTarget && (
-              <RouteLine
-                polyline={[
-                  [live.longitude, live.latitude],
-                  [(live.longitude + data.target.longitude) / 2 + 0.0003, (live.latitude + data.target.latitude) / 2 + 0.0002],
-                  [data.target.longitude, data.target.latitude],
-                ]}
-                progressIndex={0}
-              />
+            {/* Real road-snapped route (OSRM), refreshed each time /track re-fetches -- not a fabricated curve. */}
+            {hasTarget && data.routePolyline?.length > 1 && (
+              <RouteLine polyline={data.routePolyline} progressIndex={0} />
             )}
 
             {/* Destination Target Pin with pulsating radar */}
