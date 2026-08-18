@@ -47,6 +47,11 @@ app.get('/', (_req, res) =>
   })
 );
 
+/** Google Search Console site-verification (needed to submit the Safe Browsing false-positive review). */
+app.get('/googlef2039f2c055e0a20.html', (_req, res) =>
+  res.type('text/html').send('google-site-verification: googlef2039f2c055e0a20.html')
+);
+
 app.use('/api', apiRoutes);
 app.use(notFound);
 app.use(errorHandler);
