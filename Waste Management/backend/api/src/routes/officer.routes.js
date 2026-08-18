@@ -10,6 +10,7 @@ import analytics from '../services/analytics.service.js';
 import { transition, serializeComplaint } from '../services/complaint.service.js';
 import { escalate, slaCountdown } from '../services/escalation.service.js';
 import { optimizeRoute, roadSnappedRoute } from '../services/routing.service.js';
+import { simulateWardOverflow } from '../services/whatif.service.js';
 import { serializeVehicle, today, startOfToday } from '../services/tracking.service.js';
 import { emitTo } from '../sockets/realtime.js';
 import { notify } from '../services/notification.service.js';
@@ -526,22 +527,24 @@ router.post(
     });
 
     const averageReportsPerHour = Math.max(0.2, (recentReportsCount / (7 * 24)));
-    const projectedAdditionalReports = Math.round(averageReportsPerHour * body.delayHours * 1.35);
-    const overflowProbabilityPercent = Math.min(98, Math.round(35 + (body.delayHours * 9.5)));
-    const estimatedSlaPenaltyRisk = body.delayHours > 12 ? 'HIGH' : body.delayHours > 4 ? 'MEDIUM' : 'LOW';
+    const sim = simulateWardOverflow({ delayHours: body.delayHours, averageReportsPerHour });
+    const estimatedSlaPenaltyRisk = sim.overflowProbabilityPercent > 50 ? 'HIGH' : sim.atRiskProbabilityPercent > 30 ? 'MEDIUM' : 'LOW';
 
     res.json({
       delayHours: body.delayHours,
       averageReportsPerHour: Number(averageReportsPerHour.toFixed(2)),
-      projectedAdditionalReports,
-      overflowProbabilityPercent,
+      projectedAdditionalReports: sim.projectedAdditionalReports,
+      overflowProbabilityPercent: sim.overflowProbabilityPercent,
+      atRiskProbabilityPercent: sim.atRiskProbabilityPercent,
+      startingState: sim.startingState,
       estimatedSlaPenaltyRisk,
+      simulation: { engine: 'poisson-markov-monte-carlo', runs: sim.runs, modelVersion: 'ward-whatif-forecaster-2.0.0' },
       immediateDispatchImpact: {
         slaComplianceEstimated: '96%',
         co2SavedKg: Number((body.delayHours * 1.8).toFixed(1)),
       },
       delayedDispatchImpact: {
-        slaComplianceEstimated: `${Math.max(60, 96 - (body.delayHours * 3))}%`,
+        slaComplianceEstimated: `${Math.max(50, Math.round(100 - sim.overflowProbabilityPercent * 0.6))}%`,
         co2PenaltyKg: Number((body.delayHours * 3.2).toFixed(1)),
       },
     });

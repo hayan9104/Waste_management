@@ -1,0 +1,16 @@
+{
+  "params": {
+    "eps_meters": 828.53,
+    "min_samples": 4,
+    "kde_bandwidth": 0.004232,
+    "density_threshold_percentile": 85,
+    "earth_radius_meters": 6371008.8
+  },
+  "model_type": "Classical AI (Geospatial Clustering - DBSCAN + KDE)",
+  "calibrated_on": "2026-08-17",
+  "data_source": "gandhinagar_incident_telemetry_logs_v2",
+  "version": "2.0.0",
+  "calibration_method": "k-distance elbow + Silverman KDE bandwidth estimation",
+  "wired_in": false,
+  "note": "Extracted from hotspot_density_engine.checkpoint.pt. Describes a DBSCAN+KDE spatial-clustering pass over raw incident coordinates; the live hotspot forecast (ai/src/models.js forecast()) instead runs a seasonal-naive time-series baseline over per-ward daily counts, which is a different technique and does not consume these params. Kept here for transparency rather than force-fit into an unrelated algorithm."
+}

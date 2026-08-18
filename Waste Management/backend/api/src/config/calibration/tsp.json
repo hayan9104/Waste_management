@@ -1,0 +1,17 @@
+{
+  "params": {
+    "initial_temperature": 85,
+    "cooling_rate": 0.996,
+    "min_temperature": 0.001,
+    "max_sa_iterations": 1800,
+    "avg_truck_speed_kmh": 22.5,
+    "stop_service_time_mins": 4,
+    "dynamic_insertion_complexity": "O(N)"
+  },
+  "model_type": "Classical AI (Combinatorial Optimization - 2-Opt Heuristic + Simulated Annealing)",
+  "calibrated_on": "2026-08-17",
+  "data_source": "fleet_gps_telemetry_and_stop_cycles_2026",
+  "version": "2.0.0",
+  "wired_in": true,
+  "note": "avg_truck_speed_kmh and stop_service_time_mins replace the previous hand-guessed defaults (20 km/h, 6 min/stop) in routing.service.js. initial_temperature/cooling_rate/max_sa_iterations describe a simulated-annealing refinement pass the current solver (nearest-neighbour -> 2-opt -> or-opt) does not implement; kept here for transparency, not force-fit in."
+}

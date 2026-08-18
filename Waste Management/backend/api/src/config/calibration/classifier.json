@@ -1,0 +1,8 @@
+{
+  "model_type": "Deep Learning (YOLOv8 Object Detection)",
+  "checkpoint_file": "safaai_best.pt",
+  "framework": "Ultralytics YOLOv8 (v8.4.120), PyTorch zip-serialized checkpoint",
+  "exported_on": "2026-08-16",
+  "wired_in": false,
+  "note": "A real trained checkpoint exists (verified: genuine ultralytics.nn.tasks.DetectionModel structure with real Conv2d/BatchNorm2d weight tensors, not a placeholder). It cannot be loaded directly, though: this AI microservice runs on plain Node.js with no Python/PyTorch runtime, and .pt is a Python-pickle format. The service already supports a real classifier via ONNX_MODEL_PATH (see ai/src/models.js loadModels()) -- export the checkpoint to ONNX (`yolo export model=safaai_best.pt format=onnx`, needs Python + ultralytics, e.g. a free Google Colab notebook), upload the resulting .onnx file, and point ONNX_MODEL_PATH at it. No other code change needed. Until then, classify() runs its documented deterministic stand-in."
+}

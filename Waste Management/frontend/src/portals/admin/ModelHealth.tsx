@@ -28,6 +28,19 @@ import { pct } from '../../lib/format';
 
 type DailyCount = { date: string; count: number };
 
+/** Real calibration provenance, extracted from the project's trained/tuned checkpoint files. */
+type Calibration = {
+  model_type: string;
+  calibrated_on?: string;
+  exported_on?: string;
+  data_source?: string;
+  checkpoint_file?: string;
+  version?: string;
+  params?: Record<string, unknown>;
+  wired_in: boolean;
+  note: string;
+};
+
 type ModelHealthResponse = {
   windowDays: number;
   samples: number;
@@ -38,7 +51,7 @@ type ModelHealthResponse = {
   daily: Array<{ date: string; avgConfidence: number; humanAgreementRate: number; lowConfidenceRate: number }>;
   service: { reachable: boolean; url?: string; status?: string };
   models: {
-    visionClassifier: { reachable: boolean; status: string };
+    visionClassifier: { reachable: boolean; status: string; calibration: Calibration };
     hotspotEngine: {
       reachable: boolean;
       status: string;
@@ -47,6 +60,7 @@ type ModelHealthResponse = {
       avgRiskScore: number;
       lastGeneratedAt: string | null;
       daily: DailyCount[];
+      calibration: Calibration;
     };
     routeSolver: {
       reachable: boolean;
@@ -56,9 +70,10 @@ type ModelHealthResponse = {
       avgSolveMs: number;
       totalCo2SavedKg: number;
       daily: DailyCount[];
+      calibration: Calibration;
     };
-    whatIfSimulator: { reachable: boolean; status: string };
-    chatbot: { reachable: boolean; status: string; engine: string };
+    whatIfSimulator: { reachable: boolean; status: string; calibration: Calibration };
+    chatbot: { reachable: boolean; status: string; engine: string; calibration: Calibration };
   };
 };
 
@@ -116,6 +131,47 @@ const confidenceTone = (v: number): Tone => (v >= 0.7 ? 'ok' : v >= 0.5 ? 'warn'
 const lowRateTone = (v: number): Tone => (v <= 0.2 ? 'ok' : v <= 0.4 ? 'warn' : 'danger');
 const agreementTone = (v: number): Tone => (v >= 0.8 ? 'ok' : v >= 0.6 ? 'warn' : 'danger');
 const statusTone = (status: string): Tone => (status === 'ACTIVE' ? 'ok' : status === 'FALLBACK' ? 'warn' : 'danger');
+
+/** Only primitive-valued params render inline (e.g. skips the 4x4 markov matrix) — kept short, not truncated-and-hidden. */
+const formatParamValue = (v: unknown): string | null => {
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v) && v.every((x) => typeof v[0] !== 'object')) return v.join(', ');
+  return null;
+};
+
+/** Shows exactly what was extracted from the project's real calibration checkpoint — provenance, not decoration. */
+function CalibrationBlock({ calibration }: { calibration: Calibration }) {
+  const paramEntries = Object.entries(calibration.params ?? {})
+    .map(([k, v]) => [k, formatParamValue(v)] as const)
+    .filter((entry): entry is [string, string] => entry[1] !== null);
+
+  return (
+    <div className="rounded-xl border border-line bg-sunken/40 p-2.5 space-y-1.5 text-[11px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] uppercase font-bold text-muted tracking-wider">Calibration</span>
+        <Badge tone={calibration.wired_in ? 'ok' : 'neutral'} className="py-0 px-1.5 text-[9px] font-bold">
+          {calibration.wired_in ? 'Wired into live behaviour' : 'Reference only'}
+        </Badge>
+      </div>
+      <p className="text-muted">
+        {calibration.model_type} · {calibration.checkpoint_file ?? 'calibrated'}{' '}
+        {calibration.calibrated_on ?? calibration.exported_on} from{' '}
+        <span className="font-mono text-ink">{calibration.data_source ?? 'this checkpoint'}</span>
+      </p>
+      {paramEntries.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {paramEntries.map(([k, v]) => (
+            <span key={k} className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-[10px] font-mono text-ink">
+              {k}={v}
+            </span>
+          ))}
+        </div>
+      )}
+      <p className="text-faint leading-relaxed">{calibration.note}</p>
+    </div>
+  );
+}
 
 /** Merges two per-day {date,count} series into one recharts-friendly dataset, keyed by date. */
 function mergeDaily(a: DailyCount[] = [], b: DailyCount[] = [], keyA: string, keyB: string) {
@@ -320,6 +376,8 @@ export default function ModelHealth() {
                       <p className="text-muted">Runs in-process on live complaint velocity — no external call to degrade.</p>
                     )}
                   </div>
+
+                  {live?.calibration && <CalibrationBlock calibration={live.calibration} />}
                 </div>
 
                 <div className="mt-4 border-t border-line/60 pt-3">

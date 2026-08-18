@@ -2,6 +2,7 @@ import { prisma } from '../lib/prisma.js';
 import { CATEGORY_MAP } from '../config/constants.js';
 import { predictHotspots } from './ai.service.js';
 import { env } from '../config/env.js';
+import { CALIBRATION } from '../config/calibration/index.js';
 
 /**
  * Every dashboard number is derived here from real rows — no dashboard card
@@ -389,6 +390,7 @@ export async function perModelHealth(days = 14, visionReachable = false) {
       // Shares the FastAPI vision microservice, so its live reachability is the classifier's real status.
       reachable: visionReachable,
       status: visionReachable ? 'ACTIVE' : 'FALLBACK',
+      calibration: CALIBRATION.classifier,
     },
     hotspotEngine: {
       // Same microservice boundary as the classifier — degrades together.
@@ -399,6 +401,7 @@ export async function perModelHealth(days = 14, visionReachable = false) {
       avgRiskScore: Number(avg(hotspots.map((h) => h.riskScore)).toFixed(1)),
       lastGeneratedAt: hotspots.length ? hotspots.reduce((m, h) => (h.createdAt > m ? h.createdAt : m), hotspots[0].createdAt) : null,
       daily: byDayCount(hotspots),
+      calibration: CALIBRATION.hotspot,
     },
     routeSolver: {
       // Runs entirely in-process (2-opt/Or-opt over Node), no external dependency to degrade.
@@ -409,17 +412,20 @@ export async function perModelHealth(days = 14, visionReachable = false) {
       avgSolveMs: Number(avg(routes.map((r) => r.solveMs)).toFixed(0)),
       totalCo2SavedKg: Number(routes.reduce((s, r) => s + (r.co2SavedKg || 0), 0).toFixed(1)),
       daily: byDayCount(routes),
+      calibration: CALIBRATION.tsp,
     },
     whatIfSimulator: {
       // Pure local heuristic (officer.routes.js /simulate) — cannot go down independently of the API itself.
       reachable: true,
       status: 'ACTIVE',
+      calibration: CALIBRATION.whatif,
     },
     chatbot: {
       // Always answers (LLM when GROQ_API_KEY is set, deterministic rule-based reply otherwise) — engine varies, never down.
       reachable: true,
       status: 'ACTIVE',
       engine: env.groq.apiKey ? 'groq-llm' : 'rule-based-fallback',
+      calibration: CALIBRATION.nlp,
     },
   };
 }
