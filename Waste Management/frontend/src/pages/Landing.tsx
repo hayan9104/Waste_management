@@ -9,8 +9,6 @@ import {
   Siren,
   MapPinned,
   TrendingUp,
-  Phone,
-  MessageCircle,
   Building2,
   Zap,
   Sparkles,
@@ -21,6 +19,9 @@ import {
   Activity,
   Layers,
   HelpCircle,
+  Award,
+  ListChecks,
+  Bot,
 } from 'lucide-react';
 import { publicApi } from '../lib/api';
 import { LanguageSwitcher, ThemeToggle, Reveal } from '../components/ui';
@@ -81,6 +82,13 @@ const DIFFERENTIATORS = [
   { icon: MapPinned, key: '2' },
   { icon: TrendingUp, key: '3' },
   { icon: ShieldCheck, key: '4' },
+];
+
+const CITIZEN_FEATURES = [
+  { icon: Truck, key: 'tracking' },
+  { icon: ListChecks, key: 'timeline' },
+  { icon: Award, key: 'rewards' },
+  { icon: Bot, key: 'chatbot' },
 ];
 
 export default function Landing() {
@@ -505,50 +513,25 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ---- Zero-install channels ---- */}
+      {/* ---- Citizen features ---- */}
       <section className="border-y border-line bg-elevated px-4 py-12 sm:py-16">
-        <div className="mx-auto grid max-w-6xl items-center gap-8 md:grid-cols-2">
-          <Reveal>
-            <h2 className="text-fluid-2xl font-bold tracking-tight text-ink">{t('landing.channels.title')}</h2>
-            <p className="mt-2 text-fluid-sm text-muted">
-              {t('landing.channels.body')}
-            </p>
-            <div className="mt-5 space-y-3">
-              <div className="flex gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand">
-                  <MessageCircle className="h-4 w-4" />
-                </span>
-                <div>
-                  <h3 className="text-fluid-base font-bold text-ink">{t('landing.channels.whatsapp')}</h3>
-                  <p className="text-fluid-sm text-muted">{t('landing.channels.whatsappBody')}</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand">
-                  <Phone className="h-4 w-4" />
-                </span>
-                <div>
-                  <h3 className="text-fluid-base font-bold text-ink">{t('landing.channels.ivr')}</h3>
-                  <p className="text-fluid-sm text-muted">{t('landing.channels.ivrBody')}</p>
-                </div>
-              </div>
-            </div>
+        <div className="mx-auto max-w-6xl">
+          <Reveal className="mx-auto max-w-2xl text-center">
+            <h2 className="text-fluid-2xl font-bold tracking-tight text-ink">{t('landing.citizenFeatures.title')}</h2>
+            <p className="mt-2 text-fluid-sm text-muted">{t('landing.citizenFeatures.body')}</p>
           </Reveal>
 
-          <Reveal delayMs={120} className="card p-6 border border-line bg-surface shadow-xs">
-            <h3 className="text-fluid-base font-bold text-ink">{t('landing.models.title')}</h3>
-            <p className="mt-1.5 text-fluid-sm text-muted">
-              {t('landing.models.body')}
-            </p>
-            <ul className="mt-4 grid gap-2 text-fluid-sm">
-              {['landing.models.item1', 'landing.models.item2', 'landing.models.item3', 'landing.models.item4', 'landing.models.item5'].map((key) => (
-                <li key={key} className="flex items-center gap-2.5 text-muted">
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-brand" />
-                  <span className="text-ink text-fluid-xs font-medium">{t(key)}</span>
-                </li>
-              ))}
-            </ul>
-          </Reveal>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 sm:auto-rows-fr">
+            {CITIZEN_FEATURES.map((item, i) => (
+              <Reveal key={item.key} delayMs={i * 80} className="card flex h-full flex-col p-5 border border-line bg-surface shadow-xs hover:shadow-sm transition">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/10 text-brand">
+                  <item.icon className="h-5 w-5" />
+                </span>
+                <h3 className="mt-3 text-fluid-base font-bold text-ink">{t(`landing.citizenFeatures.${item.key}.title`)}</h3>
+                <p className="mt-1.5 text-fluid-sm text-muted leading-relaxed">{t(`landing.citizenFeatures.${item.key}.body`)}</p>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </section>
 

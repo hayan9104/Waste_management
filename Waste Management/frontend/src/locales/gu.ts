@@ -121,16 +121,20 @@ export const gu: Record<string, string> = {
   'landing.why.4.title': 'માત્ર નોંધ નહીં, ચકાસણી',
   'landing.why.4.body':
     'દરેક ઉકેલ સાથે ફોટો પુરાવો અને અપરિવર્તનીય ઑડિટ નોંધ હોય છે. કશું માત્ર વિશ્વાસ પર બંધ થતું નથી.',
-  'landing.channels.title': 'ઍપ નથી? તોય કામ ચાલશે.',
-  'landing.channels.body':
-    'ફરિયાદ કરવી સ્માર્ટફોન કે અંગ્રેજી પર આધારિત ન હોવી જોઈએ. બે માધ્યમોને આમાંથી કશું જોઈતું નથી.',
-  'landing.channels.whatsapp': 'વૉટ્સઍપ બોટ',
-  'landing.channels.whatsappBody': 'મ્યુનિસિપલ નંબર પર ફોટો મોકલો, બાકીનું બોટ સંભાળી લેશે.',
-  'landing.channels.ivr': 'ગુજરાતી અને હિન્દીમાં વૉઇસ / IVR',
-  'landing.channels.ivrBody': 'કૉલ કરીને સમસ્યા જણાવો. વાણી ઓળખ ફરિયાદ નોંધી લે છે.',
-  'landing.models.title': 'દરેક AI ઘટક મફત અને સ્વ-હોસ્ટેડ છે',
-  'landing.models.body':
-    'વર્ગીકરણ, પુનરાવર્તન ઓળખ, હૉટસ્પૉટ આગાહી અને છેતરપિંડી આકારણી — બધું નગરપાલિકાના પોતાના સર્વર પર ઓપન મોડેલથી ચાલે છે. પ્રતિ-વિનંતી ચાર્જ નહીં, એટલે કોઈ પણ ULB શૂન્ય વધારાના ખર્ચે અપનાવી શકે.',
+  'landing.citizenFeatures.title': 'નાગરિકો માટે બનાવેલ',
+  'landing.citizenFeatures.body': 'ચાર સુવિધાઓ જે ફરિયાદ ફોર્મને ખરા ફીડબેક લૂપમાં ફેરવે છે.',
+  'landing.citizenFeatures.tracking.title': 'લાઇવ ટ્રક ટ્રેકિંગ',
+  'landing.citizenFeatures.tracking.body':
+    'નાગરિકો સૌથી નજીકનું કલેક્શન વાહન ETA સાથે નકશા પર જુએ છે, બરાબર ફૂડ-ડિલિવરી ટ્રેકરની જેમ.',
+  'landing.citizenFeatures.timeline.title': 'ફરિયાદ સ્થિતિ ટાઇમલાઇન',
+  'landing.citizenFeatures.timeline.body':
+    '"નોંધાયેલ → ચકાસાયેલ → સોંપાયેલ → ઉકેલાયેલ" — સમય-મુદ્રા સાથે, જેથી લોકોને ખબર રહે કે તેમની ફરિયાદ અવગણાઈ નથી.',
+  'landing.citizenFeatures.rewards.title': 'રિવોર્ડ / સ્ટ્રીક સિસ્ટમ',
+  'landing.citizenFeatures.rewards.body':
+    'જવાબદારીપૂર્વક (અને સ્પામ કર્યા વિના) ફરિયાદ કરતા નાગરિકો માટે પોઇન્ટ કે બેજ, જે નાગરિક સન્માન અથવા નાના પ્રોત્સાહનો માટે વટાવી શકાય છે.',
+  'landing.citizenFeatures.chatbot.title': 'સેગ્રિગેશન ગાઇડ ચેટબોટ',
+  'landing.citizenFeatures.chatbot.body':
+    '"આ કયા ડબ્બામાં જશે?" પૂછો અને એ જ YOLOv8 મોડેલ દ્વારા તરત ભીનું/સૂકું/જોખમી વર્ગીકરણ મેળવો.',
   'landing.portals.title': 'અલગ પોર્ટલ, અલગ લૉગિન',
   'landing.portals.body':
     'દરેક ભૂમિકા પોતાની સ્ક્રીન પર સાઇન ઇન કરે છે અને એવો ટોકન મેળવે છે જે માત્ર તેના જ API ભાગ પર ચાલે. ડ્રાઇવરનું સત્ર અધિકારી કન્સોલ સુધી પહોંચી શકતું નથી.',

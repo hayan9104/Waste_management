@@ -129,17 +129,20 @@ export const en: Record<string, string> = {
   'landing.why.4.title': 'Verified, not just recorded',
   'landing.why.4.body':
     'Every resolution carries photo proof and an immutable audit entry. Nothing is closed on trust alone.',
-  'landing.channels.title': 'No app? Still covered.',
-  'landing.channels.body':
-    "Reporting shouldn't depend on owning a smartphone or knowing English. Two channels need neither.",
-  'landing.channels.whatsapp': 'WhatsApp bot',
-  'landing.channels.whatsappBody':
-    'Send a photo to the municipal number and a chatbot walks through the rest.',
-  'landing.channels.ivr': 'Voice / IVR in Gujarati and Hindi',
-  'landing.channels.ivrBody': 'Call and describe the problem. Speech recognition files the complaint.',
-  'landing.models.title': 'Every AI component is free and self-hosted',
-  'landing.models.body':
-    "Classification, duplicate detection, hotspot forecasting and fraud scoring all run on open models on the municipality's own server. No per-request billing, so a ULB can adopt this at zero marginal cost.",
+  'landing.citizenFeatures.title': 'Built for citizens',
+  'landing.citizenFeatures.body': 'Four features that turn a complaint form into a real feedback loop.',
+  'landing.citizenFeatures.tracking.title': 'Live truck tracking',
+  'landing.citizenFeatures.tracking.body':
+    'Citizens see the nearest collection vehicle on a map with ETA, like a food-delivery tracker.',
+  'landing.citizenFeatures.timeline.title': 'Complaint status timeline',
+  'landing.citizenFeatures.timeline.body':
+    '"Reported → Verified → Assigned → Resolved" with timestamps, so people know their report isn\'t ignored.',
+  'landing.citizenFeatures.rewards.title': 'Reward / streak system',
+  'landing.citizenFeatures.rewards.body':
+    "Points or badges for citizens who report responsibly (and don't spam), redeemable for civic recognition or small incentives.",
+  'landing.citizenFeatures.chatbot.title': 'Segregation guide chatbot',
+  'landing.citizenFeatures.chatbot.body':
+    'Ask "which bin does this go in?" and get instant wet/dry/hazardous classification via the same YOLOv8 model.',
   'landing.portals.title': 'Separate portals, separate logins',
   'landing.portals.body':
     'Each role signs in on its own screen and receives a token that only works on its own part of the API. A driver session cannot reach the officer console, even by hand.',
