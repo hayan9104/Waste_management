@@ -57,7 +57,7 @@ export default function SchedulePickup() {
   const [step, setStep] = useState<Step>('where');
   const [locationType, setLocationType] = useState<'MY_HOME' | 'COMMON_PLOT_SOCIETY'>('MY_HOME');
   const [address, setAddress] = useState('');
-  const [position, setPosition] = useState<{ lat: number; lng: number }>({ lat: 23.2156, lng: 72.6369 });
+  const [position, setPosition] = useState<{ lat: number; lng: number }>({ lat: 23.0225, lng: 72.5714 });
   const [eventReason, setEventReason] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['Organic', 'Plastic/Recyclable']);
   const [expectedQuantity, setExpectedQuantity] = useState<'SMALL' | 'MEDIUM' | 'LARGE'>('MEDIUM');
@@ -78,15 +78,15 @@ export default function SchedulePickup() {
         (pos) => {
           setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           if (!address) {
-            setAddress(`Sector 6, Gandhinagar, Gujarat 382006 (Lat: ${pos.coords.latitude.toFixed(4)}, Lng: ${pos.coords.longitude.toFixed(4)})`);
+            setAddress(`Navrangpura, Ahmedabad, Gujarat 380009 (Lat: ${pos.coords.latitude.toFixed(4)}, Lng: ${pos.coords.longitude.toFixed(4)})`);
           }
         },
         () => {
-          if (!address) setAddress('Sector 6, Gandhinagar, Gujarat 382006');
+          if (!address) setAddress('Navrangpura, Ahmedabad, Gujarat 380009');
         }
       );
     } else {
-      setAddress('Sector 6, Gandhinagar, Gujarat 382006');
+      setAddress('Navrangpura, Ahmedabad, Gujarat 380009');
     }
   }, []);
 

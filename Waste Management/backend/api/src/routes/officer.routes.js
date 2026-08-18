@@ -9,7 +9,7 @@ import { PORTALS, SOCKET_EVENTS } from '../config/constants.js';
 import analytics from '../services/analytics.service.js';
 import { transition, serializeComplaint } from '../services/complaint.service.js';
 import { escalate, slaCountdown } from '../services/escalation.service.js';
-import { optimizeRoute, roadSnappedPolyline } from '../services/routing.service.js';
+import { optimizeRoute, roadSnappedRoute } from '../services/routing.service.js';
 import { serializeVehicle, today, startOfToday } from '../services/tracking.service.js';
 import { emitTo } from '../sockets/realtime.js';
 import { notify } from '../services/notification.service.js';
@@ -757,8 +757,12 @@ router.post(
       })),
     });
 
-    const polyline = await roadSnappedPolyline(solved.polyline);
-    res.json({ ...solved, polyline, vehicleId, complaintIds: complaints.map((c) => c.id) });
+    // breakpoints[i] = the index in `polyline` reached on arrival at solved.stops[i] —
+    // lets the driver map slice off legs already covered instead of drawing the
+    // whole route (or a straight line cutting through fields) once a stop is done.
+    const { polyline, breakpoints } = await roadSnappedRoute(solved.polyline);
+    const stops = solved.stops.map((s, i) => ({ ...s, polylineIndex: breakpoints[i] ?? null }));
+    res.json({ ...solved, stops, polyline, vehicleId, complaintIds: complaints.map((c) => c.id) });
   })
 );
 
