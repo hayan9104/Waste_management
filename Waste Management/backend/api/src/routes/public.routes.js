@@ -56,7 +56,7 @@ router.get(
       : 0;
 
     res.json({
-      city: 'Gandhinagar',
+      city: 'Ahmedabad',
       complaintsTotal: total,
       complaintsResolved: resolved,
       resolutionRatePct: total ? Math.round((resolved / total) * 100) : 0,

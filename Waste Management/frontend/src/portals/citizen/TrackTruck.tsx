@@ -135,7 +135,7 @@ export default function TrackTruck() {
               </span>
             </div>
             <p className="truncate text-fluid-xs text-muted font-medium mt-0.5">
-              Assigned Vehicle: <span className="font-bold text-ink">{data.vehicle.registrationNumber}</span> · Gandhinagar Sector Clean Team
+              Assigned Vehicle: <span className="font-bold text-ink">{data.vehicle.registrationNumber}</span> · Ahmedabad Sanitation Team
             </p>
           </div>
           <span

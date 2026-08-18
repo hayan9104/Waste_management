@@ -21,10 +21,10 @@ const SATELLITE_ATTRIBUTION = 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Ea
 const SATELLITE_LABELS_URL =
   'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 
-export const GANDHINAGAR: [number, number] = [23.2156, 72.6369];
+export const CITY_CENTER: [number, number] = [23.0225, 72.5714];
 
 export function BaseMap({
-  center = GANDHINAGAR,
+  center = CITY_CENTER,
   zoom = 13,
   children,
   className = 'h-full w-full',

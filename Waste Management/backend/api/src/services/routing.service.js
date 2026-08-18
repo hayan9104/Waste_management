@@ -305,5 +305,55 @@ export async function nearestRoadDistance(latitude, longitude) {
   }
 }
 
+/**
+ * Snaps a point to the nearest driveable road and returns the road-side
+ * coordinate itself (not just the distance) — used at seed time so demo
+ * complaints land on real streets instead of open ground. Returns null on
+ * any failure so the caller can fall back to the unsnapped point.
+ */
+export async function snapToRoad(latitude, longitude) {
+  try {
+    const { data } = await axios.get(
+      `https://router.project-osrm.org/nearest/v1/driving/${longitude},${latitude}`,
+      { timeout: 4000 }
+    );
+    const wp = data?.waypoints?.[0];
+    if (!wp?.location) return null;
+    const [lng, lat] = wp.location;
+    return { latitude: lat, longitude: lng, distanceMeters: wp.distance };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Road-snapped route geometry PLUS, for each waypoint after the first, the
+ * index into the flattened polyline where the vehicle arrives there. A
+ * driver's live map uses this to slice off legs already covered instead of
+ * drawing the whole day's route (or falling back to a straight line that
+ * cuts through fields) once a stop is marked collected.
+ */
+export async function roadSnappedRoute(points) {
+  if (!points || points.length < 2) return { polyline: drivablePolyline(points || []), breakpoints: [] };
+
+  const polyline = [];
+  const breakpoints = [];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const leg = await roadSnappedPolyline([points[i], points[i + 1]]);
+    const segment = polyline.length ? leg.slice(1) : leg;
+    polyline.push(...segment);
+    breakpoints.push(polyline.length - 1);
+  }
+  return { polyline, breakpoints };
+}
+
 export { DEFAULTS, distanceKm };
-export default { optimizeRoute, solveLocal, drivablePolyline, roadSnappedPolyline, nearestRoadDistance };
+export default {
+  optimizeRoute,
+  solveLocal,
+  drivablePolyline,
+  roadSnappedPolyline,
+  roadSnappedRoute,
+  nearestRoadDistance,
+  snapToRoad,
+};

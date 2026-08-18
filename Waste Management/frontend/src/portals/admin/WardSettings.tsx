@@ -35,7 +35,7 @@ const CORNERS: { label: string; latKey: LatKey; lngKey: LngKey }[] = [
 const emptyForm = { id: '', name: '', code: '', zone: '', population: 0, slaMinutes: 1440 };
 
 /** A small default square centred on the given point. */
-function defaultBounds(center: [number, number] = [23.2156, 72.6369], delta = 0.01): Bounds {
+function defaultBounds(center: [number, number] = [23.0225, 72.5714], delta = 0.01): Bounds {
   const [lat, lng] = center;
   return {
     north: String(lat + delta),
@@ -181,7 +181,7 @@ export default function WardSettings() {
 
       <Card className="overflow-hidden p-0">
         <div className="h-[46dvh] min-h-[300px] w-full">
-          <BaseMap center={[23.2156, 72.6369]} zoom={12}>
+          <BaseMap center={[23.0225, 72.5714]} zoom={12}>
             <FitBounds points={wards.data.map((w: any) => [w.center.latitude, w.center.longitude])} />
             <WardLayer wards={wards.data} colorFor={() => '#16a34a'} />
           </BaseMap>
@@ -276,7 +276,7 @@ export default function WardSettings() {
             </p>
 
             <div className="h-[260px] w-full overflow-hidden rounded-xl border border-line">
-              <BaseMap center={[23.2156, 72.6369]} zoom={12}>
+              <BaseMap center={[23.0225, 72.5714]} zoom={12}>
                 <FitToPoints positions={polygonPositions} />
                 {polygonPositions.length === 4 && (
                   <Polygon positions={polygonPositions} pathOptions={{ color: '#16a34a', weight: 2, fillColor: '#16a34a', fillOpacity: 0.18 }} />

@@ -516,7 +516,7 @@ router.get(
       title: 'SWM Rules ward-wise compliance summary',
       generatedAt: new Date(),
       periodDays: days,
-      city: 'Gandhinagar',
+      city: 'Ahmedabad',
       rows,
       totals: {
         ...totals,

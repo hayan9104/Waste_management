@@ -57,7 +57,7 @@ export default function AdminDashboard() {
             </Badge>
           </div>
           <div className="h-[52dvh] min-h-[320px] w-full xl:h-[560px]">
-            <BaseMap center={[23.2156, 72.6369]} zoom={12}>
+            <BaseMap center={[23.0225, 72.5714]} zoom={12}>
               <FitBounds points={wards.map((w: any) => [w.center.latitude, w.center.longitude])} />
               <WardLayer
                 wards={wards}

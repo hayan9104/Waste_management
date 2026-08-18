@@ -12,7 +12,7 @@ import { hashPassword } from '../lib/password.js';
 import { polygonBBox } from '../lib/geo.js';
 import { CITY, WARDS, wardGeometry, pointInWard, STREETS } from './city.js';
 import { WASTE_CATEGORIES, CATEGORY_MAP, CREDIT_RULES, ROLES } from '../config/constants.js';
-import { solveLocal, roadSnappedPolyline } from '../services/routing.service.js';
+import { solveLocal, roadSnappedRoute, snapToRoad } from '../services/routing.service.js';
 
 const PASSWORD = 'safaai@2026';
 const HISTORY_DAYS = 45;
@@ -30,6 +30,47 @@ function rng(seed) {
 }
 const pick = (r, arr) => arr[Math.floor(r() * arr.length) % arr.length];
 const intBetween = (r, min, max) => Math.floor(min + r() * (max - min + 1));
+const round6 = (n) => Number(n.toFixed(6));
+
+/**
+ * Real streets, not open fields. Per ward, road-snap a small set of
+ * candidate points once via OSRM and cache the results — cheap and fast
+ * (~20 requests per ward), unlike snapping every one of the ~1,500 seeded
+ * complaints individually. Falls back to the unsnapped jittered points for
+ * any ward where OSRM is unreachable, so a seed run never hard-fails on a
+ * flaky public demo server.
+ */
+async function buildWardAnchors(wards) {
+  const anchors = [];
+  for (const { index } of wards) {
+    const candidates = Array.from({ length: 24 }, (_, n) => pointInWard(index, n * 5));
+    const snapped = [];
+    for (let i = 0; i < candidates.length; i += 6) {
+      const batch = candidates.slice(i, i + 6);
+      const results = await Promise.all(batch.map((p) => snapToRoad(p.latitude, p.longitude)));
+      for (const res of results) {
+        if (res && res.distanceMeters <= 250) snapped.push({ latitude: res.latitude, longitude: res.longitude });
+      }
+    }
+    anchors[index] = snapped.length ? snapped : candidates;
+  }
+  console.log(`[seed] road-snapped anchors ready for ${wards.length} wards`);
+  return anchors;
+}
+
+/** A point near a real road in this ward, with a small offset so repeated picks don't overlap exactly. */
+function pointNear(anchors, index, n) {
+  const list = anchors[index];
+  const base = list[n % list.length];
+  return {
+    latitude: round6(base.latitude + jitterSmall(index * 97 + n, 0.0003)),
+    longitude: round6(base.longitude + jitterSmall(index * 53 + n * 3, 0.0003)),
+  };
+}
+function jitterSmall(seed, scale) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return (x - Math.floor(x) - 0.5) * scale;
+}
 
 const FIRST_NAMES = ['Priya', 'Rohit', 'Anjali', 'Mehul', 'Kiran', 'Nisha', 'Jignesh', 'Bhavna', 'Harsh', 'Devika', 'Ramesh', 'Falguni'];
 const LAST_NAMES = ['Patel', 'Shah', 'Desai', 'Mehta', 'Chauhan', 'Trivedi', 'Solanki', 'Parmar', 'Joshi', 'Vasava'];
@@ -90,6 +131,7 @@ async function main() {
     wards.push({ ward, index: i });
   }
   console.log(`[seed] ${wards.length} wards`);
+  const wardAnchors = await buildWardAnchors(wards);
 
   // ------------------------------------------------------------- staff ----
   const admin = await prisma.user.create({
@@ -156,10 +198,10 @@ async function main() {
       },
     });
 
-    const depot = pointInWard(index, 0);
+    const depot = pointNear(wardAnchors, index, 0);
     const vehicle = await prisma.vehicle.create({
       data: {
-        registrationNumber: `GJ 18 ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + ((i + 3) % 26))} ${1000 + i * 137}`,
+        registrationNumber: `GJ 1 ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + ((i + 3) % 26))} ${1000 + i * 137}`,
         wardId: ward.id,
         driverId: driver.id,
         status: i % 5 === 4 ? 'IDLE' : 'ON_ROUTE',
@@ -227,7 +269,7 @@ async function main() {
         const spec = pick(r, WASTE_CATEGORIES);
         const meta = CATEGORY_MAP[spec.id];
         const citizen = citizens[intBetween(r, 0, citizens.length - 1)];
-        const point = pointInWard(index, d * 13 + k * 7);
+        const point = pointNear(wardAnchors, index, d * 13 + k * 7);
 
         const createdAt = new Date(day.getTime() + intBetween(r, 0, 11 * 60) * 60_000);
         const confidence = Number((0.45 + r() * 0.52).toFixed(3));
@@ -323,7 +365,7 @@ async function main() {
     const r = rng(`demo-active-${i}`);
     const spec = pick(r, WASTE_CATEGORIES.filter((c) => !CATEGORY_MAP[c.id].emergency));
     const meta = CATEGORY_MAP[spec.id];
-    const point = pointInWard(home.index, 900 + i);
+    const point = pointNear(wardAnchors, home.index, 900 + i);
     const createdAt = new Date(Date.now() - intBetween(r, 40, 180) * 60_000);
 
     created += 1;
@@ -369,7 +411,7 @@ async function main() {
     const home = vehicles[i * 3];
     const r = rng(`demo-emergency-${i}`);
     const spec = i === 0 ? CATEGORY_MAP.DEAD_ANIMAL : CATEGORY_MAP.MEDICAL_WASTE;
-    const point = pointInWard(home.index, 500 + i);
+    const point = pointNear(wardAnchors, home.index, 500 + i);
     const createdAt = new Date(Date.now() - intBetween(r, 5, 22) * 60_000);
 
     created += 1;
@@ -410,7 +452,7 @@ async function main() {
     });
     if (open.length < 2) continue;
 
-    const depot = pointInWard(index, 0);
+    const depot = pointNear(wardAnchors, index, 0);
     const solved = solveLocal({
       depot: { coordinates: [depot.longitude, depot.latitude] },
       stops: open.map((c) => ({
@@ -426,7 +468,8 @@ async function main() {
       })),
     });
 
-    const polyline = await roadSnappedPolyline(solved.polyline);
+    const { polyline, breakpoints } = await roadSnappedRoute(solved.polyline);
+    const stops = solved.stops.map((s, i) => ({ ...s, polylineIndex: breakpoints[i] ?? null }));
 
     await prisma.route.create({
       data: {
@@ -436,7 +479,7 @@ async function main() {
         date: new Date().toISOString().slice(0, 10),
         status: 'PUBLISHED',
         label: `${ward.name} morning beat`,
-        orderedStops: solved.stops,
+        orderedStops: stops,
         polylineGeometry: polyline,
         distanceKm: solved.distanceKm,
         baselineKm: solved.baselineKm,

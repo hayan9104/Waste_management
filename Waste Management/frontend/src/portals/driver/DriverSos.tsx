@@ -34,7 +34,7 @@ export default function DriverSos() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => setPosition({ lat: 23.2156, lng: 72.6369 }),
+        () => setPosition({ lat: 23.0225, lng: 72.5714 }),
         { enableHighAccuracy: true, timeout: 8000 }
       );
     }
@@ -42,8 +42,8 @@ export default function DriverSos() {
 
   const raise = useMutation({
     mutationFn: async () => {
-      const lat = position?.lat ?? 23.2156;
-      const lng = position?.lng ?? 72.6369;
+      const lat = position?.lat ?? 23.0225;
+      const lng = position?.lng ?? 72.5714;
       return (
         await api('driver').post('/driver/sos', {
           reason,

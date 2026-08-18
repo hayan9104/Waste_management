@@ -43,19 +43,19 @@ const REWARDS_CATALOG: RewardItem[] = [
     category: 'TAX',
     pointsRequired: 500,
     discount: '10% OFF',
-    description: 'Direct discount voucher on Municipal Property Tax assessment for Gandhinagar / GMC.',
-    partner: 'Gandhinagar Municipal Corporation (GMC)',
+    description: 'Direct discount voucher on Municipal Property Tax assessment for Ahmedabad / AMC.',
+    partner: 'Ahmedabad Municipal Corporation (AMC)',
     icon: Building,
     color: '#15803d',
   },
   {
     id: 'brts-bus-pass',
-    title: 'GMC BRTS & City Bus 1-Month Pass',
+    title: 'Janmarg BRTS & City Bus 1-Month Pass',
     category: 'TRANSPORT',
     pointsRequired: 300,
     discount: '100% FREE',
-    description: 'Unlimited 30-day travel on Gandhinagar & Ahmedabad connecting public transit routes.',
-    partner: 'GMC Urban Mobility Board',
+    description: 'Unlimited 30-day travel on Ahmedabad Janmarg BRTS and AMTS city bus routes.',
+    partner: 'AMC Urban Mobility Board',
     icon: Bus,
     color: '#0284c7',
   },
@@ -191,7 +191,7 @@ export default function Rewards() {
             <Sparkles className="h-5 w-5 text-brand" />
             <h2 className="text-fluid-base font-bold">Municipal Benefits & Vouchers</h2>
           </div>
-          <span className="text-fluid-xs text-muted">Official GMC Partners</span>
+          <span className="text-fluid-xs text-muted">Official AMC Partners</span>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

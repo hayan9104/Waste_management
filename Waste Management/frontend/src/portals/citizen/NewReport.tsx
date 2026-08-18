@@ -101,7 +101,7 @@ export default function NewReport() {
     if (!navigator.geolocation) {
       toast.warn('Browser GPS not supported. Fetching approximate city location.');
       const ipPos = await fetchIpLocation();
-      setPosition(ipPos || { lat: 23.2156, lng: 72.6369 });
+      setPosition(ipPos || { lat: 23.0225, lng: 72.5714 });
       return;
     }
     setLocating(true);
@@ -123,7 +123,7 @@ export default function NewReport() {
         if (ipPos) {
           setPosition(ipPos);
         } else if (!position) {
-          setPosition({ lat: 23.2156, lng: 72.6369 });
+          setPosition({ lat: 23.0225, lng: 72.5714 });
         }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -589,7 +589,7 @@ export default function NewReport() {
               </div>
 
               <div className="h-[360px] w-full overflow-hidden rounded-2xl border border-line">
-                <BaseMap center={position ?? { lat: 23.2156, lng: 72.6369 }} zoom={16} minHeight="360px">
+                <BaseMap center={position ?? { lat: 23.0225, lng: 72.5714 }} zoom={16} minHeight="360px">
                   <LocationPicker
                     position={position}
                     onChange={(next) => {

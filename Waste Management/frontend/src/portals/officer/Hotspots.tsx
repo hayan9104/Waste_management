@@ -83,7 +83,7 @@ export default function Hotspots() {
       <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
         <Card className="overflow-hidden p-0">
           <div className="h-[46dvh] min-h-[320px] w-full xl:h-[500px]">
-            <BaseMap center={[23.2156, 72.6369]} zoom={12}>
+            <BaseMap center={[23.0225, 72.5714]} zoom={12}>
               <FitBounds points={(wards.data ?? []).map((w: any) => [w.center.latitude, w.center.longitude])} />
               {wards.data && (
                 <WardLayer

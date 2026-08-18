@@ -147,7 +147,7 @@ export default function MasterFleet() {
         </div>
 
         <div className="h-[44dvh] min-h-[320px] w-full xl:h-[420px]">
-          <BaseMap center={[23.2156, 72.6369]} zoom={12} satellite>
+          <BaseMap center={[23.0225, 72.5714]} zoom={12} satellite>
             {mapPoints.length > 0 && <FitBounds points={mapPoints} />}
 
             {/* The selected vehicle's actual planned route, drawn on the road. */}

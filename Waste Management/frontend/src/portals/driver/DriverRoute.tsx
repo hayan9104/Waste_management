@@ -105,16 +105,29 @@ export default function DriverRoute() {
     setNote('');
   }
 
-  // Only the road ahead: the driver's current fix, then whatever stops are
-  // still open, in order. A stop drops off this line the moment it's marked
-  // collected, so nothing already covered stays drawn on the map.
+  // Only the road ahead: slice the road-snapped route at the last completed
+  // stop's breakpoint, so the line keeps following real streets but the leg
+  // already covered drops off the map instead of staying drawn in green.
+  // Falls back to straight segments between remaining stops if this route
+  // has no road-snapped geometry (or predates the polylineIndex field).
   const polyline = useMemo(() => {
     const remaining = assignedStops.filter((s: any) => s.status !== 'DONE');
     if (!remaining.length) return [];
+
+    const done = assignedStops.filter((s: any) => s.status === 'DONE');
+    const full = data?.route?.polyline;
+    if (Array.isArray(full) && full.length > 1) {
+      const lastDoneIdx = done.length
+        ? Math.max(...done.map((s: any) => (typeof s.polylineIndex === 'number' ? s.polylineIndex : 0)))
+        : 0;
+      const sliced = full.slice(lastDoneIdx);
+      if (sliced.length > 1) return sliced;
+    }
+
     const pts: [number, number][] = remaining.map((s: any) => [s.longitude, s.latitude]);
     if (live) pts.unshift([live.longitude, live.latitude]);
     return pts;
-  }, [assignedStops, live]);
+  }, [data, assignedStops, live]);
 
   const nextStop = data?.nextStop || assignedStops.find((s: any) => s.status !== 'DONE');
 
@@ -125,7 +138,7 @@ export default function DriverRoute() {
     ? [live.latitude, live.longitude]
     : polyline[0]
       ? [polyline[0][1], polyline[0][0]]
-      : [23.2156, 72.6369];
+      : [23.0225, 72.5714];
 
   const resolvedCount = assignedStops.filter((s: any) => s.status === 'DONE').length;
   const totalStops = assignedStops.length;

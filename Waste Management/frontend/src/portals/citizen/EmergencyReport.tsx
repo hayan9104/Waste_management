@@ -33,7 +33,7 @@ export default function EmergencyReport() {
   useEffect(() => {
     navigator.geolocation?.getCurrentPosition(
       (pos) => setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setPosition({ lat: 23.2156, lng: 72.6369 }),
+      () => setPosition({ lat: 23.0225, lng: 72.5714 }),
       { enableHighAccuracy: true, timeout: 8000 }
     );
   }, []);
