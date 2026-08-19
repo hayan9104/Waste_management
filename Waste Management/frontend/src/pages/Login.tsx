@@ -402,7 +402,7 @@ export default function Login({ portal }: { portal: Portal }) {
             /* ---- Password ---- */
             <form onSubmit={submitPassword} className="mt-4 space-y-3 short:mt-3 short:space-y-2">
               <div>
-                <label className="label short:sr-only" htmlFor="email">{t('auth.email')}</label>
+                <label className="label" htmlFor="email">{t('auth.email')}</label>
                 <input
                   id="email"
                   type="email"
@@ -415,7 +415,7 @@ export default function Login({ portal }: { portal: Portal }) {
                 />
               </div>
               <div>
-                <label className="label short:sr-only" htmlFor="password">{t('auth.password')}</label>
+                <label className="label" htmlFor="password">{t('auth.password')}</label>
                 <input
                   id="password"
                   type="password"
