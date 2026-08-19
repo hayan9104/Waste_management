@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Eye, Search, Truck, X } from 'lucide-react';
+import { Camera, Check, ChevronLeft, ChevronRight, Eye, Search, Truck, X } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, SEVERITY_TONE, timeAgo, formatDuration } from '../../lib/format';
@@ -293,9 +293,14 @@ export default function ComplaintQueue() {
               {detail.data.reviewNeeded && <Badge tone="warn">Review needed</Badge>}
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              {detail.data.photoUrl && (
+            <div className={`grid gap-4 ${detail.data.photoUrl ? 'sm:grid-cols-2' : ''}`}>
+              {detail.data.photoUrl ? (
                 <img src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-[4/3] w-full rounded-xl object-cover" />
+              ) : (
+                <div className="grid aspect-[4/3] w-full max-w-xs place-items-center gap-1.5 rounded-xl border border-dashed border-line bg-sunken text-faint">
+                  <Camera className="h-6 w-6" />
+                  <span className="text-fluid-xs">No photo attached</span>
+                </div>
               )}
               <div className="space-y-2.5 text-fluid-sm">
                 <Row label="Category" value={t(`category.${detail.data.category}`)} />

@@ -18,6 +18,22 @@ import { solveLocal, roadSnappedRoute, snapToRoad } from '../services/routing.se
 const PASSWORD = 'safaai@2026';
 const HISTORY_DAYS = 45;
 
+/**
+ * Real, verified-relevant free stock photos (checked by hand -- Unsplash
+ * photo IDs are otherwise a coin flip on actual subject matter). Every
+ * seeded complaint gets one; without this the entire demo dataset showed a
+ * blank photo slot, which is not what the real citizen /report flow ever
+ * produces (a photo is mandatory there).
+ */
+const CITIZEN_PHOTO_POOL = [
+  'https://images.unsplash.com/photo-1584744982491-665216d95f8b?w=800', // hand sanitizer + mask
+  'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=800', // colour-coded wheelie bins
+  'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=800', // labelled compost/waste/recycle bins
+  'https://images.unsplash.com/photo-1573497491765-dccce02b29df?w=800', // plastic pollution in water
+  'https://images.unsplash.com/photo-1721622248541-001da7c67fbe?w=800', // baled plastic waste
+  'https://images.unsplash.com/photo-1662534264036-7bfa0d35de9c?w=800', // litter-strewn dump site
+];
+
 /** Deterministic PRNG so every run produces the identical city. */
 function rng(seed) {
   let a = 0;
@@ -286,6 +302,12 @@ async function main() {
         const resolvedAt = shouldResolve ? new Date(createdAt.getTime() + resolutionMinutes * 60_000) : null;
         const status = resolvedAt ? 'RESOLVED' : pick(r, ['PENDING', 'VERIFIED', 'VERIFIED', 'ASSIGNED', 'IN_PROGRESS']);
 
+        // A real photo is mandatory on the actual citizen /report flow -- match that here too.
+        const photoUrl = pick(r, CITIZEN_PHOTO_POOL);
+        const resolutionPhotoUrl = resolvedAt
+          ? pick(r, CITIZEN_PHOTO_POOL.filter((p) => p !== photoUrl))
+          : null;
+
         const vehicle = vehicles[w]?.vehicle;
         const complaint = await prisma.complaint.create({
           data: {
@@ -309,6 +331,8 @@ async function main() {
             latitude: point.latitude,
             longitude: point.longitude,
             address: `${intBetween(r, 1, 240)}, ${pick(r, STREETS)}, ${ward.name}`,
+            photoUrl,
+            resolutionPhotoUrl,
             slaMinutes: meta.slaMinutes,
             dueAt: new Date(createdAt.getTime() + meta.slaMinutes * 60_000),
             createdAt,
@@ -387,6 +411,7 @@ async function main() {
         latitude: point.latitude,
         longitude: point.longitude,
         address: `${intBetween(r, 1, 240)}, ${pick(r, STREETS)}, ${home.ward.name}`,
+        photoUrl: pick(r, CITIZEN_PHOTO_POOL),
         slaMinutes: meta.slaMinutes,
         dueAt: new Date(createdAt.getTime() + meta.slaMinutes * 60_000),
         createdAt,
@@ -433,6 +458,7 @@ async function main() {
         latitude: point.latitude,
         longitude: point.longitude,
         address: `${pick(r, STREETS)}, ${home.ward.name}`,
+        photoUrl: pick(r, CITIZEN_PHOTO_POOL),
         slaMinutes: 30,
         dueAt: new Date(createdAt.getTime() + 30 * 60_000),
         createdAt,
