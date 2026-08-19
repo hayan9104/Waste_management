@@ -177,18 +177,22 @@ export default function DriverStops() {
 
   return (
     <div className="space-y-5">
-      {/* Top Header & Refresh */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
-        <div>
+      {/* Top Header & Refresh.
+          The title owns its own line on a phone, with the three controls
+          below it as a tidy 2-column grid — flex-wrapping them alongside the
+          heading left a ragged, half-empty row and pushed "Refresh" onto its
+          own line at 360px. */}
+      <div className="space-y-3 border-b border-line pb-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:space-y-0">
+        <div className="min-w-0">
           <h1 className="text-fluid-xl font-bold tracking-tight text-ink">Collection Tasks</h1>
           <p className="text-fluid-xs text-muted">
             {counts.total} total stops assigned · Updates in real-time via Socket.io
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-xl border border-line bg-elevated px-2.5 py-1.5 shadow-xs">
-            <CalendarDays className="h-3.5 w-3.5 text-brand" />
+        <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+          <div className="col-span-2 flex min-h-touch items-center gap-1.5 rounded-xl border border-line bg-elevated px-2.5 py-1.5 shadow-xs sm:col-span-1 sm:min-h-0">
+            <CalendarDays className="h-3.5 w-3.5 shrink-0 text-brand" />
             <input
               type="date"
               value={dateFilter}
@@ -196,13 +200,13 @@ export default function DriverStops() {
                 setDateFilter(e.target.value);
                 setAllDates(false);
               }}
-              className="bg-transparent text-fluid-xs font-semibold text-ink outline-none"
+              className="w-full min-w-0 bg-transparent text-fluid-xs font-semibold text-ink outline-none sm:w-auto"
             />
           </div>
           <button
             type="button"
             onClick={() => setAllDates((v) => !v)}
-            className={`btn-sm rounded-xl border px-3 text-fluid-xs font-semibold transition ${
+            className={`btn-sm min-h-touch justify-center rounded-xl border px-3 text-fluid-xs font-semibold transition sm:min-h-0 ${
               allDates ? 'border-brand bg-brand text-brand-ink' : 'border-line bg-elevated text-muted hover:bg-sunken'
             }`}
           >
@@ -212,7 +216,7 @@ export default function DriverStops() {
             type="button"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="btn-ghost btn-sm flex items-center gap-1.5 rounded-xl border border-line bg-elevated shadow-xs"
+            className="btn-ghost btn-sm flex min-h-touch items-center justify-center gap-1.5 rounded-xl border border-line bg-elevated shadow-xs sm:min-h-0"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-brand' : 'text-muted'}`} />
             <span>Refresh</span>
@@ -224,8 +228,10 @@ export default function DriverStops() {
       <div className="grid gap-5 lg:grid-cols-12 items-start">
         {/* Left Column: Tasks List & Filters (8 of 12 cols) */}
         <div className="lg:col-span-8 space-y-4">
-          {/* Filter Bar */}
-          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {/* Filter Bar — 2x2 on a phone so every label reads in full; one row
+              from sm up. Four pills in a row measure ~430px and used to force
+              a sideways scroll that hid "Completed" off the edge. */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             {(
               [
                 { id: 'ALL', label: 'All Tasks', count: counts.total },
@@ -238,15 +244,15 @@ export default function DriverStops() {
                 key={tab.id}
                 type="button"
                 onClick={() => setFilter(tab.id)}
-                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-fluid-xs font-semibold transition ${
+                className={`flex min-h-touch items-center justify-center gap-1.5 rounded-xl px-3 text-fluid-xs font-semibold transition sm:min-h-0 sm:px-3.5 sm:py-1.5 ${
                   filter === tab.id
                     ? 'bg-brand text-brand-ink shadow-sm'
                     : 'border border-line bg-elevated text-muted hover:bg-sunken hover:text-ink'
                 }`}
               >
-                <span>{tab.label}</span>
+                <span className="truncate whitespace-nowrap">{tab.label}</span>
                 <span
-                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  className={`shrink-0 rounded-full px-1.5 text-[10px] font-bold leading-4 ${
                     filter === tab.id ? 'bg-brand-ink/20 text-brand-ink' : 'bg-sunken text-muted'
                   }`}
                 >
@@ -327,23 +333,26 @@ export default function DriverStops() {
                     </div>
 
                     {/* Action Bar */}
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line/60 pt-3">
+                    {/* Action bar — full-width thumb targets stacked on a
+                        phone, split left/right once there's room for a
+                        single row. */}
+                    <div className="mt-4 flex flex-col gap-2 border-t border-line/60 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                       <a
                         href={`https://www.google.com/maps/dir/?api=1&destination=${task.latitude},${task.longitude}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="btn-ghost btn-sm flex items-center gap-1.5 rounded-xl border border-line text-fluid-xs font-semibold hover:bg-sunken"
+                        className="btn-ghost btn-sm flex min-h-touch items-center justify-center gap-1.5 rounded-xl border border-line text-fluid-xs font-semibold hover:bg-sunken sm:min-h-0"
                       >
                         <Navigation className="h-3.5 w-3.5 text-brand" /> GPS Directions
                       </a>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         {!isDone && !inProg && (
                           <button
                             type="button"
                             onClick={() => start.mutate(task.id)}
                             disabled={start.isPending}
-                            className="btn-primary btn-sm flex items-center gap-1.5 rounded-xl"
+                            className="btn-primary btn-sm flex min-h-touch items-center justify-center gap-1.5 rounded-xl sm:min-h-0"
                           >
                             <Play className="h-3.5 w-3.5" /> Start Trip
                           </button>
@@ -353,14 +362,14 @@ export default function DriverStops() {
                           <button
                             type="button"
                             onClick={() => setResolving(task)}
-                            className="btn-sm flex items-center gap-1.5 rounded-xl bg-ok text-white font-bold shadow-xs hover:bg-ok/90"
+                            className="btn-sm flex min-h-touch items-center justify-center gap-1.5 rounded-xl bg-ok text-white font-bold shadow-xs hover:bg-ok/90 sm:min-h-0"
                           >
                             <Camera className="h-3.5 w-3.5" /> Mark Collected
                           </button>
                         )}
 
                         {isDone && (
-                          <span className="flex items-center gap-1 text-fluid-xs font-bold text-ok">
+                          <span className="flex items-center justify-center gap-1 text-fluid-xs font-bold text-ok">
                             <CheckCircle2 className="h-4 w-4" /> Cleaned & Verified
                           </span>
                         )}
