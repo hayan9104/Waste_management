@@ -164,6 +164,7 @@ export default function ComplaintQueue() {
                         onChange={(e) => setSelected(e.target.checked ? items.map((c: any) => c.id) : [])}
                       />
                     </th>
+                    <th className="px-3 py-2.5">Photo</th>
                     <th className="px-3 py-2.5">Ticket</th>
                     <th className="px-3 py-2.5">Category</th>
                     <th className="px-3 py-2.5">AI confidence</th>
@@ -184,6 +185,14 @@ export default function ComplaintQueue() {
                           onChange={(e) =>
                             setSelected((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
                           }
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <EvidencePhoto
+                          src={assetUrl(c.photoUrl)}
+                          alt=""
+                          compact
+                          className="h-11 w-11 shrink-0 rounded-lg object-cover"
                         />
                       </td>
                       <td className="px-3 py-2.5">
@@ -239,6 +248,12 @@ export default function ComplaintQueue() {
                       onChange={(e) =>
                         setSelected((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
                       }
+                    />
+                    <EvidencePhoto
+                      src={assetUrl(c.photoUrl)}
+                      alt=""
+                      compact
+                      className="h-14 w-14 shrink-0 rounded-lg object-cover"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">

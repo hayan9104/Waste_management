@@ -150,7 +150,15 @@ export default function Fleet() {
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-muted">Status</dt>
-                  <dd><Badge tone={v.status === 'ON_ROUTE' ? 'ok' : v.status === 'MAINTENANCE' ? 'warn' : 'neutral'}>{v.status}</Badge></dd>
+                  <dd>
+                    {/* ON_ROUTE without a live GPS signal to back it up is a
+                        guess, not a status -- withheld rather than shown stale. */}
+                    {v.isOffline && v.status === 'ON_ROUTE' ? (
+                      <span className="text-fluid-xs text-faint">—</span>
+                    ) : (
+                      <Badge tone={v.status === 'ON_ROUTE' ? 'ok' : v.status === 'MAINTENANCE' ? 'warn' : 'neutral'}>{v.status}</Badge>
+                    )}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-muted">Open stops</dt>

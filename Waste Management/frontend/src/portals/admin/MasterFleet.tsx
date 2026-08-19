@@ -321,9 +321,18 @@ export default function MasterFleet() {
                   </td>
                   <td className="px-4 py-2.5">{v.ward?.name ?? '—'}</td>
                   <td className="px-4 py-2.5">
-                    <Badge tone={v.status === 'ON_ROUTE' ? 'ok' : v.status === 'MAINTENANCE' ? 'warn' : 'neutral'}>
-                      {v.status}
-                    </Badge>
+                    {/* ON_ROUTE is a live-tracking claim -- without a GPS
+                        signal to back it up it's a guess, not a status, so
+                        it's withheld rather than shown stale. MAINTENANCE and
+                        IDLE are administrative facts independent of GPS and
+                        still show either way. */}
+                    {v.isOffline && v.status === 'ON_ROUTE' ? (
+                      <span className="text-fluid-xs text-faint">—</span>
+                    ) : (
+                      <Badge tone={v.status === 'ON_ROUTE' ? 'ok' : v.status === 'MAINTENANCE' ? 'warn' : 'neutral'}>
+                        {v.status}
+                      </Badge>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     {!v.isOffline ? (

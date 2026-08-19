@@ -103,13 +103,27 @@ export function EmptyState({ title, hint, icon, action }: { title: string; hint?
  * unrelated stock photo on error would silently pass it off as real evidence
  * for this complaint, which is worse than admitting the photo isn't there.
  */
-export function EvidencePhoto({ src, alt, className = '' }: { src?: string | null; alt: string; className?: string }) {
+export function EvidencePhoto({
+  src,
+  alt,
+  className = '',
+  compact = false,
+}: {
+  src?: string | null;
+  alt: string;
+  className?: string;
+  /** Icon only, no caption — for small table-row thumbnails where "Photo unavailable" would overflow. */
+  compact?: boolean;
+}) {
   const [broken, setBroken] = useState(false);
   if (!src || broken) {
     return (
-      <div className={`flex flex-col items-center justify-center gap-1 bg-sunken text-faint ${className}`}>
-        <ImageOff className="h-5 w-5" />
-        <span className="text-[10px] font-medium">Photo unavailable</span>
+      <div
+        className={`flex flex-col items-center justify-center gap-1 bg-sunken text-faint ${className}`}
+        title={compact ? 'Photo unavailable' : undefined}
+      >
+        <ImageOff className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
+        {!compact && <span className="text-[10px] font-medium">Photo unavailable</span>}
       </div>
     );
   }
