@@ -190,14 +190,14 @@ export default function MasterFleet() {
                   latitude={v.latitude}
                   longitude={v.longitude}
                   heading={v.heading ?? 0}
-                  active={v.status === 'ON_ROUTE'}
+                  active={v.status === 'ON_ROUTE' && !v.isOffline}
                   variant={v.id === selectedVehicleId ? 'tracker' : 'default'}
                   onClick={() => setSelectedVehicleId(v.id)}
                 >
                   <div className="space-y-0.5">
                     <p className="font-semibold">{v.registrationNumber}</p>
                     <p className="text-xs text-muted">{v.driver?.name ?? 'Unassigned'}</p>
-                    <p className="text-xs">{v.status}</p>
+                    <p className="text-xs">{v.isOffline && v.status === 'ON_ROUTE' ? 'Status unknown — offline' : v.status}</p>
                   </div>
                 </TruckMarker>
               ))}

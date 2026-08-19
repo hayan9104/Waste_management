@@ -110,7 +110,7 @@ export default function Fleet() {
                   latitude={v.latitude}
                   longitude={v.longitude}
                   heading={v.heading ?? 0}
-                  active={v.status === 'ON_ROUTE'}
+                  active={v.status === 'ON_ROUTE' && !v.isOffline}
                   label={`${v.registrationNumber} · ${v.driver?.name ?? 'unassigned'}`}
                 />
               ))}
@@ -128,7 +128,7 @@ export default function Fleet() {
               <div className="flex items-start gap-3">
                 <span
                   className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
-                    v.status === 'ON_ROUTE' ? 'bg-brand/10 text-brand' : 'bg-sunken text-muted'
+                    v.status === 'ON_ROUTE' && !v.isOffline ? 'bg-brand/10 text-brand' : 'bg-sunken text-muted'
                   }`}
                 >
                   <Truck className="h-5 w-5" />
