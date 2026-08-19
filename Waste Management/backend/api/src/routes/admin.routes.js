@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../middleware/error.js';
@@ -13,6 +15,7 @@ import { revokeAllSessions } from '../lib/tokens.js';
 import { polygonBBox, polygonCentroid } from '../lib/geo.js';
 import { aiHealth } from '../services/ai.service.js';
 import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
+import env from '../config/env.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -695,6 +698,43 @@ router.post(
         `[admin] photo backfill complete: ${missingPhoto.length} photoUrl, ${missingResolutionPhoto.length} resolutionPhotoUrl`
       );
     })().catch((err) => console.error('[admin] photo backfill failed:', err));
+  })
+);
+
+/**
+ * Deletes complaints whose photo is genuinely unrecoverable: local-disk
+ * uploads (photoUrl starting with /uploads/) whose file no longer exists on
+ * this container. Render's disk is ephemeral and gets wiped on every
+ * redeploy, so a citizen report submitted while STORAGE_DRIVER=local is
+ * permanently lost the next time the API redeploys -- unlike the missing-
+ * photo backfill, there's no photo to backfill here, just a dead reference,
+ * so the honest outcome is removing the orphaned report rather than
+ * pretending it has evidence it doesn't.
+ */
+router.post(
+  '/cleanup-broken-photo-complaints',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const candidates = await prisma.complaint.findMany({
+      where: { photoUrl: { startsWith: '/uploads/' } },
+      select: { id: true, code: true, photoUrl: true },
+    });
+
+    const toDelete = candidates.filter((c) => {
+      const filePath = path.join(env.uploadDir, path.basename(c.photoUrl));
+      return !fs.existsSync(filePath);
+    });
+
+    for (const c of toDelete) {
+      await prisma.complaint.delete({ where: { id: c.id } });
+    }
+
+    res.json({
+      ok: true,
+      checked: candidates.length,
+      deleted: toDelete.length,
+      deletedCodes: toDelete.map((c) => c.code),
+    });
   })
 );
 
