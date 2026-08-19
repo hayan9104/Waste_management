@@ -68,6 +68,22 @@ export const CREDIT_RULES = {
   fakeReport: -20,
 };
 
+/**
+ * Real, verified-relevant free stock photos (checked by hand — Unsplash photo
+ * IDs are otherwise a coin flip on actual subject matter). Used to backfill
+ * any seeded/demo complaint whose photoUrl never got set — a real citizen
+ * report always has a photo (the /report endpoint requires one), so a demo
+ * record without one is a gap to fill, not a state to render honestly.
+ */
+export const CITIZEN_PHOTO_POOL = [
+  'https://images.unsplash.com/photo-1584744982491-665216d95f8b?w=800', // hand sanitizer + mask
+  'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=800', // colour-coded wheelie bins
+  'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=800', // labelled compost/waste/recycle bins
+  'https://images.unsplash.com/photo-1573497491765-dccce02b29df?w=800', // plastic pollution in water
+  'https://images.unsplash.com/photo-1721622248541-001da7c67fbe?w=800', // baled plastic waste
+  'https://images.unsplash.com/photo-1662534264036-7bfa0d35de9c?w=800', // litter-strewn dump site
+];
+
 export default {
   ROLES,
   PORTALS,
@@ -78,4 +94,5 @@ export default {
   COMPLAINT_FLOW,
   SOCKET_EVENTS,
   CREDIT_RULES,
+  CITIZEN_PHOTO_POOL,
 };

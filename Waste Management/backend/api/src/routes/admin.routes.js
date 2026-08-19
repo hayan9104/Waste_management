@@ -655,4 +655,42 @@ router.post(
   })
 );
 
+/**
+ * Backfills photoUrl on any complaint that was seeded before the mock photo
+ * pool existed (or otherwise never got one) — targeted and additive, unlike
+ * /reseed-demo-data it never wipes anything, so it's safe to run against a
+ * database that already has real live-tested state on it.
+ */
+router.post(
+  '/backfill-photos',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const { buildPhotoPool } = await import('../seed/seed.js');
+    const pool = await buildPhotoPool();
+    const pick = () => pool[Math.floor(Math.random() * pool.length)];
+
+    const missingPhoto = await prisma.complaint.findMany({
+      where: { photoUrl: null },
+      select: { id: true },
+    });
+    for (const { id } of missingPhoto) {
+      await prisma.complaint.update({ where: { id }, data: { photoUrl: pick() } });
+    }
+
+    const missingResolutionPhoto = await prisma.complaint.findMany({
+      where: { status: 'RESOLVED', resolutionPhotoUrl: null },
+      select: { id: true },
+    });
+    for (const { id } of missingResolutionPhoto) {
+      await prisma.complaint.update({ where: { id }, data: { resolutionPhotoUrl: pick() } });
+    }
+
+    res.json({
+      ok: true,
+      photosAdded: missingPhoto.length,
+      resolutionPhotosAdded: missingResolutionPhoto.length,
+    });
+  })
+);
+
 export default router;

@@ -7,6 +7,8 @@
  *
  *   npm run db:push && npm run seed
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prisma, connectDB, disconnectDB } from '../lib/prisma.js';
 import { hashPassword } from '../lib/password.js';
@@ -14,25 +16,39 @@ import { polygonBBox } from '../lib/geo.js';
 import { CITY, WARDS, wardGeometry, pointInWard, STREETS } from './city.js';
 import { WASTE_CATEGORIES, CATEGORY_MAP, CREDIT_RULES, ROLES } from '../config/constants.js';
 import { solveLocal, roadSnappedRoute, snapToRoad } from '../services/routing.service.js';
+import { persist } from '../middleware/upload.js';
 
 const PASSWORD = 'safaai@2026';
 const HISTORY_DAYS = 45;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Real, verified-relevant free stock photos (checked by hand -- Unsplash
- * photo IDs are otherwise a coin flip on actual subject matter). Every
- * seeded complaint gets one; without this the entire demo dataset showed a
- * blank photo slot, which is not what the real citizen /report flow ever
- * produces (a photo is mandatory there).
+ * Real, verified-relevant photos (checked by hand — Unsplash photo IDs are
+ * otherwise a coin flip on actual subject matter), downloaded once into the
+ * repo rather than hotlinked. A demo dataset that depends on Unsplash's CDN
+ * being reachable from every viewer's browser is fragile in a way the real
+ * citizen /report flow never is; persisting these through the same storage
+ * driver a real upload uses (Supabase in production, local disk otherwise)
+ * removes that dependency entirely.
  */
-const CITIZEN_PHOTO_POOL = [
-  'https://images.unsplash.com/photo-1584744982491-665216d95f8b?w=800', // hand sanitizer + mask
-  'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=800', // colour-coded wheelie bins
-  'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=800', // labelled compost/waste/recycle bins
-  'https://images.unsplash.com/photo-1573497491765-dccce02b29df?w=800', // plastic pollution in water
-  'https://images.unsplash.com/photo-1721622248541-001da7c67fbe?w=800', // baled plastic waste
-  'https://images.unsplash.com/photo-1662534264036-7bfa0d35de9c?w=800', // litter-strewn dump site
+const MOCK_PHOTO_FILES = [
+  'mock-01-mask.jpg',
+  'mock-02-bins.jpg',
+  'mock-03-labelled-bins.jpg',
+  'mock-04-plastic-water.jpg',
+  'mock-05-baled-plastic.jpg',
+  'mock-06-dump-site.jpg',
 ];
+
+/** Uploads each bundled mock photo once through the real storage driver and returns the hosted URLs. */
+export async function buildPhotoPool() {
+  const pool = [];
+  for (const file of MOCK_PHOTO_FILES) {
+    const buffer = fs.readFileSync(path.join(__dirname, 'assets', file));
+    pool.push(await persist(buffer, 'image/jpeg', 'mock'));
+  }
+  return pool;
+}
 
 /** Deterministic PRNG so every run produces the identical city. */
 function rng(seed) {
@@ -122,6 +138,9 @@ async function wipe() {
 async function main() {
   await connectDB();
   await wipe();
+
+  const CITIZEN_PHOTO_POOL = await buildPhotoPool();
+  console.log(`[seed] mock photo pool hosted: ${CITIZEN_PHOTO_POOL.length} images`);
 
   const passwordHash = await hashPassword(PASSWORD);
 
