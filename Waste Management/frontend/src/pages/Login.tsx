@@ -161,7 +161,15 @@ export default function Login({ portal }: { portal: Portal }) {
       is built from the `surface` token so it turns dark automatically in the
       AMOLED theme rather than needing a second artwork.
     */
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-surface">
+    /*
+      Below lg the card is left to size itself and the page scrolls like any
+      normal webpage if a short phone can't fit it — that's the one scroll a
+      phone user already expects, and it's what keeps the card's own content
+      (and the sign-in button specifically) from ever being trapped behind an
+      inner scrollbar of its own. lg and up keeps the original fixed,
+      single-viewport composition, where there's always room to spare.
+    */
+    <div className="relative flex min-h-dvh flex-col bg-surface lg:h-dvh lg:overflow-hidden">
       {/*
         Two copies of the same photo, both drawn from the same pixels so the
         colours always agree:
@@ -173,32 +181,35 @@ export default function Login({ portal }: { portal: Portal }) {
         dissolves into the blur instead of meeting it at a seam. There is no
         edge anywhere for the eye to read as a partition.
       */}
+      {/* Pinned to the viewport, not the document — below lg the page can now
+          scroll taller than one screen, and the artwork should stay put
+          rather than stretching or scrolling along with the card. */}
       <img
         src="/auth-bg.jpg"
         alt=""
         aria-hidden
-        className="absolute inset-0 h-full w-full scale-125 object-cover blur-3xl"
+        className="fixed inset-0 h-full w-full scale-125 object-cover blur-3xl"
       />
       <img
         src="/auth-bg.jpg"
         alt=""
         aria-hidden
-        className="absolute inset-y-0 left-0 h-full w-auto max-w-none object-cover object-left"
+        className="fixed inset-y-0 left-0 h-full w-auto max-w-none object-cover object-left"
         style={{ maskImage: FADE_RIGHT, WebkitMaskImage: FADE_RIGHT }}
       />
-      <div aria-hidden className="absolute inset-0 bg-surface/40" />
+      <div aria-hidden className="fixed inset-0 bg-surface/40" />
       {/* Heavier wash on the left: the brand copy has no card of its own. */}
       <div
         aria-hidden
-        className="absolute inset-0 bg-gradient-to-r from-surface/90 via-surface/45 to-surface/60 lg:via-surface/30 lg:to-surface/70"
+        className="fixed inset-0 bg-gradient-to-r from-surface/90 via-surface/45 to-surface/60 lg:via-surface/30 lg:to-surface/70"
       />
 
       {/* Top bar floats over the photo. No chip on the logo, so the icon starts
           on exactly the same left edge as the headline below it. */}
-      <header className="relative z-20 flex shrink-0 items-center justify-between gap-3 px-4 py-4 sm:px-8">
-        <Link to="/" className="flex items-center gap-2.5">
-          <img src="/icon.svg" alt="" className="h-8 w-8 animate-logo-pop drop-shadow" />
-          <span className="text-fluid-base font-bold tracking-tight">
+      <header className="relative z-20 flex shrink-0 items-center justify-between gap-2 px-3 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:gap-3 sm:px-8 sm:py-4">
+        <Link to="/" className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+          <img src="/icon.svg" alt="" className="h-7 w-7 shrink-0 animate-logo-pop drop-shadow sm:h-8 sm:w-8" />
+          <span className="whitespace-nowrap text-fluid-base font-bold tracking-tight">
             Safaai <span className="text-brand">Sarathi</span>
           </span>
         </Link>
@@ -209,22 +220,27 @@ export default function Login({ portal }: { portal: Portal }) {
           <PortalTabs />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Link to="/" className="btn-ghost btn-sm bg-elevated/80 backdrop-blur">
-            <ArrowLeft className="h-4 w-4" /> {t('common.home')}
+        {/* The Home label and full language name collapse below sm — the
+            wordmark plus three full pills don't fit a 360px header, and this
+            is the room the card downstairs needs back. */}
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <Link to="/" aria-label={t('common.home')} className="btn-ghost btn-sm shrink-0 bg-elevated/80 px-2 backdrop-blur sm:px-3">
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('common.home')}</span>
           </Link>
-          <LanguageSwitcher className="bg-elevated/80 backdrop-blur" />
-          <ThemeToggle className="bg-elevated/80 backdrop-blur" />
+          <LanguageSwitcher compact className="bg-elevated/80 backdrop-blur sm:hidden" />
+          <LanguageSwitcher className="hidden bg-elevated/80 backdrop-blur sm:flex" />
+          <ThemeToggle className="shrink-0 bg-elevated/80 backdrop-blur" />
         </div>
       </header>
 
       {/*
-        The page itself never scrolls: it is exactly one viewport tall and the
-        content is centred in the space the header leaves. On a genuinely short
-        viewport (a phone in landscape) the card scrolls internally rather than
-        clipping the sign-in button out of reach.
+        Below lg this row is free to grow past one viewport — the page itself
+        scrolls (see the wrapper above) rather than the card. From lg up it
+        stays exactly one viewport tall, content centred in the space the
+        header leaves.
       */}
-      <div className="relative z-10 grid min-h-0 w-full flex-1 items-center gap-6 px-4 pb-4 sm:px-8 lg:grid-cols-2 lg:gap-12">
+      <div className="relative z-10 grid w-full flex-1 items-center gap-6 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:px-8 sm:pb-4 lg:min-h-0 lg:gap-12 lg:py-0 lg:grid-cols-2">
         {/*
           Brand copy sits directly on the photo — no card. Dropping the panel is
           what lets the text start on the same left edge as the logo above it;
@@ -255,11 +271,14 @@ export default function Login({ portal }: { portal: Portal }) {
 
         {/* Form card */}
         {/*
-          An explicit ceiling rather than max-h-full: a grid row sizes itself to
-          its content, so a percentage cap here would be circular and the card
-          could push past the fold.
+          No height cap below lg — the card just takes the height it needs and
+          the page scrolls to it, so it can never trap its own submit button
+          behind an inner scrollbar. From lg up, a grid row sizes itself to
+          its content, so the explicit ceiling (rather than max-h-full, which
+          would be circular there) keeps the whole composition inside one
+          viewport the way the desktop layout intends.
         */}
-        <main className="mx-auto flex max-h-[calc(100dvh-5.5rem)] w-full max-w-md flex-col overflow-y-auto rounded-3xl border border-line/40 bg-elevated/55 p-5 shadow-lift backdrop-blur-2xl sm:p-7">
+        <main className="mx-auto flex w-full max-w-md flex-col rounded-3xl border border-line/40 bg-elevated/55 p-4 shadow-lift backdrop-blur-2xl sm:p-6 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:p-7">
           <div className="flex w-full flex-col">
           {/* Mobile-only fallback — the header carries this centered on the logo's line at lg: and up, but there's no room for it there on a phone. */}
           <div className="mb-3.5 flex flex-col items-center lg:hidden">
