@@ -134,3 +134,6 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Claude Code local state (agent config, scratch/session files) — never share with collaborators
+.claude/
