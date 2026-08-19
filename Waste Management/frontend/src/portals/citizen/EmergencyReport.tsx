@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Camera, Loader2, Siren } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Card, toast } from '../../components/ui';
+import { CameraCapture } from '../../components/CameraCapture';
 import { BackLink } from '../../components/shells';
 
 /**
@@ -29,14 +30,29 @@ export default function EmergencyReport() {
   const [preview, setPreview] = useState('');
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
-  useEffect(() => {
+  function locate() {
     navigator.geolocation?.getCurrentPosition(
       (pos) => setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => setPosition({ lat: 23.0225, lng: 72.5714 }),
       { enableHighAccuracy: true, timeout: 8000 }
     );
+  }
+
+  useEffect(() => {
+    locate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The photo and the GPS fix should describe the same moment, not "wherever
+  // the citizen happened to be when the page first loaded".
+  function onCameraCapture(captured: File) {
+    setCameraOpen(false);
+    locate();
+    setFile(captured);
+    setPreview(URL.createObjectURL(captured));
+  }
 
   async function submit() {
     if (!category || !position) return;
@@ -110,7 +126,7 @@ export default function EmergencyReport() {
         <label className="label">Photo (strongly recommended)</label>
         <button
           type="button"
-          onClick={() => fileInput.current?.click()}
+          onClick={() => setCameraOpen(true)}
           className="flex w-full items-center gap-3 rounded-xl border border-dashed border-line p-3.5 text-left transition hover:border-danger"
         >
           {preview ? (
@@ -120,22 +136,30 @@ export default function EmergencyReport() {
               <Camera className="h-5 w-5" />
             </span>
           )}
-          <span className="text-fluid-sm font-medium">{preview ? 'Change photo' : 'Add a photo'}</span>
+          <span className="text-fluid-sm font-medium">{preview ? 'Retake photo' : 'Take a photo'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => fileInput.current?.click()}
+          className="mt-1.5 text-fluid-xs font-semibold text-muted underline decoration-dotted underline-offset-4 hover:text-danger"
+        >
+          Or choose an existing photo instead
         </button>
         <input
           ref={fileInput}
           type="file"
           accept="image/*"
-          capture="environment"
           className="sr-only"
           onChange={(e) => {
             const selected = e.target.files?.[0];
             if (selected) {
+              locate();
               setFile(selected);
               setPreview(URL.createObjectURL(selected));
             }
           }}
         />
+        <CameraCapture open={cameraOpen} onClose={() => setCameraOpen(false)} onCapture={onCameraCapture} />
       </div>
 
       <div>

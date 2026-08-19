@@ -19,6 +19,7 @@ import {
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
 import { BaseMap, TruckMarker, RouteLine, StopDot, FollowTarget, FlyTo } from '../../components/map/Map';
+import { CameraCapture } from '../../components/CameraCapture';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { CATEGORY_LABELS, formatDistance, timeAgo, distanceMeters } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -38,6 +39,7 @@ export default function DriverRoute() {
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [note, setNote] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['driver', 'shift'],
@@ -538,7 +540,6 @@ export default function DriverRoute() {
               ref={fileInput}
               type="file"
               accept="image/*"
-              capture="environment"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -548,13 +549,22 @@ export default function DriverRoute() {
                 }
               }}
             />
+            <CameraCapture
+              open={cameraOpen}
+              onClose={() => setCameraOpen(false)}
+              onCapture={(f) => {
+                setCameraOpen(false);
+                setPhoto(f);
+                setPreview(URL.createObjectURL(f));
+              }}
+            />
 
             {preview ? (
               <div className="relative overflow-hidden rounded-2xl border border-line">
                 <img src={preview} alt="Clean proof" className="h-48 w-full object-cover" />
                 <button
                   type="button"
-                  onClick={() => fileInput.current?.click()}
+                  onClick={() => setCameraOpen(true)}
                   className="absolute bottom-2 right-2 rounded-xl bg-black/70 px-3 py-1.5 text-fluid-xs font-bold text-white backdrop-blur"
                 >
                   Retake Photo
@@ -563,11 +573,20 @@ export default function DriverRoute() {
             ) : (
               <button
                 type="button"
-                onClick={() => fileInput.current?.click()}
+                onClick={() => setCameraOpen(true)}
                 className="flex h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-brand/40 bg-brand/5 text-brand transition hover:bg-brand/10"
               >
                 <Camera className="h-8 w-8" />
                 <span className="text-fluid-xs font-bold">Take Clean Proof Photo</span>
+              </button>
+            )}
+            {!preview && (
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                className="block w-full text-center text-fluid-xs font-semibold text-muted underline decoration-dotted underline-offset-4 hover:text-brand"
+              >
+                Or choose an existing photo instead
               </button>
             )}
 

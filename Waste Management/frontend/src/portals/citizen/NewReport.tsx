@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, Meter, toast } from '../../components/ui';
+import { CameraCapture } from '../../components/CameraCapture';
 import { BaseMap, LocationPicker } from '../../components/map/Map';
 import { CATEGORY_LABELS, confidenceLabel, formatDistance } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -72,6 +73,7 @@ export default function NewReport() {
   const [geoDenied, setGeoDenied] = useState(false);
   const [duplicate, setDuplicate] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   useEffect(() => {
     locate();
@@ -239,6 +241,19 @@ export default function NewReport() {
     }
   }
 
+  /**
+   * The evidence photo and the GPS fix should describe the same moment. A fix
+   * taken when the page first loaded (possibly minutes before the citizen
+   * actually points the camera at the waste) can be stale by the time the
+   * photo is real — re-locating the instant a photo lands, whether from the
+   * live camera or the upload fallback, keeps the two in sync.
+   */
+  function onCameraCapture(captured: File) {
+    setCameraOpen(false);
+    void locate();
+    void onPhoto(captured);
+  }
+
   async function checkForDuplicates(pos: { lat: number; lng: number }) {
     try {
       const { data } = await api('citizen').get('/citizen/duplicates/check', {
@@ -282,18 +297,28 @@ export default function NewReport() {
 
   return (
     <div className="space-y-6">
-      {/* Hidden File Input — Always mounted in DOM across all steps so Retake Photo works reliably */}
+      {/*
+        Upload-from-device fallback — always mounted so Retake Photo works
+        reliably. No `capture` attribute: that trick only opens a native
+        camera app on some mobile browsers, and on a laptop it just becomes a
+        confusing hint on an ordinary file picker. The real camera lives in
+        CameraCapture below; this input is purely for choosing an existing photo.
+      */}
       <input
         ref={fileInput}
         type="file"
         accept="image/*"
-        capture="environment"
         className="sr-only"
         onChange={(e) => {
           const selected = e.target.files?.[0];
-          if (selected) void onPhoto(selected);
+          if (selected) {
+            void locate();
+            void onPhoto(selected);
+          }
         }}
       />
+
+      <CameraCapture open={cameraOpen} onClose={() => setCameraOpen(false)} onCapture={onCameraCapture} />
 
       {/* Top Header & Step Tracker */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-line pb-4">
@@ -358,21 +383,29 @@ export default function NewReport() {
             <Card className="p-6 sm:p-10 border-2 border-dashed border-brand/30 hover:border-brand bg-brand/[0.02] transition">
               <button
                 type="button"
-                onClick={triggerPhotoCapture}
+                onClick={() => setCameraOpen(true)}
                 className="flex w-full flex-col items-center gap-4 py-8 text-center group cursor-pointer"
               >
                 <div className="grid h-24 w-24 place-items-center rounded-3xl bg-brand text-brand-ink shadow-xl shadow-brand/20 transition group-hover:scale-105">
                   <Camera className="h-12 w-12" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-fluid-lg font-bold text-ink">Take Live Photo / Upload</h3>
+                  <h3 className="text-fluid-lg font-bold text-ink">Take Live Photo</h3>
                   <p className="text-fluid-xs text-muted max-w-md">
-                    Point camera at the waste spot. Our YOLOv8 Deep Learning model automatically detects waste type.
+                    Opens your camera and locks in your GPS position the moment you capture — our YOLOv8 Deep
+                    Learning model then automatically detects the waste type.
                   </p>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-brand/30 bg-brand/10 px-4 py-1.5 text-fluid-xs font-bold text-brand shadow-xs">
                   <Sparkles className="h-4 w-4" /> AI Auto-Classification Active
                 </div>
+              </button>
+              <button
+                type="button"
+                onClick={triggerPhotoCapture}
+                className="mx-auto mt-5 block text-fluid-xs font-semibold text-muted underline decoration-dotted underline-offset-4 hover:text-brand"
+              >
+                Or choose an existing photo instead
               </button>
             </Card>
           </div>
@@ -440,10 +473,10 @@ export default function NewReport() {
                   </div>
                 )}
 
-                {/* Retake Photo Button — Triggers File Picker directly */}
+                {/* Retake Photo Button — reopens the live camera */}
                 <button
                   type="button"
-                  onClick={triggerPhotoCapture}
+                  onClick={() => setCameraOpen(true)}
                   className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-black/75 px-3 py-1.5 text-fluid-xs font-semibold text-white backdrop-blur shadow-md hover:bg-black/95 transition cursor-pointer"
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Retake Photo
