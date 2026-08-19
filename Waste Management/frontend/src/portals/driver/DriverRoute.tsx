@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
-import { BaseMap, TruckMarker, RouteLine, StopDot, FollowTarget } from '../../components/map/Map';
+import { BaseMap, TruckMarker, RouteLine, StopDot, FollowTarget, FlyTo } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { CATEGORY_LABELS, formatDistance, timeAgo, distanceMeters } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -32,6 +32,8 @@ export default function DriverRoute() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [live, setLive] = useState<{ latitude: number; longitude: number; heading?: number } | null>(null);
   const [follow, setFollow] = useState(true);
+  const [focusStop, setFocusStop] = useState<{ latitude: number; longitude: number; nonce: number } | null>(null);
+  const mapCardRef = useRef<HTMLDivElement>(null);
   const [resolving, setResolving] = useState<any | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
@@ -218,11 +220,12 @@ export default function DriverRoute() {
         /* Multi-Column Desktop Grid */
         <div className="grid gap-5 lg:grid-cols-12 items-start">
           {/* Left Column: Interactive Map & Live HUD (7 of 12 cols on desktop) */}
-          <div className="lg:col-span-7 xl:col-span-8 space-y-4">
+          <div ref={mapCardRef} className="lg:col-span-7 xl:col-span-8 space-y-4">
             <Card className="overflow-hidden p-0 shadow-md">
               <div className="relative isolate h-[55dvh] min-h-[380px] w-full lg:h-[580px]">
                 <BaseMap center={centre} zoom={15} satellite>
                   <FollowTarget latitude={live?.latitude} longitude={live?.longitude} enabled={follow} />
+                  <FlyTo target={focusStop} />
                   {polyline.length > 1 && <RouteLine polyline={polyline} />}
                   {(() => {
                     let nextMarked = false;
@@ -400,14 +403,20 @@ export default function DriverRoute() {
                 )}
 
                 <div className="mt-4 flex gap-2">
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${nextStop.latitude},${nextStop.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  {/* Pans the map above to this stop instead of leaving the app
+                      — the page already has a live map, so that's what
+                      "navigate" means here rather than an external redirect. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFollow(false);
+                      setFocusStop({ latitude: nextStop.latitude, longitude: nextStop.longitude, nonce: Date.now() });
+                      mapCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
                     className="btn-primary flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-fluid-xs font-bold shadow-sm"
                   >
-                    <Navigation className="h-4 w-4" /> Start Turn-by-Turn GPS
-                  </a>
+                    <Navigation className="h-4 w-4" /> Show on Map
+                  </button>
                   <Link
                     to="/driver/stops"
                     className="btn-ghost flex items-center justify-center rounded-xl border border-line px-3.5 text-fluid-xs font-semibold"

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Modal, toast } from '../../components/ui';
+import { LocationModal } from '../../components/LocationModal';
 import { STATUS_TONE, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
@@ -31,6 +32,7 @@ export default function DriverStops() {
   const [dateFilter, setDateFilter] = useState<string>(todayStr);
   const [allDates, setAllDates] = useState(false);
   const [resolving, setResolving] = useState<any | null>(null);
+  const [locating, setLocating] = useState<any | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [note, setNote] = useState('');
@@ -337,14 +339,13 @@ export default function DriverStops() {
                         phone, split left/right once there's room for a
                         single row. */}
                     <div className="mt-4 flex flex-col gap-2 border-t border-line/60 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                      <a
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${task.latitude},${task.longitude}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => setLocating(task)}
                         className="btn-ghost btn-sm flex min-h-touch items-center justify-center gap-1.5 rounded-xl border border-line text-fluid-xs font-semibold hover:bg-sunken sm:min-h-0"
                       >
-                        <Navigation className="h-3.5 w-3.5 text-brand" /> GPS Directions
-                      </a>
+                        <Navigation className="h-3.5 w-3.5 text-brand" /> Locate on Map
+                      </button>
 
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         {!isDone && !inProg && (
@@ -420,6 +421,18 @@ export default function DriverStops() {
           </Card>
         </div>
       </div>
+
+      {/* Locate-on-map popup — no more leaving the app for a single pin. */}
+      {locating && (
+        <LocationModal
+          open={Boolean(locating)}
+          onClose={() => setLocating(null)}
+          latitude={locating.latitude}
+          longitude={locating.longitude}
+          title={`#${locating.code}`}
+          subtitle={locating.address || 'Reported location'}
+        />
+      )}
 
       {/* Completion Modal */}
       {resolving && (
