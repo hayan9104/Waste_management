@@ -196,7 +196,7 @@ export function ConsoleShell({
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-line xl:hidden text-ink cursor-pointer"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-line 2xl:hidden text-ink cursor-pointer"
               aria-label="Open Navigation"
             >
               <Menu className="h-5 w-5" />
@@ -223,11 +223,13 @@ export function ConsoleShell({
           </div>
 
           {/* Desktop Interactive Spotlight Navigation Bar — full icon+label pills.
-              Officer/admin nav labels are kept short (Queue, Fleet, Hotspots, ...)
-              specifically so 7-8 tabs fit without squeezing the logo/account
-              controls or needing a scroll; overflow-x-auto stays on as a silent
-              fallback for genuinely narrow windows. */}
-          <div className="no-scrollbar hidden min-w-0 flex-1 items-center justify-center overflow-x-auto xl:flex">
+              7-8 tabs plus the logo and account controls genuinely don't fit
+              until 2xl (1536px); at xl they used to fall back to a silent
+              horizontal scrollbar, which read as broken rather than as a
+              fallback. Below 2xl the hamburger drawer (below) carries
+              navigation instead — a vertical list has no width limit to run
+              into. */}
+          <div className="hidden min-w-0 flex-1 items-center justify-center 2xl:flex">
             <SpotlightNav items={nav} accent={accent} className="shrink-0" />
           </div>
 
@@ -260,7 +262,7 @@ export function ConsoleShell({
 
       {/* Mobile Drawer Navigation for Tablet / Mobile */}
       {mobileNavOpen && (
-        <div className="fixed inset-0 z-50 xl:hidden">
+        <div className="fixed inset-0 z-50 2xl:hidden">
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setMobileNavOpen(false)}

@@ -162,14 +162,13 @@ export default function Login({ portal }: { portal: Portal }) {
       AMOLED theme rather than needing a second artwork.
     */
     /*
-      Below lg the card is left to size itself and the page scrolls like any
-      normal webpage if a short phone can't fit it — that's the one scroll a
-      phone user already expects, and it's what keeps the card's own content
-      (and the sign-in button specifically) from ever being trapped behind an
-      inner scrollbar of its own. lg and up keeps the original fixed,
-      single-viewport composition, where there's always room to spare.
+      The card is left to size itself and the page scrolls like any normal
+      webpage if a short viewport can't fit it — that's the one scroll a user
+      already expects, and it's what keeps the card's own content (the
+      sign-in button specifically) from ever being trapped behind a
+      scrollbar of its own, at any window size.
     */
-    <div className="relative flex min-h-dvh flex-col bg-surface lg:h-dvh lg:overflow-hidden">
+    <div className="relative flex min-h-dvh flex-col bg-surface">
       {/*
         Two copies of the same photo, both drawn from the same pixels so the
         colours always agree:
@@ -235,12 +234,11 @@ export default function Login({ portal }: { portal: Portal }) {
       </header>
 
       {/*
-        Below lg this row is free to grow past one viewport — the page itself
-        scrolls (see the wrapper above) rather than the card. From lg up it
-        stays exactly one viewport tall, content centred in the space the
-        header leaves.
+        Free to grow past one viewport at any width — the page itself scrolls
+        (see the wrapper above) rather than the card, so nothing here is ever
+        trapped behind a scrollbar of its own.
       */}
-      <div className="relative z-10 grid w-full flex-1 items-center gap-6 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:px-8 sm:pb-4 lg:min-h-0 lg:gap-12 lg:py-0 lg:grid-cols-2">
+      <div className="relative z-10 grid w-full flex-1 items-center gap-6 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:px-8 sm:pb-4 lg:gap-12 lg:grid-cols-2">
         {/*
           Brand copy sits directly on the photo — no card. Dropping the panel is
           what lets the text start on the same left edge as the logo above it;
@@ -269,16 +267,10 @@ export default function Login({ portal }: { portal: Portal }) {
           </p>
         </section>
 
-        {/* Form card */}
-        {/*
-          No height cap below lg — the card just takes the height it needs and
-          the page scrolls to it, so it can never trap its own submit button
-          behind an inner scrollbar. From lg up, a grid row sizes itself to
-          its content, so the explicit ceiling (rather than max-h-full, which
-          would be circular there) keeps the whole composition inside one
-          viewport the way the desktop layout intends.
-        */}
-        <main className="mx-auto flex w-full max-w-md flex-col rounded-3xl border border-line/40 bg-elevated/55 p-4 shadow-lift backdrop-blur-2xl sm:p-6 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:p-7">
+        {/* Form card — no height cap at any breakpoint. It just takes the
+            height it needs and the page scrolls to it, so the sign-in button
+            can never end up trapped behind the card's own scrollbar. */}
+        <main className="mx-auto flex w-full max-w-md flex-col rounded-3xl border border-line/40 bg-elevated/55 p-4 shadow-lift backdrop-blur-2xl sm:p-6 lg:p-7">
           <div className="flex w-full flex-col">
           {/* Mobile-only fallback — the header carries this centered on the logo's line at lg: and up, but there's no room for it there on a phone. */}
           <div className="mb-3.5 flex flex-col items-center lg:hidden">
