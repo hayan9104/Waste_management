@@ -13,23 +13,9 @@ export interface SpotlightNavProps {
   items: SpotlightNavItem[];
   accent?: 'brand' | 'orange';
   className?: string;
-  /**
-   * Icon-only (with a hover title), always, at every width. For consoles
-   * with 7-8 nav items (officer/admin), reserving space for labels even
-   * only above some breakpoint still overflowed into a horizontal scroll on
-   * real monitors -- item count there is the constraint, not screen width,
-   * so this can't be solved by "enough room eventually." Off by default so
-   * the citizen/driver nav (fewer items) keeps its labels.
-   */
-  compact?: boolean;
 }
 
-export function SpotlightNav({
-  items,
-  accent = 'brand',
-  className = '',
-  compact = false,
-}: SpotlightNavProps) {
+export function SpotlightNav({ items, accent = 'brand', className = '' }: SpotlightNavProps) {
   const navRef = useRef<HTMLElement>(null);
   const location = useLocation();
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -190,11 +176,8 @@ export function SpotlightNav({
                 to={item.to}
                 end={item.end}
                 data-nav-index={idx}
-                title={compact ? item.label : undefined}
                 className={({ isActive: matchActive }) =>
-                  `relative flex items-center gap-2 rounded-full py-1.5 text-fluid-xs font-semibold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-brand/50 ${
-                    compact ? 'px-2.5' : 'px-3.5 sm:px-4'
-                  } ${
+                  `relative flex items-center gap-2 rounded-full px-3.5 py-1.5 text-fluid-xs font-semibold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-brand/50 sm:px-4 ${
                     matchActive || isActive
                       ? isOrange
                         ? 'text-orange-700 dark:text-orange-300 font-bold'
@@ -204,7 +187,7 @@ export function SpotlightNav({
                 }
               >
                 {Icon && <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />}
-                <span className={`whitespace-nowrap ${compact ? 'hidden' : ''}`}>{item.label}</span>
+                <span className="whitespace-nowrap">{item.label}</span>
                 {item.badge ? (
                   <span className="ml-1 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[0.6rem] font-bold text-white shadow-xs">
                     {item.badge > 99 ? '99+' : item.badge}
