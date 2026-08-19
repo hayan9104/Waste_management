@@ -4,6 +4,12 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      screens: {
+        /* Height-based, not width-based: a 360x640 handset has plenty of room
+           sideways and none vertically, so the auth screen trims its own
+           vertical rhythm rather than shrinking type everyone can read. */
+        short: { raw: '(max-height: 720px)' },
+      },
       colors: {
         // Semantic tokens resolve to CSS variables so light and true-AMOLED
         // dark share one component layer (plan §9).

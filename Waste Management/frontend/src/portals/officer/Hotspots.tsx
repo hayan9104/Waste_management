@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { AlertTriangle, Info, TrendingUp, Sparkles, Lightbulb, Play, Clock, ArrowRight, ShieldAlert, CheckCircle2, Loader2 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
-import { Badge, Card, ErrorState, Loading, Meter, SectionTitle, toast } from '../../components/ui';
+import { Badge, Card, DegradedNotice, EmptyState, ErrorState, Loading, Meter, SectionTitle, toast } from '../../components/ui';
 import { BaseMap, WardLayer, FitBounds, ComplaintLayer } from '../../components/map/Map';
 import { formatDate } from '../../lib/format';
 
@@ -38,7 +38,15 @@ export default function Hotspots() {
   if (forecast.isLoading) return <Loading label="Running the hotspot analysis…" />;
   if (forecast.error) return <ErrorState message="Could not load the forecast" onRetry={() => forecast.refetch()} />;
 
-  const predictions = forecast.data?.predictions ?? [];
+  /*
+    GET /officer/hotspots answers { points, forecast, days } — the forecast is
+    one level down. Reading predictions off the envelope left the whole ranked
+    column silently blank and the date as an em dash, even though the model had
+    answered normally.
+  */
+  const fc = forecast.data?.forecast;
+  const predictions = [...(fc?.predictions ?? [])].sort((a: any, b: any) => b.riskScore - a.riskScore);
+  const heatPoints = forecast.data?.points ?? [];
   const riskById = Object.fromEntries(predictions.map((p: any) => [p.wardId, p.riskScore]));
   const riskColour = (score: number) => (score >= 70 ? '#dc2626' : score >= 40 ? '#f59e0b' : '#16a34a');
 
@@ -49,8 +57,15 @@ export default function Hotspots() {
       <div>
         <h1 className="text-fluid-xl font-bold tracking-tight">Garbage Hotspots & AI Insights</h1>
         <p className="mt-1 text-fluid-xs text-muted">
-          Spatial density clusters, predictive risk forecasts for {formatDate(forecast.data?.forDate)}, and automated recommendations.
+          Spatial density clusters, predictive risk forecasts for {formatDate(fc?.forDate)}, and automated recommendations.
         </p>
+        {/* Say plainly when the model service was unreachable and the seasonal
+            baseline answered instead, rather than passing it off as the model. */}
+        {fc?.source === 'api-fallback' && (
+          <div className="mt-3">
+            <DegradedNotice reason={fc?.note} />
+          </div>
+        )}
       </div>
 
       {/* AI Recommendation Cards */}
@@ -82,7 +97,7 @@ export default function Hotspots() {
       {/* Map & Risk List */}
       <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
         <Card className="overflow-hidden p-0">
-          <div className="h-[46dvh] min-h-[320px] w-full xl:h-[500px]">
+          <div className="relative isolate h-[46dvh] min-h-[320px] w-full xl:h-[500px]">
             <BaseMap center={[23.0225, 72.5714]} zoom={12}>
               <FitBounds points={(wards.data ?? []).map((w: any) => [w.center.latitude, w.center.longitude])} />
               {wards.data && (
@@ -91,17 +106,42 @@ export default function Hotspots() {
                   colorFor={(w: any) => riskColour(riskById[w.id] ?? 0)}
                 />
               )}
+              {/* The density points the endpoint already returns — a hotspot map
+                  showing only ward outlines was hiding the actual clusters. */}
+              <ComplaintLayer points={heatPoints} />
             </BaseMap>
           </div>
-          <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-2.5 text-fluid-xs text-muted">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line px-4 py-2.5 text-fluid-xs text-muted">
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#16a34a]" /> Low risk</span>
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#f59e0b]" /> Watch</span>
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#dc2626]" /> High risk overflow</span>
+            <span className="ml-auto tabular-nums text-faint">
+              {heatPoints.length} reports · last {forecast.data?.days ?? 30} days
+            </span>
           </div>
         </Card>
 
         <div className="space-y-3">
-          <SectionTitle title="Ranked by Risk Score" subtitle="Prioritize pre-emptive morning sweeps" />
+          <SectionTitle
+            title="Ranked by Risk Score"
+            subtitle="Prioritize pre-emptive morning sweeps"
+            action={
+              predictions.length > 0 ? (
+                <span className="text-fluid-xs font-semibold text-faint">
+                  {predictions.length} ward{predictions.length === 1 ? '' : 's'}
+                </span>
+              ) : undefined
+            }
+          />
+          {predictions.length === 0 && (
+            <Card className="p-4">
+              <EmptyState
+                title="No ward forecast yet"
+                hint="The model needs a few days of complaint history per ward before it can rank them. Wards appear here as soon as they have reports to learn from."
+                icon={<ShieldAlert className="h-8 w-8" />}
+              />
+            </Card>
+          )}
           {predictions.map((p: any) => (
             <Card key={p.wardId} className="p-4">
               <div className="flex items-start justify-between gap-2">

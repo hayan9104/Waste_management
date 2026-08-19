@@ -88,7 +88,7 @@ export function Skeleton({ className = 'h-4 w-full' }: { className?: string }) {
 
 export function EmptyState({ title, hint, icon, action }: { title: string; hint?: string; icon?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line px-6 py-12 text-center">
+    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line px-4 py-10 text-center sm:px-6 sm:py-12">
       <span className="text-faint">{icon ?? <Inbox className="h-8 w-8" />}</span>
       <p className="text-fluid-sm font-semibold">{title}</p>
       {hint && <p className="max-w-sm text-fluid-xs text-muted">{hint}</p>}
