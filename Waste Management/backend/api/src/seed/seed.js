@@ -94,6 +94,7 @@ const LAST_NAMES = ['Patel', 'Shah', 'Desai', 'Mehta', 'Chauhan', 'Trivedi', 'So
 
 async function wipe() {
   // Order matters: children before parents.
+  await prisma.scheduledPickupRequest.deleteMany();
   await prisma.greenCredit.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.auditLog.deleteMany();
@@ -526,6 +527,92 @@ async function main() {
   }
   console.log(`[seed] ${routes} optimised routes published for today`);
 
+  // ------------------------------------------ scheduled pickup requests ----
+  /**
+   * Advance event-pickup bookings (the "Schedule Event" feature) across the
+   * full status lifecycle, including two COMPLETED ones with real proof
+   * photos. Without this the feature had zero demo rows -- every seeded
+   * account's "My Scheduled Pickups" page, and the matching officer/driver
+   * queues, showed permanently empty no matter which login a judge used.
+   */
+  const EVENT_REASONS = [
+    'Wedding Reception', 'Diwali Society Deep-Clean', 'Kitchen Renovation',
+    'Birthday Party Cleanup', 'Garba Night Prep', 'Housewarming Function',
+    'Society Annual Function', 'Bathroom Renovation Debris', 'Ganesh Visarjan Cleanup', 'Society AGM Cleanup',
+  ];
+  const SCHEDULE_CATEGORY_OPTIONS = ['Organic', 'Plastic/Recyclable', 'Construction Debris', 'E-waste', 'Hazardous', 'Mixed/General'];
+  const SCHEDULE_SPECS = [
+    { status: 'PENDING_REVIEW', daysFromNow: 3 },
+    { status: 'PENDING_REVIEW', daysFromNow: 6 },
+    { status: 'APPROVED_SCHEDULED', daysFromNow: 4 },
+    { status: 'ASSIGNED', daysFromNow: 2 },
+    { status: 'ASSIGNED', daysFromNow: 8 },
+    { status: 'IN_PROGRESS', daysFromNow: 0 },
+    { status: 'COMPLETED', daysFromNow: -3 },
+    { status: 'COMPLETED', daysFromNow: -9 },
+    { status: 'REJECTED', daysFromNow: 5 },
+    { status: 'CANCELLED', daysFromNow: 7 },
+  ];
+
+  let scheduledCount = 0;
+  for (let i = 0; i < SCHEDULE_SPECS.length; i += 1) {
+    const spec = SCHEDULE_SPECS[i];
+    const r = rng(`scheduled-${i}`);
+    const citizenIdx = (i * 5 + 2) % citizens.length;
+    const citizen = citizens[citizenIdx];
+    const { ward, index } = wards[citizenIdx % wards.length];
+    const home = vehicles[index];
+    const point = pointNear(wardAnchors, index, 5000 + i * 11);
+
+    const scheduledDate = new Date();
+    scheduledDate.setDate(scheduledDate.getDate() + spec.daysFromNow);
+    scheduledDate.setHours(intBetween(r, 7, 18), 0, 0, 0);
+    const createdAt = new Date(scheduledDate.getTime() - intBetween(r, 2, 5) * 86_400_000);
+
+    const catCount = intBetween(r, 1, 3);
+    const categories = Array.from(new Set(Array.from({ length: catCount }, () => pick(r, SCHEDULE_CATEGORY_OPTIONS))));
+
+    const isAssigned = ['ASSIGNED', 'IN_PROGRESS', 'COMPLETED'].includes(spec.status);
+    const isCompleted = spec.status === 'COMPLETED';
+    const completedAt = isCompleted ? new Date(scheduledDate.getTime() + intBetween(r, 60, 240) * 60_000) : null;
+    // A real photo is mandatory on the actual driver completion flow -- match that here too.
+    const completionPhotoUrl = isCompleted ? pick(r, CITIZEN_PHOTO_POOL) : null;
+
+    scheduledCount += 1;
+    await prisma.scheduledPickupRequest.create({
+      data: {
+        code: `SP-${(scheduledCount + 400).toString(36).toUpperCase().padStart(5, '0')}`,
+        citizenId: citizen.id,
+        wardId: ward.id,
+        locationType: pick(r, ['MY_HOME', 'COMMON_PLOT_SOCIETY']),
+        address: `${intBetween(r, 1, 240)}, ${pick(r, STREETS)}, ${ward.name}`,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        eventReason: EVENT_REASONS[i % EVENT_REASONS.length],
+        expectedCategories: categories,
+        expectedQuantity: pick(r, ['SMALL', 'MEDIUM', 'LARGE']),
+        scheduledDate,
+        scheduledTimeSlot: pick(r, ['MORNING', 'AFTERNOON', 'EVENING']),
+        additionalNotes: r() > 0.5 ? `Please enter from Gate #${intBetween(r, 1, 4)}, security will guide you.` : null,
+        status: spec.status,
+        rejectionReason:
+          spec.status === 'REJECTED'
+            ? 'No compactor available in this ward on the requested date — please pick another slot.'
+            : null,
+        assignedDriverId: isAssigned ? home.driver.id : null,
+        assignedVehicleId: isAssigned ? home.vehicle.id : null,
+        assignedById: isAssigned ? officers[index % officers.length].id : null,
+        assignedAt: isAssigned ? new Date(scheduledDate.getTime() - 86_400_000) : null,
+        completedAt,
+        completionPhotoUrl,
+        completionNotes: isCompleted ? 'Cleared and area sanitised. Citizen awarded Green Credits.' : null,
+        createdAt,
+        updatedAt: completedAt || createdAt,
+      },
+    });
+  }
+  console.log(`[seed] ${scheduledCount} scheduled event-pickup requests across the full status lifecycle`);
+
   // ------------------------------------------------- emergency contacts ----
   /**
    * The three-digit national numbers are genuine. The municipal numbers are
@@ -576,6 +663,7 @@ async function main() {
     vehicles: vehicles.length,
     complaints: created,
     routes,
+    scheduledPickups: scheduledCount,
   };
 }
 
