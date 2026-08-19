@@ -285,24 +285,40 @@ export default function ComplaintQueue() {
         {detail.isLoading ? (
           <Loading />
         ) : detail.data ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-fluid-sm">{detail.data.code}</span>
-              <Badge tone={STATUS_TONE[detail.data.status]}>{t(`status.${detail.data.status}`)}</Badge>
-              {detail.data.isEmergency && <Badge tone="danger">Emergency</Badge>}
-              {detail.data.reviewNeeded && <Badge tone="warn">Review needed</Badge>}
-            </div>
-
-            <div className={`grid gap-4 ${detail.data.photoUrl ? 'sm:grid-cols-2' : ''}`}>
+          <div className="grid gap-4 sm:grid-cols-[13rem_1fr] sm:items-start">
+            {/* Left: photo, pinned — this column's own height never forces the
+                right column (the actually-variable-length content) to grow past it. */}
+            <div className="space-y-2.5 sm:sticky sm:top-0">
               {detail.data.photoUrl ? (
-                <img src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-[4/3] w-full rounded-xl object-cover" />
+                <img src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-square w-full rounded-xl object-cover" />
               ) : (
-                <div className="grid aspect-[4/3] w-full max-w-xs place-items-center gap-1.5 rounded-xl border border-dashed border-line bg-sunken text-faint">
+                <div className="grid aspect-square w-full place-items-center gap-1.5 rounded-xl border border-dashed border-line bg-sunken text-faint">
                   <Camera className="h-6 w-6" />
-                  <span className="text-fluid-xs">No photo attached</span>
+                  <span className="text-center text-fluid-xs">No photo attached</span>
                 </div>
               )}
-              <div className="space-y-2.5 text-fluid-sm">
+              {detail.data.fraudSignals?.length > 0 && (
+                <div className="rounded-xl border border-warn/30 bg-warn/10 p-2.5">
+                  <p className="text-fluid-xs font-semibold text-warn">Fraud signals</p>
+                  <ul className="mt-1 flex flex-wrap gap-1">
+                    {detail.data.fraudSignals.map((s: string) => (
+                      <Badge key={s} tone="warn" className="text-[10px]">{s.replace(/_/g, ' ')}</Badge>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Right: everything else. */}
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-fluid-sm">{detail.data.code}</span>
+                <Badge tone={STATUS_TONE[detail.data.status]}>{t(`status.${detail.data.status}`)}</Badge>
+                {detail.data.isEmergency && <Badge tone="danger">Emergency</Badge>}
+                {detail.data.reviewNeeded && <Badge tone="warn">Review needed</Badge>}
+              </div>
+
+              <div className="grid gap-x-4 gap-y-2 text-fluid-sm sm:grid-cols-2">
                 <Row label="Category" value={t(`category.${detail.data.category}`)} />
                 <Row label="AI thought" value={detail.data.aiCategory ? t(`category.${detail.data.aiCategory}`) : '—'} />
                 <Row label="Confidence" value={`${Math.round((detail.data.aiConfidence ?? 0) * 100)}%`} />
@@ -312,67 +328,56 @@ export default function ComplaintQueue() {
                 <Row label="Address" value={detail.data.address ?? '—'} />
                 <Row label="Reported" value={timeAgo(detail.data.createdAt)} />
               </div>
-            </div>
 
-            {detail.data.fraudSignals?.length > 0 && (
-              <div className="rounded-xl border border-warn/30 bg-warn/10 p-3">
-                <p className="text-fluid-xs font-semibold text-warn">Fraud signals</p>
-                <ul className="mt-1 flex flex-wrap gap-1.5">
-                  {detail.data.fraudSignals.map((s: string) => (
-                    <Badge key={s} tone="warn">{s.replace(/_/g, ' ')}</Badge>
-                  ))}
-                </ul>
-              </div>
-            )}
+              {detail.data.duplicates?.length > 0 && (
+                <div className="rounded-xl border border-info/30 bg-info/10 p-2.5 text-fluid-xs text-info">
+                  Merged with {detail.data.duplicates.length} duplicate report(s).
+                </div>
+              )}
 
-            {detail.data.duplicates?.length > 0 && (
-              <div className="rounded-xl border border-info/30 bg-info/10 p-3 text-fluid-xs text-info">
-                Merged with {detail.data.duplicates.length} duplicate report(s).
-              </div>
-            )}
+              {detail.data.description && (
+                <div>
+                  <p className="label">Citizen's description</p>
+                  <p className="text-fluid-sm">{detail.data.description}</p>
+                </div>
+              )}
 
-            {detail.data.description && (
               <div>
-                <p className="label">Citizen's description</p>
-                <p className="text-fluid-sm">{detail.data.description}</p>
+                <p className="label">Timeline</p>
+                <ol className="space-y-1">
+                  {detail.data.timeline?.map((event: any, i: number) => (
+                    <li key={i} className="flex items-start gap-2 text-fluid-xs">
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                      <span>
+                        <span className="font-medium">{t(`status.${event.status}`)}</span>
+                        {event.note ? ` — ${event.note}` : ''} · <span className="text-muted">{timeAgo(event.at)}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
               </div>
-            )}
 
-            <div>
-              <p className="label">Timeline</p>
-              <ol className="space-y-1.5">
-                {detail.data.timeline?.map((event: any, i: number) => (
-                  <li key={i} className="flex items-start gap-2 text-fluid-xs">
-                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
-                    <span>
-                      <span className="font-medium">{t(`status.${event.status}`)}</span>
-                      {event.note ? ` — ${event.note}` : ''} · <span className="text-muted">{timeAgo(event.at)}</span>
-                    </span>
-                  </li>
-                ))}
-              </ol>
+              {['PENDING'].includes(detail.data.status) && (
+                <div className="grid grid-cols-2 gap-2 border-t border-line pt-3">
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    disabled={decide.isPending}
+                    onClick={() => decide.mutate({ id: detail.data.id, decision: 'REJECTED' })}
+                  >
+                    <X className="h-4 w-4" /> Reject
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={decide.isPending}
+                    onClick={() => decide.mutate({ id: detail.data.id, decision: 'VERIFIED' })}
+                  >
+                    <Check className="h-4 w-4" /> Verify
+                  </button>
+                </div>
+              )}
             </div>
-
-            {['PENDING'].includes(detail.data.status) && (
-              <div className="grid grid-cols-2 gap-2 border-t border-line pt-4">
-                <button
-                  type="button"
-                  className="btn-danger"
-                  disabled={decide.isPending}
-                  onClick={() => decide.mutate({ id: detail.data.id, decision: 'REJECTED' })}
-                >
-                  <X className="h-4 w-4" /> Reject
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={decide.isPending}
-                  onClick={() => decide.mutate({ id: detail.data.id, decision: 'VERIFIED' })}
-                >
-                  <Check className="h-4 w-4" /> Verify
-                </button>
-              </div>
-            )}
           </div>
         ) : null}
       </Modal>
