@@ -214,13 +214,13 @@ export function ConsoleShell({
             </Link>
           </div>
 
-          {/* Desktop Interactive Spotlight Navigation Bar — `compact` keeps every
-              tab icon+tooltip only, at every width, so all 7-8 console tabs
-              (officer/admin) always fit without squeezing the logo/account
+          {/* Desktop Interactive Spotlight Navigation Bar — full icon+label pills.
+              Officer/admin nav labels are kept short (Queue, Fleet, Hotspots, ...)
+              specifically so 7-8 tabs fit without squeezing the logo/account
               controls or needing a scroll; overflow-x-auto stays on as a silent
               fallback for genuinely narrow windows. */}
           <div className="no-scrollbar hidden min-w-0 flex-1 items-center justify-center overflow-x-auto xl:flex">
-            <SpotlightNav items={nav} accent={accent} compact className="shrink-0" />
+            <SpotlightNav items={nav} accent={accent} className="shrink-0" />
           </div>
 
           {/* Right Header Actions */}
