@@ -267,15 +267,15 @@ export default function NewReport() {
       } catch {
         form.append('photo', file);
       }
-      form.append('category', category);
+      form.append('userCategory', category);
       form.append('latitude', String(position.lat));
       form.append('longitude', String(position.lng));
       if (description) form.append('description', description);
 
-      const { data } = await api('citizen').post('/citizen/complaints', form);
+      const { data } = await api('citizen').post('/citizen/report', form);
       toast.success(t('citizen.reported_success') || 'Complaint filed successfully!');
       queryClient.invalidateQueries({ queryKey: ['citizen'] });
-      navigate(`/app/complaints/${data.id}`, { replace: true });
+      navigate(`/app/complaints/${data.complaint.id}`, { replace: true });
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {

@@ -131,7 +131,14 @@ router.post(
         latitude: z.coerce.number().min(-90).max(90),
         longitude: z.coerce.number().min(-180).max(180),
         address: z.string().max(300).optional(),
-        userCategory: z.enum(WASTE_CATEGORIES).optional(),
+        // Plain string, not z.enum(WASTE_CATEGORIES) — that array holds
+        // {id, label, ...} objects, which zod's enum() rejects outright, and
+        // the citizen's category ids come through lowercase (e.g.
+        // 'garbage_pile') while WASTE_CATEGORIES uses 'GARBAGE_PILE'.
+        // createComplaint's normalizeCat() already upper-cases and falls
+        // back to OTHER for anything unrecognised, so validation here would
+        // only duplicate that safety net while being stricter than useful.
+        userCategory: z.string().optional(),
         description: z.string().max(1000).optional(),
         channel: z.enum(['APP', 'WEB', 'WHATSAPP', 'IVR']).optional(),
         isEmergency: z.coerce.boolean().optional(),
@@ -143,7 +150,7 @@ router.post(
       latitude: body.latitude,
       longitude: body.longitude,
       address: body.address,
-      userCategory: body.userCategory,
+      declaredCategory: body.userCategory,
       description: body.description,
       photoUrl,
       channel: body.channel || 'APP',
@@ -181,7 +188,7 @@ router.post(
       latitude: body.latitude,
       longitude: body.longitude,
       address: body.address,
-      userCategory: body.category,
+      declaredCategory: body.category,
       description: body.description,
       photoUrl: photoUrl || 'https://images.unsplash.com/photo-1584744982491-665216d95f8b?w=800',
       channel: 'APP',
