@@ -30,7 +30,12 @@ export default function DriverStops() {
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'>('ALL');
   const todayStr = new Date().toISOString().slice(0, 10);
   const [dateFilter, setDateFilter] = useState<string>(todayStr);
-  const [allDates, setAllDates] = useState(false);
+  // Defaults to showing every date, not just today's. A task is created the
+  // moment a citizen reports it and can sit pending for days before an
+  // officer assigns it — scoping the driver's worklist to "created today"
+  // silently hid real pending and just-completed work that happened to be
+  // reported (or resolved) on an earlier day.
+  const [allDates, setAllDates] = useState(true);
   const [resolving, setResolving] = useState<any | null>(null);
   const [locating, setLocating] = useState<any | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
