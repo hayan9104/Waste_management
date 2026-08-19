@@ -660,36 +660,41 @@ router.post(
  * pool existed (or otherwise never got one) — targeted and additive, unlike
  * /reseed-demo-data it never wipes anything, so it's safe to run against a
  * database that already has real live-tested state on it.
+ *
+ * Fire-and-forget like /reseed-demo-data: a database with months of seeded
+ * history can mean thousands of individual complaint rows, each needing its
+ * own UPDATE (a random per-row pick isn't expressible as one updateMany) —
+ * comfortably past any HTTP request timeout, so the response returns
+ * immediately and the real work logs its progress server-side.
  */
 router.post(
   '/backfill-photos',
   writeLimiter,
   asyncHandler(async (req, res) => {
-    const { buildPhotoPool } = await import('../seed/seed.js');
-    const pool = await buildPhotoPool();
-    const pick = () => pool[Math.floor(Math.random() * pool.length)];
+    res.json({ ok: true, message: 'Photo backfill started in the background -- check the server Logs for progress and a final summary.' });
 
-    const missingPhoto = await prisma.complaint.findMany({
-      where: { photoUrl: null },
-      select: { id: true },
-    });
-    for (const { id } of missingPhoto) {
-      await prisma.complaint.update({ where: { id }, data: { photoUrl: pick() } });
-    }
+    (async () => {
+      const { buildPhotoPool } = await import('../seed/seed.js');
+      const pool = await buildPhotoPool();
+      const pick = () => pool[Math.floor(Math.random() * pool.length)];
 
-    const missingResolutionPhoto = await prisma.complaint.findMany({
-      where: { status: 'RESOLVED', resolutionPhotoUrl: null },
-      select: { id: true },
-    });
-    for (const { id } of missingResolutionPhoto) {
-      await prisma.complaint.update({ where: { id }, data: { resolutionPhotoUrl: pick() } });
-    }
+      const missingPhoto = await prisma.complaint.findMany({ where: { photoUrl: null }, select: { id: true } });
+      for (const { id } of missingPhoto) {
+        await prisma.complaint.update({ where: { id }, data: { photoUrl: pick() } });
+      }
 
-    res.json({
-      ok: true,
-      photosAdded: missingPhoto.length,
-      resolutionPhotosAdded: missingResolutionPhoto.length,
-    });
+      const missingResolutionPhoto = await prisma.complaint.findMany({
+        where: { status: 'RESOLVED', resolutionPhotoUrl: null },
+        select: { id: true },
+      });
+      for (const { id } of missingResolutionPhoto) {
+        await prisma.complaint.update({ where: { id }, data: { resolutionPhotoUrl: pick() } });
+      }
+
+      console.log(
+        `[admin] photo backfill complete: ${missingPhoto.length} photoUrl, ${missingResolutionPhoto.length} resolutionPhotoUrl`
+      );
+    })().catch((err) => console.error('[admin] photo backfill failed:', err));
   })
 );
 
