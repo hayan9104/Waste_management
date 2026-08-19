@@ -264,27 +264,98 @@ export function drivablePolyline(points) {
 }
 
 /**
- * Snaps the ordered waypoints to actual streets via OSRM's public routing
- * API (the same open road network Google/Uber-style routing draws from) so
- * the drawn line follows real roads instead of cutting through blocks.
- * Falls back to the L-shaped approximation if OSRM is unreachable — this
- * hits a free, unauthenticated demo server, so it must degrade gracefully.
+ * Snaps the ordered waypoints to actual streets via OSRM's routing API (the
+ * same open road network Google/Uber-style routing draws from) so the drawn
+ * line follows real roads instead of cutting through blocks. Falls back to the
+ * L-shaped approximation if OSRM is unreachable — the default is a free,
+ * unauthenticated demo server, so it must degrade gracefully.
  */
 export async function roadSnappedPolyline(points) {
   if (!points || points.length < 2) return drivablePolyline(points || []);
+  const { polyline } = await navigationRoute(points);
+  return polyline;
+}
+
+/**
+ * Road geometry PLUS the per-leg numbers a navigation view needs: how far and
+ * how long to each waypoint, and where in the flattened polyline that waypoint
+ * falls.
+ *
+ * One OSRM request covers the whole chain. `steps=true` is what makes the
+ * breakpoints exact — concatenating each leg's step geometry gives the leg
+ * boundaries directly, where matching waypoints back against a single merged
+ * `overview` geometry can only approximate them. It also replaces the previous
+ * leg-by-leg approach, which fired N sequential requests at a shared public
+ * server to build the same line.
+ */
+export async function navigationRoute(points) {
+  const waypoints = (points || []).filter(
+    (p) => Array.isArray(p) && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1]))
+  );
+  if (waypoints.length < 2) {
+    return { polyline: drivablePolyline(waypoints), breakpoints: [], legs: [], distanceMeters: 0, durationSeconds: 0, source: 'fallback' };
+  }
 
   try {
-    const coordStr = points.map(([lng, lat]) => `${lng},${lat}`).join(';');
-    const { data } = await axios.get(`https://router.project-osrm.org/route/v1/driving/${coordStr}`, {
-      params: { overview: 'full', geometries: 'geojson' },
-      timeout: 8000,
+    const coordStr = waypoints.map(([lng, lat]) => `${lng},${lat}`).join(';');
+    const { data } = await axios.get(`${env.osrmUrl}/route/v1/driving/${coordStr}`, {
+      params: { overview: 'full', geometries: 'geojson', steps: true },
+      timeout: 10_000,
     });
-    const coords = data?.routes?.[0]?.geometry?.coordinates;
-    if (Array.isArray(coords) && coords.length > 1) return coords;
+
+    const route = data?.routes?.[0];
+    if (!route?.legs?.length) throw new Error(`OSRM returned ${data?.code || 'no route'}`);
+
+    const polyline = [];
+    const breakpoints = [];
+    const legs = [];
+
+    for (const leg of route.legs) {
+      for (const step of leg.steps || []) {
+        for (const coord of step.geometry?.coordinates || []) {
+          const last = polyline[polyline.length - 1];
+          // Consecutive steps repeat the shared vertex; keep the line clean.
+          if (!last || last[0] !== coord[0] || last[1] !== coord[1]) polyline.push(coord);
+        }
+      }
+      breakpoints.push(Math.max(0, polyline.length - 1));
+      legs.push({ distanceMeters: Math.round(leg.distance), durationSeconds: Math.round(leg.duration) });
+    }
+
+    if (polyline.length < 2) throw new Error('degenerate geometry');
+
+    return {
+      polyline,
+      breakpoints,
+      legs,
+      distanceMeters: Math.round(route.distance),
+      durationSeconds: Math.round(route.duration),
+      source: 'osrm',
+    };
   } catch (err) {
-    console.warn('[routing] OSRM road-snap unavailable, using L-shaped fallback:', err.message);
+    console.warn('[routing] OSRM navigation unavailable, using L-shaped fallback:', err.message);
+    // Straight-line estimates so the UI still has numbers to show; the caller
+    // is told the source so it can say the guidance is approximate.
+    const polyline = drivablePolyline(waypoints);
+    const legs = [];
+    for (let i = 0; i < waypoints.length - 1; i += 1) {
+      const km = roadKm(waypoints[i], waypoints[i + 1]);
+      legs.push({
+        distanceMeters: Math.round(km * 1000),
+        durationSeconds: Math.round((km / DEFAULTS.speedKmph) * 3600),
+      });
+    }
+    return {
+      polyline,
+      // drivablePolyline emits a corner + an endpoint per leg, so waypoint i
+      // lands at index 2i in the flattened line.
+      breakpoints: waypoints.slice(1).map((_, i) => (i + 1) * 2),
+      legs,
+      distanceMeters: legs.reduce((s, l) => s + l.distanceMeters, 0),
+      durationSeconds: legs.reduce((s, l) => s + l.durationSeconds, 0),
+      source: 'fallback',
+    };
   }
-  return drivablePolyline(points);
 }
 
 /**
@@ -297,7 +368,7 @@ export async function roadSnappedPolyline(points) {
 export async function nearestRoadDistance(latitude, longitude) {
   try {
     const { data } = await axios.get(
-      `https://router.project-osrm.org/nearest/v1/driving/${longitude},${latitude}`,
+      `${env.osrmUrl}/nearest/v1/driving/${longitude},${latitude}`,
       { timeout: 5000 }
     );
     const metres = data?.waypoints?.[0]?.distance;
@@ -317,7 +388,7 @@ export async function nearestRoadDistance(latitude, longitude) {
 export async function snapToRoad(latitude, longitude) {
   try {
     const { data } = await axios.get(
-      `https://router.project-osrm.org/nearest/v1/driving/${longitude},${latitude}`,
+      `${env.osrmUrl}/nearest/v1/driving/${longitude},${latitude}`,
       { timeout: 4000 }
     );
     const wp = data?.waypoints?.[0];
@@ -338,16 +409,8 @@ export async function snapToRoad(latitude, longitude) {
  */
 export async function roadSnappedRoute(points) {
   if (!points || points.length < 2) return { polyline: drivablePolyline(points || []), breakpoints: [] };
-
-  const polyline = [];
-  const breakpoints = [];
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const leg = await roadSnappedPolyline([points[i], points[i + 1]]);
-    const segment = polyline.length ? leg.slice(1) : leg;
-    polyline.push(...segment);
-    breakpoints.push(polyline.length - 1);
-  }
-  return { polyline, breakpoints };
+  const { polyline, breakpoints, legs, source } = await navigationRoute(points);
+  return { polyline, breakpoints, legs, source };
 }
 
 /**
@@ -397,6 +460,7 @@ export default {
   drivablePolyline,
   roadSnappedPolyline,
   roadSnappedRoute,
+  navigationRoute,
   ensureRoadSnappedPolyline,
   nearestRoadDistance,
   snapToRoad,

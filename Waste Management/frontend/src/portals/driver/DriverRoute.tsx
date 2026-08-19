@@ -43,6 +43,23 @@ export default function DriverRoute() {
     refetchInterval: 30_000,
   });
 
+  /*
+    Road-following guidance from wherever the truck is right now. Keyed on the
+    position rounded to ~110 m so driving redraws the line but a jittery GPS fix
+    does not — matching the server's own cache window, which matters because the
+    default OSRM is a shared public server.
+  */
+  const navKey = live ? `${live.latitude.toFixed(3)},${live.longitude.toFixed(3)}` : 'no-fix';
+  const navigation = useQuery({
+    queryKey: ['driver', 'navigation', navKey],
+    enabled: Boolean(live),
+    queryFn: async () =>
+      (await api('driver').get('/driver/navigation', { params: { lat: live!.latitude, lng: live!.longitude } })).data,
+    refetchInterval: 60_000,
+    staleTime: 45_000,
+    placeholderData: (prev: any) => prev,
+  });
+
   const vehicleId = data?.vehicle?.id;
 
   useSocket('driver', vehicleId ? [`truck:${vehicleId}`] : [], {
@@ -105,14 +122,24 @@ export default function DriverRoute() {
     setNote('');
   }
 
-  // Only the road ahead: slice the road-snapped route at the last completed
-  // stop's breakpoint, so the line keeps following real streets but the leg
-  // already covered drops off the map instead of staying drawn in green.
-  // Falls back to straight segments between remaining stops if this route
-  // has no road-snapped geometry (or predates the polylineIndex field).
+  const nav = navigation.data?.navigating ? navigation.data : null;
+
+  /*
+    The drawn line, in order of preference:
+
+      1. Live navigation — real streets from the truck's current position
+         through the stops still open. This is what a driver actually follows.
+      2. The day's published route, sliced at the last completed stop so the
+         leg already covered drops off instead of staying drawn.
+      3. Straight segments between stops. Only reachable when OSRM is down AND
+         no route was ever published; it cuts across blocks, so the HUD says
+         the guidance is approximate rather than pretending otherwise.
+  */
   const polyline = useMemo(() => {
     const remaining = assignedStops.filter((s: any) => s.status !== 'DONE');
     if (!remaining.length) return [];
+
+    if (nav?.polyline?.length > 1) return nav.polyline;
 
     const done = assignedStops.filter((s: any) => s.status === 'DONE');
     const full = data?.route?.polyline;
@@ -127,7 +154,10 @@ export default function DriverRoute() {
     const pts: [number, number][] = remaining.map((s: any) => [s.longitude, s.latitude]);
     if (live) pts.unshift([live.longitude, live.latitude]);
     return pts;
-  }, [data, assignedStops, live]);
+  }, [data, assignedStops, live, nav]);
+
+  /** True only when we are drawing straight lines through buildings. */
+  const approximateGuidance = !nav && Boolean(live) && !(data?.route?.polyline?.length > 1);
 
   const nextStop = data?.nextStop || assignedStops.find((s: any) => s.status !== 'DONE');
 
@@ -282,6 +312,15 @@ export default function DriverRoute() {
                   </span>
                 </div>
 
+                {/* Say it plainly when the drawn line is not real road geometry,
+                    rather than letting a driver try to follow it. */}
+                {(approximateGuidance || nav?.source === 'fallback') && (
+                  <div className="absolute left-3 right-3 top-14 z-10 flex items-start gap-2 rounded-xl border border-warn/40 bg-warn/15 px-3 py-2 text-[11px] font-semibold text-warn backdrop-blur">
+                    <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+                    <span>Road guidance unavailable — the line shown is a direct approximation, not a drivable route.</span>
+                  </div>
+                )}
+
                 {/* Free Pan / Following Button on Bottom Right */}
                 <button
                   type="button"
@@ -332,6 +371,33 @@ export default function DriverRoute() {
                     <p className="font-mono text-fluid-xs text-muted">Ticket: #{nextStop.code}</p>
                   )}
                 </div>
+
+                {/* Driving distance and time along the road, from OSRM — not a
+                    straight-line estimate, so it matches what the map draws. */}
+                {nav?.nextStop && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-line bg-surface p-2.5 text-center">
+                      <span className="block text-fluid-lg font-extrabold tabular-nums text-brand">
+                        {formatDistance(nav.nextStop.legDistanceMeters)}
+                      </span>
+                      <span className="text-[11px] font-semibold text-muted">By road</span>
+                    </div>
+                    <div className="rounded-xl border border-line bg-surface p-2.5 text-center">
+                      <span className="block text-fluid-lg font-extrabold tabular-nums text-ink">
+                        {Math.max(1, Math.round(nav.nextStop.legDurationSeconds / 60))} min
+                      </span>
+                      <span className="text-[11px] font-semibold text-muted">Drive time</span>
+                    </div>
+                  </div>
+                )}
+
+                {nav && nav.stops.length > 1 && (
+                  <p className="mt-2 text-center text-[11px] text-faint">
+                    Whole run: {formatDistance(nav.totalDistanceMeters)} ·{' '}
+                    {Math.round(nav.totalDurationSeconds / 60)} min across {nav.stops.length} stops
+                    {nav.truncatedStops > 0 && ` (+${nav.truncatedStops} more after these)`}
+                  </p>
+                )}
 
                 <div className="mt-4 flex gap-2">
                   <a

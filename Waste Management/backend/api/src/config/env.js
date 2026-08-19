@@ -65,6 +65,10 @@ export const env = {
     model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
   },
   routingServiceUrl: process.env.ROUTING_SERVICE_URL || '',
+  // OSRM road network used for drawn navigation geometry. Defaults to the
+  // project's free demo server, which is rate-limited and explicitly not for
+  // production — point this at a self-hosted OSRM before real traffic.
+  osrmUrl: (process.env.OSRM_URL || 'https://router.project-osrm.org').replace(/\/$/, ''),
   redisUrl: process.env.REDIS_URL || '',
 
   storageDriver: process.env.STORAGE_DRIVER || 'local',
