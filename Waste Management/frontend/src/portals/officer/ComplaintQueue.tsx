@@ -336,12 +336,12 @@ export default function ComplaintQueue() {
             <div>
               <p className="label">Timeline</p>
               <ol className="space-y-1.5">
-                {detail.data.timeline?.map((t: any, i: number) => (
+                {detail.data.timeline?.map((event: any, i: number) => (
                   <li key={i} className="flex items-start gap-2 text-fluid-xs">
                     <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
                     <span>
-                      <span className="font-medium">{t(`status.${t.status}`)}</span>
-                      {t.note ? ` — ${t.note}` : ''} · <span className="text-muted">{timeAgo(t.at)}</span>
+                      <span className="font-medium">{t(`status.${event.status}`)}</span>
+                      {event.note ? ` — ${event.note}` : ''} · <span className="text-muted">{timeAgo(event.at)}</span>
                     </span>
                   </li>
                 ))}
