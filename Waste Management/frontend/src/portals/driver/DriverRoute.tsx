@@ -526,7 +526,7 @@ export default function DriverRoute() {
               <button
                 type="button"
                 onClick={() => resolve.mutate()}
-                disabled={resolve.isPending}
+                disabled={!photo || resolve.isPending}
                 className="btn-primary flex flex-1 items-center justify-center gap-1.5 rounded-xl font-bold"
               >
                 {resolve.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
