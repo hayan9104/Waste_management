@@ -217,15 +217,21 @@ async function main() {
     });
 
     const depot = pointNear(wardAnchors, index, 0);
+    // A flagged-for-maintenance truck cannot simultaneously be "on route" --
+    // those two facts contradict each other (the simulator itself already
+    // refuses to drive a flagged vehicle), so the status has to be derived
+    // from the flag rather than rolled independently.
+    const maintenanceFlag = i === 6;
+    const status = maintenanceFlag ? 'MAINTENANCE' : i % 5 === 4 ? 'IDLE' : 'ON_ROUTE';
     const vehicle = await prisma.vehicle.create({
       data: {
         registrationNumber: `GJ 1 ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + ((i + 3) % 26))} ${1000 + i * 137}`,
         wardId: ward.id,
         driverId: driver.id,
-        status: i % 5 === 4 ? 'IDLE' : 'ON_ROUTE',
+        status,
         model: pick(r, ['Tata Ace', 'Mahindra Jeeto', 'Ashok Leyland Dost', 'Tata 407']),
         capacityKg: intBetween(r, 900, 3200),
-        maintenanceFlag: i === 6,
+        maintenanceFlag,
         lastLat: depot.latitude,
         lastLng: depot.longitude,
         lastHeading: intBetween(r, 0, 359),
