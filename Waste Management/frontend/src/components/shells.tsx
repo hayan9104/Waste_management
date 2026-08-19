@@ -1,6 +1,6 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, X, ChevronLeft, User, Settings, Shield, Sparkles, Navigation } from 'lucide-react';
+import { LogOut, Menu, X, ChevronLeft, User, Settings, Shield, Sparkles, Navigation } from 'lucide-react';
 import { useAuth, LOGIN_ROUTE, type SessionUser } from '../lib/auth';
 import { LanguageSwitcher, ThemeToggle } from './ui';
 import { SpotlightNav, type SpotlightNavItem } from './SpotlightNav';
@@ -157,7 +157,6 @@ export function ConsoleShell({
   subtitle,
   children,
   headerRight,
-  alertCount = 0,
   accent = 'brand',
 }: {
   nav: NavItem[];
@@ -165,7 +164,6 @@ export function ConsoleShell({
   subtitle?: string;
   children: ReactNode;
   headerRight?: ReactNode;
-  alertCount?: number;
   accent?: 'brand' | 'orange';
 }) {
   const { user, signOut, portal } = useAuth();
@@ -216,11 +214,11 @@ export function ConsoleShell({
             </Link>
           </div>
 
-          {/* Desktop Interactive Spotlight Navigation Bar — `compact` drops labels
-              to icon+tooltip below the 2xl breakpoint so all 6-8 console tabs
-              (officer/admin) fit without squeezing the logo/account controls or
-              needing a scroll on a typical laptop window; overflow-x-auto stays
-              on as a silent fallback for genuinely narrow windows. */}
+          {/* Desktop Interactive Spotlight Navigation Bar — `compact` keeps every
+              tab icon+tooltip only, at every width, so all 7-8 console tabs
+              (officer/admin) always fit without squeezing the logo/account
+              controls or needing a scroll; overflow-x-auto stays on as a silent
+              fallback for genuinely narrow windows. */}
           <div className="no-scrollbar hidden min-w-0 flex-1 items-center justify-center overflow-x-auto xl:flex">
             <SpotlightNav items={nav} accent={accent} compact className="shrink-0" />
           </div>
@@ -228,12 +226,6 @@ export function ConsoleShell({
           {/* Right Header Actions */}
           <div className="flex shrink-0 items-center gap-2.5">
             {headerRight}
-            {alertCount > 0 && (
-              <span className="chip border-danger/30 bg-danger/10 text-danger text-fluid-xs font-bold">
-                <Bell className="h-3.5 w-3.5" />
-                {alertCount}
-              </span>
-            )}
             <LanguageSwitcher compact />
             <ThemeToggle />
             <button
