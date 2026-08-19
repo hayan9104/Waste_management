@@ -111,7 +111,6 @@ export default function Login({ portal }: { portal: Portal }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [challenge, setChallenge] = useState<string | null>(null);
-  const [firstLoginEmail, setFirstLoginEmail] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [demo, setDemo] = useState<{ password: string; accounts: DemoAccount[]; googleEnabled: boolean } | null>(null);
 
@@ -141,11 +140,6 @@ export default function Login({ portal }: { portal: Portal }) {
         toast.info(t('auth.enterAuthCode'));
         return;
       }
-      if (data.driverFirstLogin) {
-        setFirstLoginEmail(data.email);
-        toast.info('A 6-digit verification PIN has been sent to your Gmail.');
-        return;
-      }
       signIn(data.accessToken, data.user);
       navigate(redirectTo, { replace: true });
     } catch (err) {
@@ -165,21 +159,6 @@ export default function Login({ portal }: { portal: Portal }) {
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(errorMessage(err, t('auth.invalidCode')));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitDriverFirstLogin(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      const { data } = await api(portal).post('/auth/driver/first-login-verify', { email: firstLoginEmail, code });
-      signIn(data.accessToken, data.user);
-      navigate(redirectTo, { replace: true });
-    } catch (err) {
-      setError(errorMessage(err, 'Incorrect verification PIN'));
     } finally {
       setBusy(false);
     }
@@ -360,41 +339,6 @@ export default function Login({ portal }: { portal: Portal }) {
                 {t('auth.verifyContinue')}
               </button>
               <button type="button" className="btn-ghost w-full" onClick={() => setChallenge(null)}>
-                {t('common.back')}
-              </button>
-            </form>
-          ) : firstLoginEmail ? (
-            /* ---- Driver First Login Verify ---- */
-            <form onSubmit={submitDriverFirstLogin} className="mt-4 space-y-3">
-              <div>
-                <label className="label" htmlFor="code">Email Verification PIN</label>
-                <input
-                  id="code"
-                  className="field text-center text-fluid-lg tracking-[0.4em]"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="000000"
-                  autoFocus
-                  required
-                />
-                <p className="mt-1.5 text-fluid-xs text-muted">
-                  A 6-digit PIN has been sent to <strong className="text-ink">{firstLoginEmail}</strong>. Please check your inbox and spam folder.
-                </p>
-              </div>
-              <button className="btn-primary w-full" disabled={busy || code.length < 6}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-                Verify & Sign In
-              </button>
-              <button
-                type="button"
-                className="btn-ghost w-full"
-                onClick={() => {
-                  setFirstLoginEmail(null);
-                  setCode('');
-                }}
-              >
                 {t('common.back')}
               </button>
             </form>

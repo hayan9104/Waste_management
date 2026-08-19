@@ -270,7 +270,7 @@ router.post(
         role: body.role,
         passwordHash: await hashPassword(body.password),
         wardId: body.wardId,
-        emailVerifiedAt: body.role === 'DRIVER' ? null : new Date(),
+        emailVerifiedAt: new Date(),
       },
     });
 
