@@ -176,7 +176,7 @@ router.get(
         where: filter,
         include: {
           ward: true,
-          citizen: { select: { id: true, name: true, reliabilityScore: true } },
+          citizen: { select: { id: true, name: true } },
           assignedVehicle: { include: { driver: { select: { id: true, name: true } } } },
         },
         orderBy,
@@ -195,7 +195,6 @@ router.get(
         ...serializeComplaint(c),
         sla: slaCountdown(c),
         isLowConfidence: (c.aiConfidence != null && c.aiConfidence < 0.70),
-        reliabilityBadge: c.citizen?.reliabilityScore != null ? (c.citizen.reliabilityScore > 80 ? 'HIGH' : c.citizen.reliabilityScore < 40 ? 'LOW' : 'NORMAL') : 'NORMAL',
       })),
     });
   })
@@ -209,7 +208,7 @@ router.get(
       where: { id: req.params.id },
       include: {
         ward: true,
-        citizen: { select: { id: true, name: true, phone: true, greenCredits: true, reliabilityScore: true } },
+        citizen: { select: { id: true, name: true, phone: true, greenCredits: true } },
         assignedVehicle: { include: { driver: { select: { id: true, name: true, phone: true } } } },
         events: { orderBy: { createdAt: 'asc' }, include: { actor: { select: { name: true, role: true } } } },
         escalations: { orderBy: { escalatedAt: 'desc' } },
