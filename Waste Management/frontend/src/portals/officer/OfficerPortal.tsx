@@ -39,7 +39,6 @@ export default function OfficerPortal() {
       nav={nav}
       title={t('officer.title')}
       subtitle={user?.ward?.name ? `${user.ward.name} · ${user.ward.code}` : t('officer.subtitle')}
-      alertCount={data?.kpis?.emergenciesOpen ?? 0}
       accent="brand"
     >
       <Routes>
