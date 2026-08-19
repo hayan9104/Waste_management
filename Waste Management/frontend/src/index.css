@@ -161,7 +161,7 @@
   /* Bottom tab bar for the mobile-native citizen/driver feel. */
   .tabbar {
     @apply fixed inset-x-0 bottom-0 z-40 flex border-t border-line bg-elevated/95 backdrop-blur
-           pb-[env(safe-area-inset-bottom)] md:hidden;
+           pb-[env(safe-area-inset-bottom)] lg:hidden;
   }
   .tabbar-item {
     @apply flex flex-1 flex-col items-center gap-0.5 py-2 text-[0.65rem] font-medium text-muted transition;
@@ -201,9 +201,14 @@
   @apply bg-sunken font-sans;
   z-index: 0;
 }
-.dark .leaflet-tile-pane {
+.dark .leaflet-container:not(.map-satellite) .leaflet-tile-pane {
   /* Invert + rehue OSM tiles into a dark basemap — no second tile provider. */
   filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.92) saturate(0.7);
+}
+/* Aerial imagery is already dark; inverting it would produce a negative. Just
+   take the glare off so it sits calmly next to an AMOLED surface. */
+.dark .leaflet-container.map-satellite .leaflet-tile-pane {
+  filter: brightness(0.82) contrast(1.05) saturate(0.9);
 }
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {

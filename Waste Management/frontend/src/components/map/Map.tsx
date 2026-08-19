@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Marker, Popup, useMap } from 'react-leaflet';
 
 /**
- * Leaflet + OpenStreetMap (plan §5) — free, no per-request billing, no API key.
- * The dark theme is achieved by filtering the tile layer in CSS rather than
- * paying for a second tile style.
+ * Leaflet (plan §5) — free tiles, no per-request billing, no API key.
+ *
+ * Every map in every portal shows aerial imagery by default: a resident
+ * pinning a garbage pile, a driver checking a stop and an officer reading a
+ * hotspot are all matching what they see on the ground, which rooftops and
+ * open plots make far easier than a street diagram. OpenStreetMap stays
+ * available behind `satellite={false}` for anything that needs a plain map.
  */
 
 const TILE_URL = import.meta.env.VITE_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -15,6 +19,7 @@ const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">Op
 // Esri World Imagery — free aerial/satellite tiles, no API key or billing,
 // same "no per-request cost" constraint the street tiles were chosen for.
 const SATELLITE_TILE_URL =
+  import.meta.env.VITE_SATELLITE_TILE_URL ||
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_ATTRIBUTION = 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics';
 // Esri ships street/place labels as a separate transparent overlay tile set.
@@ -23,20 +28,31 @@ const SATELLITE_LABELS_URL =
 
 export const CITY_CENTER: [number, number] = [23.0225, 72.5714];
 
+/**
+ * Ward outlines are orange, not the brand green: on aerial imagery a green line
+ * disappears into every park, tree line and field it crosses. Orange is the one
+ * hue that survives both bright rooftops and dark vegetation, and it stays
+ * clear of the red the app reserves for emergencies.
+ */
+export const WARD_OUTLINE = '#f97316';
+
+/** Dark casing drawn under a coloured line so it reads over busy imagery. */
+export const LINE_CASING = { color: '#0b1220', opacity: 0.5, fill: false, interactive: false };
+
 export function BaseMap({
   center = CITY_CENTER,
   zoom = 13,
   children,
   className = 'h-full w-full',
   scrollWheelZoom = true,
-  satellite = false,
+  satellite = true,
 }: {
   center?: [number, number];
   zoom?: number;
   children?: ReactNode;
   className?: string;
   scrollWheelZoom?: boolean;
-  /** Aerial imagery with place labels instead of the default street map. */
+  /** Aerial imagery with place labels. Set false for the plain street map. */
   satellite?: boolean;
 }) {
   return (
@@ -44,7 +60,10 @@ export function BaseMap({
       center={center}
       zoom={zoom}
       scrollWheelZoom={scrollWheelZoom}
-      className={className}
+      /* The marker class is what stops index.css inverting these tiles for the
+         AMOLED theme — that trick turns a street map dark, but it turns aerial
+         photography into a colour negative. */
+      className={`${className} ${satellite ? 'map-satellite' : ''}`}
       zoomControl={false}
       preferCanvas
     >
@@ -224,23 +243,27 @@ export function WardLayer({
           ([lng, lat]: [number, number]) => [lat, lng]
         );
         if (!ring.length) return null;
-        const color = colorFor?.(ward) ?? '#16a34a';
+        const color = colorFor?.(ward) ?? WARD_OUTLINE;
 
         return (
-          <Polygon
-            key={ward.id}
-            positions={ring}
-            pathOptions={{ color, weight: 1.5, fillColor: color, fillOpacity: 0.16 }}
-            eventHandlers={onSelect ? { click: () => onSelect(ward.id) } : undefined}
-          >
-            <Popup>
-              <div className="space-y-0.5">
-                <p className="font-semibold">{ward.name}</p>
-                <p className="text-xs text-muted">{ward.code}</p>
-                {ward.openComplaints != null && <p className="text-xs">{ward.openComplaints} open complaints</p>}
-              </div>
-            </Popup>
-          </Polygon>
+          <Fragment key={ward.id}>
+            {/* Casing first, so the boundary keeps its edge against a bright
+                rooftop or a dark tree line rather than dissolving into it. */}
+            <Polygon positions={ring} pathOptions={{ ...LINE_CASING, weight: 6 }} />
+            <Polygon
+              positions={ring}
+              pathOptions={{ color, weight: 2.5, fillColor: color, fillOpacity: 0.14 }}
+              eventHandlers={onSelect ? { click: () => onSelect(ward.id) } : undefined}
+            >
+              <Popup>
+                <div className="space-y-0.5">
+                  <p className="font-semibold">{ward.name}</p>
+                  <p className="text-xs text-muted">{ward.code}</p>
+                  {ward.openComplaints != null && <p className="text-xs">{ward.openComplaints} open complaints</p>}
+                </div>
+              </Popup>
+            </Polygon>
+          </Fragment>
         );
       })}
     </>

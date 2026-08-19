@@ -1,53 +1,71 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MapPinned, Upload } from 'lucide-react';
+import { Loader2, MapPinned, Plus, RotateCcw, Trash2, TriangleAlert, Upload } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Card, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
-import { BaseMap, WardLayer, FitBounds, Polygon, Marker, useMap } from '../../components/map/Map';
-
-/** A small draggable dot for each corner of the boundary box. */
-const POINT_ICON = L.divIcon({
-  className: '',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
-  html: '<div style="width:18px;height:18px;border-radius:9999px;background:#fff;border:3px solid #16a34a;box-shadow:0 1px 3px rgba(0,0,0,0.4);cursor:grab"></div>',
-});
+import { BaseMap, WardLayer, FitBounds, Polygon, Polyline, Marker, useMap, WARD_OUTLINE, LINE_CASING } from '../../components/map/Map';
 
 /**
- * Ward boundary editor (plan §2.4). The boundary is a rectangle defined by
- * north/south/east/west bounds — dragging any corner moves that corner's two
- * bounds, so the shape always stays a proper rectangle (never skews into an
- * arbitrary quadrilateral). Still saved as a GeoJSON Polygon server-side.
+ * Ward boundary editor (plan §2.4).
+ *
+ * The boundary is a free-form GeoJSON Polygon with as many vertices as the ward
+ * actually needs — real ward lines follow rivers, rail and arterial roads, and a
+ * bounding rectangle attributed every complaint in the gaps to the wrong ward.
+ * Vertices can be dragged, inserted by tapping the map, and deleted; the shape
+ * redraws from whatever points exist. Three is the minimum a polygon can have;
+ * there is no upper limit.
+ *
+ * Nothing changes server-side: `pointInPolygon` in lib/geo.js is a ray-casting
+ * test over the real ring, and the stored bbox/centroid are derived from it, so
+ * a 40-point ward attributes exactly as well as a 4-point one.
  */
 
-type Bounds = { north: string; south: string; east: string; west: string };
-type LatKey = 'north' | 'south';
-type LngKey = 'east' | 'west';
-
-const CORNERS: { label: string; latKey: LatKey; lngKey: LngKey }[] = [
-  { label: 'NW', latKey: 'north', lngKey: 'west' },
-  { label: 'NE', latKey: 'north', lngKey: 'east' },
-  { label: 'SE', latKey: 'south', lngKey: 'east' },
-  { label: 'SW', latKey: 'south', lngKey: 'west' },
-];
+type Vertex = { id: string; lat: string; lng: string };
 
 const emptyForm = { id: '', name: '', code: '', zone: '', population: 0, slaMinutes: 1440 };
 
-/** A small default square centred on the given point. */
-function defaultBounds(center: [number, number] = [23.0225, 72.5714], delta = 0.01): Bounds {
+/** Tangled outline. Red, not amber — amber is too near the normal orange to read as a warning. */
+const CROSSING_OUTLINE = '#ef4444';
+
+/** Numbered handle, so a row in the coordinate list is findable on the map. */
+const vertexIcon = (n: number) =>
+  L.divIcon({
+    className: '',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    html:
+      `<div style="width:22px;height:22px;border-radius:9999px;background:#fff;border:3px solid ${WARD_OUTLINE};` +
+      `box-shadow:0 1px 3px rgba(0,0,0,0.4);cursor:grab;display:grid;place-items:center;` +
+      `font:700 10px/1 Inter,system-ui,sans-serif;color:#c2410c">${n}</div>`,
+  });
+
+let vertexSeq = 0;
+const makeVertex = (lat: number, lng: number): Vertex => ({
+  id: `v${(vertexSeq += 1)}`,
+  lat: lat.toFixed(6),
+  lng: lng.toFixed(6),
+});
+
+/** Starting shape for a brand-new ward — a square the officer then reshapes. */
+function defaultRing(center: [number, number] = [23.0225, 72.5714], delta = 0.01): Vertex[] {
   const [lat, lng] = center;
-  return {
-    north: String(lat + delta),
-    south: String(lat - delta),
-    east: String(lng + delta),
-    west: String(lng - delta),
-  };
+  return [
+    makeVertex(lat + delta, lng - delta),
+    makeVertex(lat + delta, lng + delta),
+    makeVertex(lat - delta, lng + delta),
+    makeVertex(lat - delta, lng - delta),
+  ];
 }
 
-/** Reduces any saved boundary (or an uploaded .geojson file) to its bounding box. */
-function boundaryToBounds(geo: any): Bounds {
-  const boundary =
+/**
+ * Reads a saved boundary (or an uploaded .geojson) into editable vertices,
+ * keeping every point of the ring. The previous version collapsed the ring to
+ * its bounding box, so opening a detailed ward and pressing save silently
+ * replaced it with a rectangle.
+ */
+function boundaryToVertices(geo: any): Vertex[] {
+  const geometry =
     geo?.type === 'Polygon'
       ? geo
       : geo?.type === 'Feature'
@@ -56,23 +74,74 @@ function boundaryToBounds(geo: any): Bounds {
           ? geo.features?.[0]?.geometry
           : null;
 
-  const ring: [number, number][] = boundary?.coordinates?.[0] ?? [];
-  if (!ring.length) return defaultBounds();
+  let ring: [number, number][] = geometry?.coordinates?.[0] ?? [];
+  if (ring.length < 3) return defaultRing();
 
-  const lats = ring.map(([, lat]) => lat);
-  const lngs = ring.map(([lng]) => lng);
-  return {
-    north: String(Math.max(...lats)),
-    south: String(Math.min(...lats)),
-    east: String(Math.max(...lngs)),
-    west: String(Math.min(...lngs)),
-  };
+  // GeoJSON rings repeat the first point to close; the editor holds it open.
+  const [fx, fy] = ring[0];
+  const [lx, ly] = ring[ring.length - 1];
+  if (ring.length > 3 && fx === lx && fy === ly) ring = ring.slice(0, -1);
+
+  return ring.map(([lng, lat]) => makeVertex(lat, lng));
+}
+
+/** Metres-ish scaling so distance and area maths behave at this latitude. */
+const KM_PER_LAT = 110.574;
+const kmPerLng = (lat: number) => 111.32 * Math.cos((lat * Math.PI) / 180);
+
+/** Shoelace area in km², good enough for a city ward at these scales. */
+function ringAreaKm2(pts: { lat: number; lng: number }[]): number {
+  if (pts.length < 3) return 0;
+  const lat0 = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
+  const kx = kmPerLng(lat0);
+  let twice = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    twice += (pts[j].lng * kx) * (pts[i].lat * KM_PER_LAT) - (pts[i].lng * kx) * (pts[j].lat * KM_PER_LAT);
+  }
+  return Math.abs(twice) / 2;
+}
+
+/** Squared distance from p to segment a-b, in the same flattened plane. */
+function distToSegment(p: number[], a: number[], b: number[]): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq)) : 0;
+  const cx = a[0] + dx * t;
+  const cy = a[1] + dy * t;
+  return (p[0] - cx) ** 2 + (p[1] - cy) ** 2;
+}
+
+function segmentsCross(a: number[], b: number[], c: number[], d: number[]): boolean {
+  const side = (p: number[], q: number[], r: number[]) =>
+    Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  const d1 = side(a, b, c);
+  const d2 = side(a, b, d);
+  const d3 = side(c, d, a);
+  const d4 = side(c, d, b);
+  return d1 !== d2 && d3 !== d4 && d1 !== 0 && d2 !== 0 && d3 !== 0 && d4 !== 0;
+}
+
+/** True when the outline crosses itself — point-in-polygon gets ambiguous there. */
+function selfIntersects(pts: { lat: number; lng: number }[]): boolean {
+  const n = pts.length;
+  if (n < 4) return false;
+  const lat0 = pts.reduce((s, p) => s + p.lat, 0) / n;
+  const kx = kmPerLng(lat0);
+  const xy = pts.map((p) => [p.lng * kx, p.lat * KM_PER_LAT]);
+  for (let i = 0; i < n; i += 1) {
+    for (let j = i + 1; j < n; j += 1) {
+      // Skip the pairs that legitimately share an endpoint.
+      if (i === j || (i + 1) % n === j || (j + 1) % n === i) continue;
+      if (segmentsCross(xy[i], xy[(i + 1) % n], xy[j], xy[(j + 1) % n])) return true;
+    }
+  }
+  return false;
 }
 
 /**
- * Frames the box once when the editor opens. It must not re-fit on every
- * resize — that would fight the drag gesture by re-centring/zooming the map
- * mid-stretch.
+ * Frames the shape once when the editor opens. It must not re-fit on every
+ * edit — that would fight the drag gesture by re-centring the map mid-stretch.
  */
 function FitToPoints({ positions }: { positions: [number, number][] }) {
   const map = useMap();
@@ -85,51 +154,128 @@ function FitToPoints({ positions }: { positions: [number, number][] }) {
   return null;
 }
 
+/** Tapping the map drops a new vertex into the nearest edge of the outline. */
+function AddOnClick({ onAdd }: { onAdd: (lat: number, lng: number) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = (e: L.LeafletMouseEvent) => onAdd(e.latlng.lat, e.latlng.lng);
+    map.on('click', handler);
+    return () => {
+      map.off('click', handler);
+    };
+  }, [map, onAdd]);
+  return null;
+}
+
 export default function WardSettings() {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState(emptyForm);
-  const [bounds, setBounds] = useState<Bounds>(defaultBounds());
+  const [points, setPoints] = useState<Vertex[]>(defaultRing());
 
   const wards = useQuery({
     queryKey: ['admin', 'wards'],
     queryFn: async () => (await api('admin').get('/admin/wards')).data,
   });
 
-  const numericBounds = useMemo(
-    () => ({
-      north: parseFloat(bounds.north),
-      south: parseFloat(bounds.south),
-      east: parseFloat(bounds.east),
-      west: parseFloat(bounds.west),
-    }),
-    [bounds]
-  );
-  const boundsValid = Object.values(numericBounds).every(Number.isFinite);
-
-  const corners = useMemo(
+  /** Only vertices whose two numbers both parse take part in the geometry. */
+  const numeric = useMemo(
     () =>
-      CORNERS.map((c) => ({
-        ...c,
-        lat: numericBounds[c.latKey],
-        lng: numericBounds[c.lngKey],
-      })),
-    [numericBounds]
+      points
+        .map((p) => ({ id: p.id, lat: parseFloat(p.lat), lng: parseFloat(p.lng) }))
+        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)),
+    [points]
   );
-  const polygonPositions = useMemo<[number, number][]>(
-    () => (boundsValid ? corners.map((c) => [c.lat, c.lng] as [number, number]) : []),
-    [corners, boundsValid]
-  );
+  const ringValid = numeric.length >= 3;
+  const positions = useMemo<[number, number][]>(() => numeric.map((p) => [p.lat, p.lng]), [numeric]);
+  const areaKm2 = useMemo(() => (ringValid ? ringAreaKm2(numeric) : 0), [numeric, ringValid]);
+  /** Where "Reset" drops its starter square — over the ward, not off-screen. */
+  const centre = useMemo<[number, number]>(() => {
+    if (!numeric.length) return [23.0225, 72.5714];
+    const lat = numeric.reduce((s, p) => s + p.lat, 0) / numeric.length;
+    const lng = numeric.reduce((s, p) => s + p.lng, 0) / numeric.length;
+    return [lat, lng];
+  }, [numeric]);
+  const crossing = useMemo(() => (ringValid ? selfIntersects(numeric) : false), [numeric, ringValid]);
 
-  const setBound = (key: keyof Bounds, value: string) => setBounds((prev) => ({ ...prev, [key]: value }));
+  const setVertex = (id: string, key: 'lat' | 'lng', value: string) =>
+    setPoints((prev) => prev.map((p) => (p.id === id ? { ...p, [key]: value } : p)));
+
+  const removeVertex = (id: string) =>
+    setPoints((prev) => (prev.length <= 3 ? prev : prev.filter((p) => p.id !== id)));
+
+  /**
+   * Inserts into the edge the click landed nearest to, rather than appending to
+   * the end — appending makes the outline jump back across itself whenever the
+   * new point isn't next to the last one.
+   */
+  const addVertexNearestEdge = useRef<(lat: number, lng: number) => void>(() => {});
+  addVertexNearestEdge.current = (lat: number, lng: number) => {
+    setPoints((prev) => {
+      const pts = prev
+        .map((p) => ({ lat: parseFloat(p.lat), lng: parseFloat(p.lng) }))
+        .map((p, i) => ({ ...p, i }))
+        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+      if (pts.length < 3) return [...prev, makeVertex(lat, lng)];
+
+      const kx = kmPerLng(lat);
+      const xy = (p: { lat: number; lng: number }) => [p.lng * kx, p.lat * KM_PER_LAT];
+      const target = xy({ lat, lng });
+
+      let bestAfter = prev.length - 1;
+      let best = Infinity;
+      for (let k = 0; k < pts.length; k += 1) {
+        const a = pts[k];
+        const b = pts[(k + 1) % pts.length];
+        const d = distToSegment(target, xy(a), xy(b));
+        if (d < best) {
+          best = d;
+          bestAfter = a.i;
+        }
+      }
+
+      const next = [...prev];
+      next.splice(bestAfter + 1, 0, makeVertex(lat, lng));
+      return next;
+    });
+  };
+
+  /* Stable identity: the map click subscription must not tear down and rebuild
+     on every drag frame. */
+  const handleMapAdd = useCallback((lat: number, lng: number) => addVertexNearestEdge.current(lat, lng), []);
+
+  /** Splits the longest edge — the keyboard/no-map path to the same result. */
+  const addVertexOnLongestEdge = () =>
+    setPoints((prev) => {
+      const pts = prev
+        .map((p, i) => ({ lat: parseFloat(p.lat), lng: parseFloat(p.lng), i }))
+        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+      if (pts.length < 2) return [...prev, makeVertex(23.0225, 72.5714)];
+
+      const kx = kmPerLng(pts[0].lat);
+      let bestAfter = pts[pts.length - 1].i;
+      let bestLen = -1;
+      let mid: [number, number] = [pts[0].lat, pts[0].lng];
+      for (let k = 0; k < pts.length; k += 1) {
+        const a = pts[k];
+        const b = pts[(k + 1) % pts.length];
+        const len = ((b.lng - a.lng) * kx) ** 2 + ((b.lat - a.lat) * KM_PER_LAT) ** 2;
+        if (len > bestLen) {
+          bestLen = len;
+          bestAfter = a.i;
+          mid = [(a.lat + b.lat) / 2, (a.lng + b.lng) / 2];
+        }
+      }
+      const next = [...prev];
+      next.splice(bestAfter + 1, 0, makeVertex(mid[0], mid[1]));
+      return next;
+    });
 
   const save = useMutation({
     mutationFn: async () => {
-      if (!boundsValid) {
-        throw new Error('All 4 corners need valid coordinates');
-      }
+      if (!ringValid) throw new Error('A boundary needs at least 3 valid coordinates');
 
-      const coords: [number, number][] = corners.map((c) => [c.lng, c.lat]);
+      const coords: [number, number][] = numeric.map((p) => [p.lng, p.lat]);
       coords.push(coords[0]); // close the ring
 
       const boundary = { type: 'Polygon', coordinates: [coords] };
@@ -151,7 +297,7 @@ export default function WardSettings() {
       toast.success('Ward boundary saved');
       setUploading(false);
       setForm(emptyForm);
-      setBounds(defaultBounds());
+      setPoints(defaultRing());
     },
     onError: (err: any) => toast.error(err?.message || errorMessage(err)),
   });
@@ -170,7 +316,7 @@ export default function WardSettings() {
             className="btn-primary btn-sm"
             onClick={() => {
               setForm(emptyForm);
-              setBounds(defaultBounds());
+              setPoints(defaultRing());
               setUploading(true);
             }}
           >
@@ -180,10 +326,10 @@ export default function WardSettings() {
       />
 
       <Card className="overflow-hidden p-0">
-        <div className="h-[46dvh] min-h-[300px] w-full">
+        <div className="relative isolate h-[46dvh] min-h-[300px] w-full">
           <BaseMap center={[23.0225, 72.5714]} zoom={12}>
             <FitBounds points={wards.data.map((w: any) => [w.center.latitude, w.center.longitude])} />
-            <WardLayer wards={wards.data} colorFor={() => '#16a34a'} />
+            <WardLayer wards={wards.data} />
           </BaseMap>
         </div>
       </Card>
@@ -204,6 +350,10 @@ export default function WardSettings() {
               <div className="flex justify-between"><dt className="text-muted">Population</dt><dd className="tabular-nums">{w.population.toLocaleString('en-IN')}</dd></div>
               <div className="flex justify-between"><dt className="text-muted">Open complaints</dt><dd className="tabular-nums">{w.openComplaints}</dd></div>
               <div className="flex justify-between"><dt className="text-muted">Vehicles</dt><dd className="tabular-nums">{w.vehicles}</dd></div>
+              <div className="flex justify-between">
+                <dt className="text-muted">Boundary points</dt>
+                <dd className="tabular-nums">{Math.max(0, (w.boundary?.coordinates?.[0]?.length ?? 1) - 1)}</dd>
+              </div>
             </dl>
             <button
               type="button"
@@ -217,7 +367,7 @@ export default function WardSettings() {
                   population: w.population,
                   slaMinutes: 1440,
                 });
-                setBounds(boundaryToBounds(w.boundary));
+                setPoints(boundaryToVertices(w.boundary));
                 setUploading(true);
               }}
             >
@@ -235,7 +385,7 @@ export default function WardSettings() {
         footer={
           <button
             className="btn-primary w-full"
-            disabled={!form.name || !form.code || !boundsValid || save.isPending}
+            disabled={!form.name || !form.code || !ringValid || save.isPending}
             onClick={() => save.mutate()}
           >
             {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -270,57 +420,137 @@ export default function WardSettings() {
           </div>
 
           <div>
-            <label className="label">Boundary area</label>
-            <p className="mb-1.5 text-fluid-xs text-muted">
-              Drag any corner to resize — the shape always stays a rectangle. Only these 4 corners are shown below.
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <label className="label mb-0">Boundary area</label>
+              <div className="flex items-center gap-1.5">
+                <button type="button" className="btn-ghost btn-sm rounded-lg" onClick={addVertexOnLongestEdge}>
+                  <Plus className="h-3.5 w-3.5" /> Add point
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm rounded-lg"
+                  onClick={() => setPoints(defaultRing(centre))}
+                  title="Start again from a simple square"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Reset
+                </button>
+              </div>
+            </div>
+            <p className="mb-1.5 mt-1 text-fluid-xs text-muted">
+              Tap the map to drop a point into the nearest edge, drag any point to move it, and delete points you
+              don't need. The outline follows whatever points exist — three minimum, no maximum.
             </p>
 
-            <div className="h-[260px] w-full overflow-hidden rounded-xl border border-line">
+            <div className="relative isolate h-[300px] w-full overflow-hidden rounded-xl border border-line">
               <BaseMap center={[23.0225, 72.5714]} zoom={12}>
-                <FitToPoints positions={polygonPositions} />
-                {polygonPositions.length === 4 && (
-                  <Polygon positions={polygonPositions} pathOptions={{ color: '#16a34a', weight: 2, fillColor: '#16a34a', fillOpacity: 0.18 }} />
-                )}
-                {boundsValid &&
-                  corners.map((c) => (
+                <FitToPoints positions={positions} />
+                <AddOnClick onAdd={handleMapAdd} />
+                {/* Three points make a fillable polygon; below that only a line
+                    can be drawn, so the shape stays visible while it is built.
+                    A dark casing under the outline keeps it readable where the
+                    boundary crosses parks and rooftops. */}
+                {positions.length >= 3 ? (
+                  <>
+                    <Polygon positions={positions} pathOptions={{ ...LINE_CASING, weight: 6 }} />
+                    <Polygon
+                      positions={positions}
+                      pathOptions={{
+                        color: crossing ? CROSSING_OUTLINE : WARD_OUTLINE,
+                        weight: 2.5,
+                        fillColor: crossing ? CROSSING_OUTLINE : WARD_OUTLINE,
+                        fillOpacity: 0.16,
+                      }}
+                    />
+                  </>
+                ) : positions.length === 2 ? (
+                  <Polyline positions={positions} pathOptions={{ color: WARD_OUTLINE, weight: 2.5, dashArray: '5 5' }} />
+                ) : null}
+
+                {/* Numbered from the full list, not the filtered one, so a
+                    handle on the map always matches its row below even while
+                    another row is mid-edit and temporarily unparseable. */}
+                {points.map((p, i) => {
+                  const lat = parseFloat(p.lat);
+                  const lng = parseFloat(p.lng);
+                  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+                  return (
                     <Marker
-                      key={c.label}
-                      position={[c.lat, c.lng]}
-                      icon={POINT_ICON}
+                      key={p.id}
+                      position={[lat, lng]}
+                      icon={vertexIcon(i + 1)}
                       draggable
                       eventHandlers={{
                         // Live-update on every drag frame, not just on release —
-                        // the box visibly stretches as the corner moves.
+                        // the outline visibly reshapes as the point moves.
                         drag: (e) => {
-                          const { lat, lng } = e.target.getLatLng();
-                          setBounds((prev) => ({ ...prev, [c.latKey]: lat.toFixed(6), [c.lngKey]: lng.toFixed(6) }));
+                          const next = e.target.getLatLng();
+                          setPoints((prev) =>
+                            prev.map((v) =>
+                              v.id === p.id ? { ...v, lat: next.lat.toFixed(6), lng: next.lng.toFixed(6) } : v
+                            )
+                          );
                         },
                       }}
                     />
-                  ))}
+                  );
+                })}
               </BaseMap>
             </div>
 
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-fluid-xs text-muted">
+              <span>
+                <strong className="text-ink tabular-nums">{points.length}</strong> point{points.length === 1 ? '' : 's'}
+                {ringValid && <> · approx. <strong className="text-ink tabular-nums">{areaKm2.toFixed(2)}</strong> km²</>}
+              </span>
+              {!ringValid && <span className="font-semibold text-danger">Needs at least 3 valid coordinates</span>}
+            </div>
+
+            {crossing && (
+              <p className="mt-2 flex items-start gap-2 rounded-xl border border-warn/30 bg-warn/10 p-2.5 text-fluid-xs text-warn">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  The outline crosses itself. It will still save, but complaints inside the crossed part may be
+                  attributed to the wrong ward — reorder or move a point to untangle it.
+                </span>
+              </p>
+            )}
+
+            {/* No inner scroll box: the dialog body already scrolls, and nesting
+                a second scroller made rows past the first unreachable. */}
             <div className="mt-2 space-y-1.5">
-              {corners.map((c) => (
-                <div key={c.label} className="flex items-center gap-1.5">
-                  <span className="w-7 shrink-0 text-center text-fluid-xs font-semibold text-faint">{c.label}</span>
+              {points.map((p, i) => (
+                <div key={p.id} className="flex items-center gap-1.5">
+                  <span className="w-6 shrink-0 text-center text-fluid-xs font-semibold text-faint tabular-nums">
+                    {i + 1}
+                  </span>
                   <input
                     type="number"
                     step="any"
-                    className="field flex-1 py-1.5 text-fluid-xs"
+                    className="field min-w-0 flex-1 py-1.5 text-fluid-xs"
                     placeholder="Latitude"
-                    value={bounds[c.latKey]}
-                    onChange={(e) => setBound(c.latKey, e.target.value)}
+                    aria-label={`Point ${i + 1} latitude`}
+                    value={p.lat}
+                    onChange={(e) => setVertex(p.id, 'lat', e.target.value)}
                   />
                   <input
                     type="number"
                     step="any"
-                    className="field flex-1 py-1.5 text-fluid-xs"
+                    className="field min-w-0 flex-1 py-1.5 text-fluid-xs"
                     placeholder="Longitude"
-                    value={bounds[c.lngKey]}
-                    onChange={(e) => setBound(c.lngKey, e.target.value)}
+                    aria-label={`Point ${i + 1} longitude`}
+                    value={p.lng}
+                    onChange={(e) => setVertex(p.id, 'lng', e.target.value)}
                   />
+                  <button
+                    type="button"
+                    onClick={() => removeVertex(p.id)}
+                    disabled={points.length <= 3}
+                    title={points.length <= 3 ? 'A polygon needs at least 3 points' : `Delete point ${i + 1}`}
+                    aria-label={`Delete point ${i + 1}`}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-muted transition hover:border-danger/40 hover:bg-danger/10 hover:text-danger disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -337,7 +567,9 @@ export default function WardSettings() {
                 if (!file) return;
                 try {
                   const parsed = JSON.parse(await file.text());
-                  setBounds(boundaryToBounds(parsed));
+                  const loaded = boundaryToVertices(parsed);
+                  setPoints(loaded);
+                  toast.success(`Loaded ${loaded.length} boundary points`);
                 } catch {
                   toast.error('That file is not a valid GeoJSON Polygon');
                 }

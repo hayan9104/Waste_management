@@ -190,7 +190,7 @@ export default function DriverRoute() {
           {/* Left Column: Interactive Map & Live HUD (7 of 12 cols on desktop) */}
           <div className="lg:col-span-7 xl:col-span-8 space-y-4">
             <Card className="overflow-hidden p-0 shadow-md">
-              <div className="relative h-[55dvh] min-h-[380px] w-full lg:h-[580px]">
+              <div className="relative isolate h-[55dvh] min-h-[380px] w-full lg:h-[580px]">
                 <BaseMap center={centre} zoom={15} satellite>
                   <FollowTarget latitude={live?.latitude} longitude={live?.longitude} enabled={follow} />
                   {polyline.length > 1 && <RouteLine polyline={polyline} />}
@@ -272,7 +272,7 @@ export default function DriverRoute() {
                 </BaseMap>
 
                 {/* GPS HUD Overlay on Top Left */}
-                <div className="absolute top-3 left-3 z-[400] flex items-center gap-2 rounded-xl border border-line bg-surface/90 px-3 py-2 shadow-md backdrop-blur">
+                <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-xl border border-line bg-surface/90 px-3 py-2 shadow-md backdrop-blur">
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-75"></span>
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-ok"></span>
@@ -286,7 +286,7 @@ export default function DriverRoute() {
                 <button
                   type="button"
                   onClick={() => setFollow((v) => !v)}
-                  className={`absolute bottom-3 right-3 z-[400] flex items-center gap-1.5 rounded-xl border px-3 py-2 text-fluid-xs font-semibold shadow-lift backdrop-blur transition ${
+                  className={`absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-xl border px-3 py-2 text-fluid-xs font-semibold shadow-lift backdrop-blur transition ${
                     follow ? 'border-brand bg-brand text-brand-ink' : 'border-line bg-surface/90 text-muted'
                   }`}
                 >

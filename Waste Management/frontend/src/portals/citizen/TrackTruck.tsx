@@ -81,7 +81,7 @@ export default function TrackTruck() {
       <BackLink to={`/app/complaints/${id}`} label="Back to report" />
 
       <Card className="overflow-hidden p-0 border-line shadow-md">
-        <div className="h-[55dvh] min-h-[320px] w-full relative">
+        <div className="relative isolate h-[55dvh] min-h-[320px] w-full">
           <BaseMap center={center} zoom={16}>
             <FitBounds points={points} />
 
@@ -108,7 +108,7 @@ export default function TrackTruck() {
           </BaseMap>
 
           {/* Floating Navigation Card Over Map (Uber / Rapido Style) */}
-          <div className="absolute top-3 inset-x-3 z-[400] flex items-center justify-between gap-2 rounded-2xl border border-line/60 bg-elevated/90 px-3.5 py-2 backdrop-blur-md shadow-lg">
+          <div className="absolute top-3 inset-x-3 z-10 flex items-center justify-between gap-2 rounded-2xl border border-line/60 bg-elevated/90 px-3.5 py-2 backdrop-blur-md shadow-lg">
             <div className="flex items-center gap-2 min-w-0">
               <span className="h-2.5 w-2.5 rounded-full bg-brand animate-ping" />
               <p className="text-fluid-xs font-bold text-ink truncate">

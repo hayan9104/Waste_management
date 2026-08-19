@@ -1,10 +1,10 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, X, ChevronLeft, User, Settings, Shield, Sparkles, Navigation } from 'lucide-react';
+import { LogOut, Menu, X, ChevronLeft, User, Settings, Shield, Sparkles, Navigation, Globe, Moon, Sun, Check } from 'lucide-react';
 import { useAuth, LOGIN_ROUTE, type SessionUser } from '../lib/auth';
-import { LanguageSwitcher, ThemeToggle } from './ui';
+import { LanguageSwitcher, ThemeToggle, useTheme } from './ui';
 import { SpotlightNav, type SpotlightNavItem } from './SpotlightNav';
-import { useT } from '../lib/i18n';
+import { useT, useI18n, LOCALES, LOCALE_LIST } from '../lib/i18n';
 import { initials } from '../lib/format';
 import { assetUrl } from '../lib/api';
 
@@ -55,24 +55,24 @@ export function MobileShell({
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
   return (
-    <div className="min-h-dvh bg-surface pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-10">
+    <div className="min-h-dvh bg-surface pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-10">
       {/* Top Navbar — fixed, same 4rem height on every portal and the landing page. */}
       <header className="fixed inset-x-0 top-0 z-40 h-[calc(4rem+env(safe-area-inset-top))] border-b border-line bg-surface/95 pt-[env(safe-area-inset-top)] shadow-xs backdrop-blur-md">
-        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8 xl:px-10">
+        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8 xl:px-10">
           {/* Logo & Portal Title */}
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               to={user?.role === 'DRIVER' ? '/driver' : '/app'}
-              className="flex items-center gap-2 group transition"
+              className="group flex min-w-0 items-center gap-2 transition"
             >
-              <img src="/icon.svg" alt="Safaai Sarathi" className="h-9 w-9 shrink-0 animate-logo-pop" />
-              <div className="flex flex-col">
-                <span className="text-fluid-sm font-extrabold tracking-tight text-ink leading-tight">
-                  Safaai Sarathi
+              <img src="/icon.svg" alt="Safaai Sarathi" className="h-8 w-8 shrink-0 animate-logo-pop sm:h-9 sm:w-9" />
+              <div className="flex min-w-0 flex-col leading-none">
+                <span className="whitespace-nowrap text-fluid-sm font-extrabold leading-tight tracking-tight text-ink">
+                  Safaai <span className={accent === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-brand'}>Sarathi</span>
                 </span>
                 <span
-                  className={`inline-block text-[11px] font-bold uppercase tracking-wider ${
-                    accent === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-brand'
+                  className={`mt-0.5 inline-block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] sm:text-[11px] ${
+                    accent === 'orange' ? 'text-orange-600/90 dark:text-orange-400/90' : 'text-brand/90'
                   }`}
                 >
                   {title}
@@ -81,21 +81,29 @@ export function MobileShell({
             </Link>
           </div>
 
-          {/* Desktop Interactive Spotlight Navigation Bar */}
-          <div className="hidden md:flex items-center justify-center">
+          {/* Inline nav from lg only. At the old md breakpoint five icon+label
+              pills plus the brand mark and the right-hand controls needed more
+              than 768px, so the nav overlapped the logo and pushed the account
+              button off the edge; a tablet keeps the bottom tab bar instead. */}
+          <div className="hidden lg:flex items-center justify-center">
             <SpotlightNav items={nav} accent={accent} />
           </div>
 
-          {/* Right Header Actions */}
-          <div className="flex items-center gap-2.5">
+          {/* Right Header Actions.
+              Below md the language + theme controls collapse into the account
+              sheet — three separate pills plus the logo simply do not fit a
+              360px phone without the brand mark wrapping onto two lines. */}
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
             {headerRight}
-            <LanguageSwitcher compact />
-            <ThemeToggle />
+            <div className="hidden items-center gap-2.5 md:flex">
+              <LanguageSwitcher compact />
+              <ThemeToggle />
+            </div>
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
-              className="flex items-center gap-2 rounded-xl border border-line bg-elevated p-1.5 pr-3 transition hover:bg-sunken shadow-xs cursor-pointer"
-              aria-label="Account menu"
+              className="flex shrink-0 items-center gap-2 rounded-xl border border-line bg-elevated p-1.5 transition hover:bg-sunken shadow-xs cursor-pointer lg:pr-3"
+              aria-label="Account, language and theme menu"
             >
               <AccountAvatar
                 user={user}
@@ -114,7 +122,7 @@ export function MobileShell({
       <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 xl:px-10">{children}</main>
 
       {/* Bottom tabs — Mobile & Tablet only */}
-      <nav className="tabbar md:hidden" aria-label="Primary">
+      <nav className="tabbar lg:hidden" aria-label="Primary">
         {nav.slice(0, 5).map((item) => {
           const active = item.end ? location.pathname === item.to : location.pathname.startsWith(item.to);
           return (
@@ -182,9 +190,9 @@ export function ConsoleShell({
     <div className="min-h-dvh bg-surface pt-[calc(4rem+env(safe-area-inset-top))] pb-12">
       {/* Top Navbar — fixed, same 4rem height on every portal and the landing page. */}
       <header className="fixed inset-x-0 top-0 z-40 h-[calc(4rem+env(safe-area-inset-top))] border-b border-line bg-surface/95 pt-[env(safe-area-inset-top)] shadow-xs backdrop-blur-md">
-        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8 xl:px-10">
+        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8 xl:px-10">
           {/* Logo & Console Title */}
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
@@ -196,16 +204,16 @@ export function ConsoleShell({
 
             <Link
               to={accent === 'orange' ? '/admin' : '/officer'}
-              className="flex shrink-0 items-center gap-2 group transition"
+              className="group flex min-w-0 shrink items-center gap-2 transition"
             >
-              <img src="/icon.svg" alt="Safaai Sarathi" className="h-9 w-9 shrink-0 animate-logo-pop" />
-              <div className="flex flex-col">
-                <span className="whitespace-nowrap text-fluid-sm font-extrabold tracking-tight text-ink leading-tight">
-                  Safaai Sarathi
+              <img src="/icon.svg" alt="Safaai Sarathi" className="h-8 w-8 shrink-0 animate-logo-pop sm:h-9 sm:w-9" />
+              <div className="flex min-w-0 flex-col leading-none">
+                <span className="whitespace-nowrap text-fluid-sm font-extrabold leading-tight tracking-tight text-ink">
+                  Safaai <span className={accent === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-brand'}>Sarathi</span>
                 </span>
                 <span
-                  className={`inline-block whitespace-nowrap text-[11px] font-bold uppercase tracking-wider ${
-                    accent === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-brand'
+                  className={`mt-0.5 inline-block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em] sm:text-[11px] ${
+                    accent === 'orange' ? 'text-orange-600/90 dark:text-orange-400/90' : 'text-brand/90'
                   }`}
                 >
                   {title}
@@ -223,16 +231,19 @@ export function ConsoleShell({
             <SpotlightNav items={nav} accent={accent} className="shrink-0" />
           </div>
 
-          {/* Right Header Actions */}
-          <div className="flex shrink-0 items-center gap-2.5">
+          {/* Right Header Actions — language + theme fold into the account
+              sheet below md, same as the citizen/driver shell. */}
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
             {headerRight}
-            <LanguageSwitcher compact />
-            <ThemeToggle />
+            <div className="hidden items-center gap-2.5 md:flex">
+              <LanguageSwitcher compact />
+              <ThemeToggle />
+            </div>
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
-              className="flex items-center gap-2 rounded-xl border border-line bg-elevated p-1.5 pr-3 transition hover:bg-sunken shadow-xs cursor-pointer"
-              aria-label="Account menu"
+              className="flex shrink-0 items-center gap-2 rounded-xl border border-line bg-elevated p-1.5 transition hover:bg-sunken shadow-xs cursor-pointer lg:pr-3"
+              aria-label="Account, language and theme menu"
             >
               <AccountAvatar
                 user={user}
@@ -326,6 +337,64 @@ export function BackLink({ to, label }: { to: string; label?: string }) {
   );
 }
 
+/**
+ * Language + theme, laid out as full-width rows for the account sheet. On a
+ * phone the header has room for the brand mark and one control, so these two
+ * move down here rather than being squeezed into 28px pills up top.
+ */
+function MobilePreferences() {
+  const { locale, setLocale, t } = useI18n();
+  const { dark, toggle } = useTheme();
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-line bg-surface p-3">
+      <div>
+        <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-faint">
+          <Globe className="h-3.5 w-3.5" /> {t('common.language')}
+        </p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {LOCALE_LIST.map((code) => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => setLocale(code)}
+              className={`flex min-h-touch items-center justify-center gap-1 rounded-xl border px-2 text-fluid-xs font-semibold transition ${
+                locale === code
+                  ? 'border-brand bg-brand/10 text-brand'
+                  : 'border-line bg-elevated text-muted hover:bg-sunken hover:text-ink'
+              }`}
+            >
+              {locale === code && <Check className="h-3.5 w-3.5 shrink-0" />}
+              <span className="truncate">{LOCALES[code].native}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={toggle}
+        className="flex min-h-touch w-full items-center justify-between gap-3 rounded-xl border border-line bg-elevated px-3 text-fluid-xs font-semibold text-ink transition hover:bg-sunken"
+      >
+        <span className="flex items-center gap-2">
+          {dark ? <Sun className="h-4 w-4 text-warn" /> : <Moon className="h-4 w-4 text-muted" />}
+          {dark ? t('common.lightMode') : t('common.darkMode')}
+        </span>
+        <span
+          aria-hidden
+          className={`relative h-5 w-9 shrink-0 rounded-full transition ${dark ? 'bg-brand' : 'bg-line'}`}
+        >
+          <span
+            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all ${
+              dark ? 'left-[1.125rem]' : 'left-0.5'
+            }`}
+          />
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function AccountModal({
   isOpen,
   onClose,
@@ -348,12 +417,12 @@ function AccountModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm rounded-2xl border border-line bg-elevated p-5 shadow-2xl">
+      <div className="relative max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-t-3xl border border-line bg-elevated p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl animate-sheet-up sm:rounded-2xl sm:pb-5 sm:animate-fade-up">
         <div className="flex items-center justify-between pb-3 border-b border-line">
           <h2 className="text-fluid-base font-bold text-ink">{t('common.account') || 'Account'}</h2>
-          <button onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-sunken cursor-pointer">
+          <button onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-xl border border-line text-muted transition hover:bg-sunken hover:text-ink cursor-pointer">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -367,6 +436,12 @@ function AccountModal({
               {user?.role}
             </span>
           </div>
+        </div>
+
+        {/* The header only carries these from md up; on a phone this sheet is
+            where language and theme live, so the top bar stays uncluttered. */}
+        <div className="mt-5 md:hidden">
+          <MobilePreferences />
         </div>
 
         <div className="mt-5 space-y-2">
