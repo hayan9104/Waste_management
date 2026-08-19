@@ -52,10 +52,12 @@ function PortalTabs({ className = '' }: { className?: string }) {
 }
 
 /**
- * Phone version of the same switcher. Four icon+label pills laid side by side
- * measure ~360px, which is wider than the card on a small handset — as a
- * four-column grid the labels sit under their icons and every tab stays fully
- * readable at 320px without a sideways scroll.
+ * Phone version of the same switcher. The SpotlightNav pill lays its four
+ * icon+label items out in a row that measures ~368px, so on a 320-393px handset
+ * the last tab ("Admin") was cut off at the card's edge — invisible as a page
+ * scrollbar because the shell clips overflow-x, but unreachable all the same.
+ * As a four-column grid the labels sit under their icons and every tab stays
+ * fully readable and tappable down to 320px.
  */
 function PortalTabsCompact({ current }: { current: Portal }) {
   const t = useT();
@@ -69,7 +71,7 @@ function PortalTabsCompact({ current }: { current: Portal }) {
             key={p}
             to={PORTAL_LOGIN_ROUTE[p]}
             aria-current={active ? 'page' : undefined}
-            className={`flex flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-semibold leading-none transition short:py-1 ${
+            className={`flex flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-semibold leading-none transition ${
               active ? 'bg-brand text-brand-ink shadow-sm' : 'text-muted hover:bg-elevated hover:text-ink'
             }`}
           >
@@ -193,12 +195,13 @@ export default function Login({ portal }: { portal: Portal }) {
       AMOLED theme rather than needing a second artwork.
     */
     /*
-      Phones: the shell is at least one viewport tall and grows with the card,
-      so a small screen or a large font never clips the sign-in button — it
-      just scrolls the page, which is the one scroll a phone user expects.
-      lg and up keeps the fixed single-viewport composition.
+      The card is left to size itself and the page scrolls like any normal
+      webpage if a short viewport can't fit it — that's the one scroll a user
+      already expects, and it's what keeps the card's own content (the
+      sign-in button specifically) from ever being trapped behind a
+      scrollbar of its own, at any window size.
     */
-    <div className="relative flex min-h-dvh flex-col overflow-x-clip bg-surface lg:h-dvh lg:min-h-0 lg:overflow-hidden">
+    <div className="relative flex min-h-dvh flex-col bg-surface">
       {/*
         Two copies of the same photo, both drawn from the same pixels so the
         colours always agree:
@@ -210,8 +213,9 @@ export default function Login({ portal }: { portal: Portal }) {
         dissolves into the blur instead of meeting it at a seam. There is no
         edge anywhere for the eye to read as a partition.
       */}
-      {/* Pinned to the viewport, not the document: on a phone the page may now
-          be taller than one screen, and the artwork should stay put. */}
+      {/* Pinned to the viewport, not the document — below lg the page can now
+          scroll taller than one screen, and the artwork should stay put
+          rather than stretching or scrolling along with the card. */}
       <img
         src="/auth-bg.jpg"
         alt=""
@@ -248,31 +252,26 @@ export default function Login({ portal }: { portal: Portal }) {
           <PortalTabs />
         </div>
 
-        {/* The Home label collapses to its arrow on a phone, and the language
-            switcher shows its short code — three full pills plus the wordmark
-            do not fit 360px without pushing something off-screen. */}
+        {/* The Home label and full language name collapse below sm — the
+            wordmark plus three full pills don't fit a 360px header, and this
+            is the room the card downstairs needs back. */}
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <Link to="/" aria-label={t('common.home')} className="btn-ghost btn-sm shrink-0 bg-elevated/80 px-2 backdrop-blur sm:px-3">
             <ArrowLeft className="h-4 w-4" />
             <span className="hidden sm:inline">{t('common.home')}</span>
           </Link>
-          <div className="sm:hidden">
-            <LanguageSwitcher compact className="bg-elevated/80 backdrop-blur" />
-          </div>
-          <div className="hidden sm:block">
-            <LanguageSwitcher className="bg-elevated/80 backdrop-blur" />
-          </div>
+          <LanguageSwitcher compact className="bg-elevated/80 backdrop-blur sm:hidden" />
+          <LanguageSwitcher className="hidden bg-elevated/80 backdrop-blur sm:flex" />
           <ThemeToggle className="shrink-0 bg-elevated/80 backdrop-blur" />
         </div>
       </header>
 
       {/*
-        The page itself never scrolls: it is exactly one viewport tall and the
-        content is centred in the space the header leaves. On a genuinely short
-        viewport (a phone in landscape) the card scrolls internally rather than
-        clipping the sign-in button out of reach.
+        Free to grow past one viewport at any width — the page itself scrolls
+        (see the wrapper above) rather than the card, so nothing here is ever
+        trapped behind a scrollbar of its own.
       */}
-      <div className="relative z-10 grid min-h-0 w-full flex-1 items-center gap-6 px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] short:pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:px-8 sm:pb-4 lg:grid-cols-2 lg:gap-12">
+      <div className="relative z-10 grid w-full flex-1 items-center gap-6 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:px-8 sm:pb-4 lg:gap-12 lg:grid-cols-2">
         {/*
           Brand copy sits directly on the photo — no card. Dropping the panel is
           what lets the text start on the same left edge as the logo above it;
@@ -301,49 +300,40 @@ export default function Login({ portal }: { portal: Portal }) {
           </p>
         </section>
 
-        {/* Form card */}
-        {/*
-          An explicit ceiling rather than max-h-full: a grid row sizes itself to
-          its content, so a percentage cap here would be circular and the card
-          could push past the fold.
-        */}
-        {/*
-          No height cap below lg — the page itself scrolls there instead, so
-          the card can never hide its own submit button behind an inner
-          scrollbar. From lg up the explicit ceiling keeps it inside one
-          viewport (a percentage cap would be circular in a grid row).
-        */}
-        <main className="mx-auto flex w-full max-w-md flex-col rounded-3xl border border-line/40 bg-elevated/55 p-4 shadow-lift backdrop-blur-2xl short:p-3 sm:p-6 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:p-7">
+        {/* Form card — no height cap at any breakpoint. It just takes the
+            height it needs and the page scrolls to it, so the sign-in button
+            can never end up trapped behind the card's own scrollbar. */}
+        <main className="mx-auto flex w-full max-w-md flex-col rounded-3xl border border-line/40 bg-elevated/55 p-4 shadow-lift backdrop-blur-2xl short:p-3 sm:p-6 lg:p-7">
           <div className="flex w-full flex-col">
           {/* Mobile-only fallback — the header carries this centered on the logo's line at lg: and up, but there's no room for it there on a phone. */}
-          <div className="mb-3 short:mb-2 lg:hidden">
-            <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-faint short:hidden">{t('auth.switchPortal.label')}</p>
+          <div className="mb-3.5 short:mb-2 lg:hidden">
+            <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-faint short:hidden">
+              {t('auth.switchPortal.label')}
+            </p>
             <PortalTabsCompact current={portal} />
           </div>
 
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-sunken short:h-9 short:w-9 sm:h-11 sm:w-11 ${copy.accent}`}>
+          <div className="flex items-center gap-3">
+            <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-sunken ${copy.accent}`}>
               <Icon className="h-5 w-5" />
             </span>
             <div className="min-w-0">
               <h1 className="text-fluid-xl font-bold leading-tight tracking-tight">{t(`auth.${portal}.title`)}</h1>
-              {/* The blurb is the first thing to go on a short screen — the
-                  form itself has to stay above the fold. */}
               <p className="mt-0.5 text-fluid-xs text-muted short:hidden lg:block">{t(`auth.${portal}.subtitle`)}</p>
             </div>
           </div>
 
           {copy.hasNote && (
-            <p className="mt-2.5 rounded-xl border border-line bg-sunken px-3 py-2 text-fluid-xs text-muted short:mt-2 short:py-1.5">{t(`auth.${portal}.note`)}</p>
+            <p className="mt-3 rounded-xl border border-line bg-sunken px-3 py-2 text-fluid-xs text-muted">{t(`auth.${portal}.note`)}</p>
           )}
 
-          <div className="mt-2.5 rounded-xl border border-brand/30 bg-brand/5 px-3 py-2 text-fluid-xs leading-snug text-ink short:mt-2 short:py-1.5">
+          <div className="mt-3 rounded-xl border border-brand/30 bg-brand/5 px-3 py-2 text-fluid-xs text-ink">
             <strong>Demo:</strong> tap a tag below, or use password{' '}
-            <code className="select-all font-mono font-bold">safaai@2026</code>
+            <code className="font-mono select-all font-bold">safaai@2026</code>
           </div>
 
           {error && (
-            <p role="alert" className="mt-2.5 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-fluid-xs text-danger">
+            <p role="alert" className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-fluid-xs text-danger">
               {error}
             </p>
           )}
@@ -410,11 +400,8 @@ export default function Login({ portal }: { portal: Portal }) {
             </form>
           ) : (
             /* ---- Password ---- */
-            <form onSubmit={submitPassword} className="mt-3 space-y-2.5 short:mt-2 short:space-y-2">
+            <form onSubmit={submitPassword} className="mt-4 space-y-3 short:mt-3 short:space-y-2">
               <div>
-                {/* On a short screen the labels fold into the placeholders —
-                    still announced to screen readers, just not taking 24px of
-                    height each that the sign-in button needs more. */}
                 <label className="label short:sr-only" htmlFor="email">{t('auth.email')}</label>
                 <input
                   id="email"
@@ -483,7 +470,7 @@ export default function Login({ portal }: { portal: Portal }) {
             guess a password and the card still fits a single screen.
           */}
           {relevantDemo.length > 0 && !challenge && (
-            <div className="mt-3 border-t border-dashed border-line pt-2.5 short:mt-2 short:pt-2">
+            <div className="mt-4 border-t border-dashed border-line pt-3 short:mt-3 short:pt-2">
               <p className="text-fluid-xs font-medium text-faint">{t('auth.demoAccounts')}</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {relevantDemo.map((account) => (
