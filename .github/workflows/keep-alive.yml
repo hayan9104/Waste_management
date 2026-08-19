@@ -1,8 +1,16 @@
 name: Keep Render Servers Awake
 
+# Render's free tier stops an instance after 15 minutes with no traffic, and a
+# cold start takes ~50 seconds. During that window the site looks broken: the
+# navbar and layout render instantly from the static bundle, while every panel
+# that needs data (login demo accounts, the AI assistant, maps, queues) sits
+# empty waiting on the API. These pings keep the instances warm.
+
 on:
   schedule:
-    # Run every 10 minutes to prevent Render's 15-minute idle sleep
+    # Every 10 minutes, to stay inside Render's 15-minute idle window.
+    # GitHub delays scheduled runs under load, so this is a best-effort guard,
+    # not a guarantee — see the note in the README about cold starts.
     - cron: '*/10 * * * *'
   workflow_dispatch: # Allows manual triggering
 
@@ -11,8 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Python Vision API
-        run: curl -sSf https://safaai-vision-api.onrender.com/ > /dev/null || echo "Vision API ping failed but it's okay"
-        
+        # Retries absorb a transient blip; a real outage still fails the step
+        # so it shows up instead of being swallowed.
+        run: curl -sSf --max-time 90 --retry 3 --retry-delay 10 --retry-all-errors https://safaai-vision-api.onrender.com/ > /dev/null
+
       - name: Ping Node.js Backend API
-        # Replace with your actual Node.js Render URL if different. Assuming safaai-api.onrender.com as placeholder
-        run: curl -sSf https://safaai-api.onrender.com/api/public/health > /dev/null || echo "Node API ping failed but it's okay"
+        # Must match the deployed service and a route that actually exists:
+        # the previous value (safaai-api.onrender.com/api/public/health) was a
+        # placeholder host that 404s, so the API was never kept awake at all.
+        run: curl -sSf --max-time 90 --retry 3 --retry-delay 10 --retry-all-errors https://safaaisarathi2-0.onrender.com/api/health > /dev/null
