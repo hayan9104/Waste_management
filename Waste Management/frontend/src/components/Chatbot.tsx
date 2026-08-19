@@ -66,9 +66,10 @@ export function Chatbot() {
   }, [messages, isOpen]);
 
   /*
-    The panel covers the whole viewport below lg, so the page behind it must
-    not scroll under the finger. Desktop keeps its floating window and the page
-    stays interactive, hence the width check rather than a blanket lock.
+    Below lg the panel fills the viewport, so the page behind it must not
+    scroll under the finger — only the message list (its own overflow-y-auto)
+    should move. Desktop keeps the floating window and the page stays
+    interactive, hence the width check rather than a blanket lock.
   */
   useEffect(() => {
     if (!isOpen) return;
@@ -81,7 +82,6 @@ export function Chatbot() {
     };
   }, [isOpen]);
 
-  /* Escape closes it — the same affordance as every other modal in the app. */
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setIsOpen(false);
@@ -155,10 +155,10 @@ export function Chatbot() {
         `}</style>
       </button>
 
-      {/* Chat panel — full screen wherever the app wears its mobile shell
-          (phone and tablet, i.e. below lg), floating window on desktop. Below
-          lg the bottom tab bar owns the foot of the screen, so a floating
-          window there would sit on top of it. */}
+      {/* Chat panel — full screen wherever the mobile shell applies (phone and
+          tablet, i.e. below lg, matching the bottom tab bar's own breakpoint),
+          floating window on desktop. Only the message list scrolls; the
+          header, quick prompts and input stay fixed in place. */}
       {isOpen && (
         <div
           role="dialog"
@@ -179,8 +179,8 @@ export function Chatbot() {
                 <p className="truncate text-[11px] opacity-85">Municipal 24/7 Sanitation Assistant</p>
               </div>
             </div>
-            {/* A real 40px target on its own ring — the bare icon was easy to
-                miss against the green bar when the panel filled the screen. */}
+            {/* A real 40px target on its own ring — easy to miss as a bare
+                icon against the green bar once the panel fills the screen. */}
             <button
               type="button"
               onClick={() => setIsOpen(false)}
@@ -191,7 +191,7 @@ export function Chatbot() {
             </button>
           </div>
 
-          {/* Chat Body */}
+          {/* Chat Body — the only thing that scrolls. */}
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-fluid-xs">
             {messages.map((m) => (
               <div
