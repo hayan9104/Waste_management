@@ -32,12 +32,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * removes that dependency entirely.
  */
 const MOCK_PHOTO_FILES = [
-  'mock-01-mask.jpg',
-  'mock-02-bins.jpg',
-  'mock-03-labelled-bins.jpg',
-  'mock-04-plastic-water.jpg',
   'mock-05-baled-plastic.jpg',
   'mock-06-dump-site.jpg',
+  'mock-07-dumpster-signage.jpg',
+  'mock-08-overflow-bin.jpg',
 ];
 
 /** Uploads each bundled mock photo once through the real storage driver and returns the hosted URLs. */
