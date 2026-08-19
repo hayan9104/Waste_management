@@ -137,9 +137,9 @@ export default function Fleet() {
                   <p className="truncate font-mono text-fluid-sm font-semibold">{v.registrationNumber}</p>
                   <p className="truncate text-fluid-xs text-muted">{v.model} · {v.capacityKg} kg</p>
                 </div>
-                <Badge tone={v.online ? 'ok' : 'neutral'}>
-                  {v.online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-                  {v.online ? 'Live' : 'Offline'}
+                <Badge tone={!v.isOffline ? 'ok' : 'neutral'}>
+                  {!v.isOffline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                  {!v.isOffline ? 'Live' : 'Offline'}
                 </Badge>
               </div>
 
@@ -163,8 +163,12 @@ export default function Fleet() {
               </dl>
 
               {v.maintenanceFlag && (
-                <p className="mt-2 flex items-center gap-1.5 rounded-lg border border-warn/30 bg-warn/10 p-2 text-fluid-xs text-warn">
-                  <Wrench className="h-3.5 w-3.5" /> Flagged for maintenance
+                <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-warn/30 bg-warn/10 p-2 text-fluid-xs text-warn">
+                  <Wrench className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-semibold">Flagged for maintenance.</span> Not eligible for route
+                    assignment until cleared — back in service shortly.
+                  </span>
                 </p>
               )}
 

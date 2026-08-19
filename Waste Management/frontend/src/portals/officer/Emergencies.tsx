@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Clock, Siren, Truck, Phone } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading, Meter, toast } from '../../components/ui';
+import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, toast } from '../../components/ui';
 import { LocationModal } from '../../components/LocationModal';
 import { STATUS_TONE, timeAgo, formatDuration } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -93,7 +93,7 @@ export default function Emergencies() {
         <Card className={`p-4 ${overdue ? 'border-danger/60' : 'border-warn/40'}`}>
           <div className="flex items-start gap-3">
             {c.photoUrl ? (
-              <img src={assetUrl(c.photoUrl)} alt="" className="h-20 w-20 shrink-0 rounded-xl object-cover" />
+              <EvidencePhoto src={assetUrl(c.photoUrl)} alt="" className="h-20 w-20 shrink-0 rounded-xl object-cover" />
             ) : (
               <span className="grid h-20 w-20 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger">
                 <Siren className="h-7 w-7" />

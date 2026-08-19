@@ -417,12 +417,16 @@ export default function DriverRoute() {
                   >
                     <Navigation className="h-4 w-4" /> Show on Map
                   </button>
-                  <Link
-                    to="/driver/stops"
+                  {/* Opens the same proof-photo modal the map popup's "Mark
+                      Collected" uses — this used to just navigate to /driver/stops,
+                      which never actually completed anything. */}
+                  <button
+                    type="button"
+                    onClick={() => setResolving(nextStop)}
                     className="btn-ghost flex items-center justify-center rounded-xl border border-line px-3.5 text-fluid-xs font-semibold"
                   >
                     Complete
-                  </Link>
+                  </button>
                 </div>
               </Card>
             ) : (

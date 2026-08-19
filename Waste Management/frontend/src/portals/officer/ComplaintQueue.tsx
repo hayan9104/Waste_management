@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Camera, Check, ChevronLeft, ChevronRight, Eye, Search, Truck, X } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
+import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, Modal, toast } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, SEVERITY_TONE, timeAgo, formatDuration } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
@@ -290,7 +290,7 @@ export default function ComplaintQueue() {
                 right column (the actually-variable-length content) to grow past it. */}
             <div className="space-y-2.5 sm:sticky sm:top-0">
               {detail.data.photoUrl ? (
-                <img src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-square w-full rounded-xl object-cover" />
+                <EvidencePhoto src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-square w-full rounded-xl object-cover" />
               ) : (
                 <div className="grid aspect-square w-full place-items-center gap-1.5 rounded-xl border border-dashed border-line bg-sunken text-faint">
                   <Camera className="h-6 w-6" />

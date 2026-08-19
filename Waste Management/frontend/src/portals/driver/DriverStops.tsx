@@ -16,7 +16,7 @@ import {
   CalendarDays,
 } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading, Modal, toast } from '../../components/ui';
+import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Modal, toast } from '../../components/ui';
 import { LocationModal } from '../../components/LocationModal';
 import { STATUS_TONE, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -325,7 +325,7 @@ export default function DriverStops() {
                           rel="noopener noreferrer"
                           className="shrink-0 overflow-hidden rounded-xl border border-line"
                         >
-                          <img
+                          <EvidencePhoto
                             src={assetUrl(task.photoUrl)}
                             alt="Waste photo"
                             className="h-20 w-20 sm:h-24 sm:w-24 object-cover transition hover:scale-105"

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Camera } from 'lucide-react';
 import { api, assetUrl } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading } from '../../components/ui';
+import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
@@ -64,19 +64,17 @@ export default function MyComplaints() {
                 <Card className="flex items-center gap-3 p-3.5 transition hover:shadow-lift">
                   <div className="flex items-center gap-1 shrink-0">
                     {c.photoUrl ? (
-                      <img src={assetUrl(c.photoUrl)} alt="Reported" className="h-16 w-16 rounded-xl object-cover" loading="lazy" />
+                      <EvidencePhoto src={assetUrl(c.photoUrl)} alt="Reported" className="h-16 w-16 rounded-xl object-cover" />
                     ) : (
                       <span className="grid h-16 w-16 place-items-center rounded-xl bg-sunken text-faint">
                         <Camera className="h-5 w-5" />
                       </span>
                     )}
                     {c.resolutionPhotoUrl && (
-                      <img
+                      <EvidencePhoto
                         src={assetUrl(c.resolutionPhotoUrl)}
                         alt="Cleaned Proof"
                         className="h-16 w-16 rounded-xl object-cover border-2 border-emerald-500 shadow-sm"
-                        title="Driver Cleaned Photo Proof"
-                        loading="lazy"
                       />
                     )}
                   </div>
