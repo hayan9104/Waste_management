@@ -5,8 +5,9 @@ import { requirePortal, loadUser } from '../middleware/auth.js';
 import { reportLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { upload, persist, fileFromRequest } from '../middleware/upload.js';
 import { prisma } from '../lib/prisma.js';
-import { PORTALS, WASTE_CATEGORIES, EMERGENCY_TYPES, CREDIT_RULES } from '../config/constants.js';
+import { PORTALS, WASTE_CATEGORIES, CATEGORY_MAP, EMERGENCY_TYPES, CREDIT_RULES } from '../config/constants.js';
 import { createComplaint, serializeComplaint, findDuplicate, wardForPoint } from '../services/complaint.service.js';
+import { classifyWaste } from '../services/ai.service.js';
 import { distanceMeters, boundsAround } from '../lib/geo.js';
 import { roadSnappedPolyline } from '../services/routing.service.js';
 
@@ -105,6 +106,51 @@ router.get(
       }));
 
     res.json(nearby);
+  })
+);
+
+/**
+ * Live vision classification for the "AI Waste Verification" review step
+ * (plan §2.1) — called right after the photo is captured, before the citizen
+ * confirms or overrides the category and submits via POST /report. The
+ * frontend has been posting here since the feature shipped, but this route
+ * never existed on the API: only the standalone vision microservice exposed
+ * /api/classify-waste, unreachable directly from the browser. Every
+ * classification silently 404'd and fell back to manual category selection.
+ */
+router.post(
+  '/classify-waste',
+  writeLimiter,
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    const file = fileFromRequest(req, 'file');
+    if (!file) throw new HttpError(400, 'A photo file is required');
+
+    const result = await classifyWaste({ buffer: file.buffer, mimetype: file.mimetype, filename: file.filename });
+
+    // The real vision service already replies in exactly the shape the
+    // review screen expects. The local fallback (vision service unreachable)
+    // instead returns the {category, confidence, ...} shape used for
+    // createComplaint's server-side re-classification — normalise that one
+    // here so the review step still shows a usable pick either way.
+    if (result.status) {
+      return res.json({
+        status: result.status,
+        predicted_category: result.predicted_category,
+        confidence: result.confidence,
+        needs_manual_review: result.needs_manual_review,
+        remark: result.remark,
+      });
+    }
+
+    const meta = CATEGORY_MAP[result.category] || CATEGORY_MAP.OTHER;
+    res.json({
+      status: 'success',
+      predicted_category: result.category ? result.category.toLowerCase() : null,
+      confidence: Math.round((result.confidence ?? 0) * 100),
+      needs_manual_review: true,
+      remark: `${meta.label} — offline estimate, vision service unreachable. Please confirm.`,
+    });
   })
 );
 
