@@ -738,4 +738,23 @@ router.post(
   })
 );
 
+/** Deletes specific complaints by ticket code — a precise, small-blast-radius tool, unlike the broader cleanup jobs above. */
+router.post(
+  '/delete-complaints-by-code',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const { codes } = z.object({ codes: z.array(z.string()).min(1).max(20) }).parse(req.body);
+
+    const matches = await prisma.complaint.findMany({
+      where: { code: { in: codes } },
+      select: { id: true, code: true },
+    });
+    for (const { id } of matches) {
+      await prisma.complaint.delete({ where: { id } });
+    }
+
+    res.json({ ok: true, requested: codes, deleted: matches.map((c) => c.code) });
+  })
+);
+
 export default router;
