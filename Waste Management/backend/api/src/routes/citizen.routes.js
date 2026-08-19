@@ -5,8 +5,9 @@ import { requirePortal, loadUser } from '../middleware/auth.js';
 import { reportLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { upload, persist, fileFromRequest } from '../middleware/upload.js';
 import { prisma } from '../lib/prisma.js';
-import { PORTALS, WASTE_CATEGORIES, EMERGENCY_TYPES, CREDIT_RULES } from '../config/constants.js';
+import { PORTALS, WASTE_CATEGORIES, CATEGORY_MAP, EMERGENCY_TYPES, CREDIT_RULES } from '../config/constants.js';
 import { createComplaint, serializeComplaint, findDuplicate, wardForPoint } from '../services/complaint.service.js';
+import { classifyWaste } from '../services/ai.service.js';
 import { distanceMeters, boundsAround } from '../lib/geo.js';
 import { roadSnappedPolyline } from '../services/routing.service.js';
 
@@ -109,6 +110,51 @@ router.get(
 );
 
 /**
+ * Live vision classification for the "AI Waste Verification" review step
+ * (plan §2.1) — called right after the photo is captured, before the citizen
+ * confirms or overrides the category and submits via POST /report. The
+ * frontend has been posting here since the feature shipped, but this route
+ * never existed on the API: only the standalone vision microservice exposed
+ * /api/classify-waste, unreachable directly from the browser. Every
+ * classification silently 404'd and fell back to manual category selection.
+ */
+router.post(
+  '/classify-waste',
+  writeLimiter,
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    const file = fileFromRequest(req, 'file');
+    if (!file) throw new HttpError(400, 'A photo file is required');
+
+    const result = await classifyWaste({ buffer: file.buffer, mimetype: file.mimetype, filename: file.filename });
+
+    // The real vision service already replies in exactly the shape the
+    // review screen expects. The local fallback (vision service unreachable)
+    // instead returns the {category, confidence, ...} shape used for
+    // createComplaint's server-side re-classification — normalise that one
+    // here so the review step still shows a usable pick either way.
+    if (result.status) {
+      return res.json({
+        status: result.status,
+        predicted_category: result.predicted_category,
+        confidence: result.confidence,
+        needs_manual_review: result.needs_manual_review,
+        remark: result.remark,
+      });
+    }
+
+    const meta = CATEGORY_MAP[result.category] || CATEGORY_MAP.OTHER;
+    res.json({
+      status: 'success',
+      predicted_category: result.category ? result.category.toLowerCase() : null,
+      confidence: Math.round((result.confidence ?? 0) * 100),
+      needs_manual_review: true,
+      remark: `${meta.label} — offline estimate, vision service unreachable. Please confirm.`,
+    });
+  })
+);
+
+/**
  * Report filing (plan §2.1). Accepts multipart with a required photo or
  * JSON with a photoUrl already uploaded.
  */
@@ -131,7 +177,14 @@ router.post(
         latitude: z.coerce.number().min(-90).max(90),
         longitude: z.coerce.number().min(-180).max(180),
         address: z.string().max(300).optional(),
-        userCategory: z.enum(WASTE_CATEGORIES).optional(),
+        // Plain string, not z.enum(WASTE_CATEGORIES) — that array holds
+        // {id, label, ...} objects, which zod's enum() rejects outright, and
+        // the citizen's category ids come through lowercase (e.g.
+        // 'garbage_pile') while WASTE_CATEGORIES uses 'GARBAGE_PILE'.
+        // createComplaint's normalizeCat() already upper-cases and falls
+        // back to OTHER for anything unrecognised, so validation here would
+        // only duplicate that safety net while being stricter than useful.
+        userCategory: z.string().optional(),
         description: z.string().max(1000).optional(),
         channel: z.enum(['APP', 'WEB', 'WHATSAPP', 'IVR']).optional(),
         isEmergency: z.coerce.boolean().optional(),
@@ -143,7 +196,7 @@ router.post(
       latitude: body.latitude,
       longitude: body.longitude,
       address: body.address,
-      userCategory: body.userCategory,
+      declaredCategory: body.userCategory,
       description: body.description,
       photoUrl,
       channel: body.channel || 'APP',
@@ -181,7 +234,7 @@ router.post(
       latitude: body.latitude,
       longitude: body.longitude,
       address: body.address,
-      userCategory: body.category,
+      declaredCategory: body.category,
       description: body.description,
       photoUrl: photoUrl || 'https://images.unsplash.com/photo-1584744982491-665216d95f8b?w=800',
       channel: 'APP',

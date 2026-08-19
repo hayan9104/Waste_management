@@ -241,13 +241,10 @@ export default function NewReport() {
 
   async function checkForDuplicates(pos: { lat: number; lng: number }) {
     try {
-      const { data } = await api('citizen').get('/citizen/complaints/nearby', {
-        params: { lat: pos.lat, lng: pos.lng, radiusMeters: 100 },
+      const { data } = await api('citizen').get('/citizen/duplicates/check', {
+        params: { latitude: pos.lat, longitude: pos.lng, category },
       });
-      const openOne = (data.items || []).find((c: any) =>
-        ['SUBMITTED', 'VERIFIED', 'ASSIGNED', 'IN_PROGRESS'].includes(c.status)
-      );
-      setDuplicate(openOne || null);
+      setDuplicate(data.duplicate || null);
     } catch {
       // Non-critical
     }
@@ -267,15 +264,15 @@ export default function NewReport() {
       } catch {
         form.append('photo', file);
       }
-      form.append('category', category);
+      form.append('userCategory', category);
       form.append('latitude', String(position.lat));
       form.append('longitude', String(position.lng));
       if (description) form.append('description', description);
 
-      const { data } = await api('citizen').post('/citizen/complaints', form);
+      const { data } = await api('citizen').post('/citizen/report', form);
       toast.success(t('citizen.reported_success') || 'Complaint filed successfully!');
       queryClient.invalidateQueries({ queryKey: ['citizen'] });
-      navigate(`/app/complaints/${data.id}`, { replace: true });
+      navigate(`/app/complaints/${data.complaint.id}`, { replace: true });
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -633,7 +630,7 @@ export default function NewReport() {
                 <div className="rounded-2xl border border-warn/30 bg-warn/10 p-3 text-fluid-xs text-warn flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-bold">Nearby Active Ticket #{duplicate.ticketNumber || duplicate.id.slice(0, 6)}</p>
+                    <p className="font-bold">Nearby Active Ticket #{duplicate.code || duplicate.id.slice(0, 6)}</p>
                     <p className="text-[11px] text-muted">
                       Another citizen already reported an issue ~{Math.round(duplicate.distanceMeters || 20)}m away. Your report will reinforce collection priority.
                     </p>
