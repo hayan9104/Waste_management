@@ -11,10 +11,42 @@ import { transition, serializeComplaint } from '../services/complaint.service.js
 import { emitTo } from '../sockets/realtime.js';
 import { notifyWardOfficers } from '../services/notification.service.js';
 import { distanceKm } from '../lib/geo.js';
-import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
+import { ensureRoadSnappedPolyline, navigationRoute, solveLocal } from '../services/routing.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.DRIVER), loadUser);
+
+/**
+ * Navigation geometry is cached per vehicle because the driver map polls while
+ * GPS pings every few seconds, and the default OSRM is a shared public demo
+ * server. The key rounds the origin to ~110 m and includes the ordered stop
+ * ids, so a recompute happens when the driver actually travels or the work
+ * changes — not on every jitter of the GPS fix.
+ */
+const navCache = new Map();
+const NAV_TTL_MS = 60_000;
+
+function navCacheKey(origin, stops) {
+  const round = (n) => Number(n).toFixed(3);
+  return `${round(origin[0])},${round(origin[1])}|${stops.map((s) => s.key).join(',')}`;
+}
+
+function readNavCache(vehicleId, key) {
+  const hit = navCache.get(vehicleId);
+  if (!hit || hit.key !== key || Date.now() - hit.at > NAV_TTL_MS) return null;
+  return hit.payload;
+}
+
+function writeNavCache(vehicleId, key, payload) {
+  navCache.set(vehicleId, { key, at: Date.now(), payload });
+  // The map is keyed by vehicle, so it is bounded by fleet size; this only
+  // guards against a long-lived process accumulating retired vehicles.
+  if (navCache.size > 500) {
+    for (const [id, entry] of navCache) {
+      if (Date.now() - entry.at > NAV_TTL_MS) navCache.delete(id);
+    }
+  }
+}
 
 async function myVehicle(userId) {
   const vehicle = await prisma.vehicle.findFirst({
@@ -89,6 +121,142 @@ router.get(
         onShiftSince: history.firstAt,
       },
     });
+  })
+);
+
+/**
+ * Turn-by-turn navigation geometry.
+ * GET /api/driver/navigation?lat=&lng=
+ *
+ * The /route endpoint returns the day's *planned* route, which starts at the
+ * depot and only exists once an officer has published one. What a driver on the
+ * road needs is the line from where the truck is right now to the stops that
+ * are still open, following real streets. Without this the map fell back to
+ * drawing straight segments between stops — a line through buildings that is
+ * useless to follow.
+ */
+router.get(
+  '/navigation',
+  asyncHandler(async (req, res) => {
+    const vehicle = await myVehicle(req.user.id);
+
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    // The live fix the phone just reported beats the last one persisted.
+    const originLat = Number.isFinite(lat) ? lat : vehicle.lastLat;
+    const originLng = Number.isFinite(lng) ? lng : vehicle.lastLng;
+
+    const route = await prisma.route.findFirst({ where: { vehicleId: vehicle.id, date: today() } });
+
+    // Prefer the officer's optimised order; fall back to the same priority
+    // ordering the rest of the driver portal uses when no route is published.
+    let pending = (route?.orderedStops ?? [])
+      .filter((s) => s.status !== 'DONE' && s.latitude != null && s.longitude != null)
+      .map((s, i) => ({
+        key: String(s.complaintId || s.id || `${s.latitude},${s.longitude}`),
+        seq: s.seq || i + 1,
+        complaintId: s.complaintId || s.id || null,
+        label: s.label || s.address || 'Collection stop',
+        category: s.category || null,
+        isEmergency: Boolean(s.isEmergency),
+        latitude: s.latitude,
+        longitude: s.longitude,
+      }));
+
+    let ordering = route ? 'officer-route' : 'unordered';
+
+    if (!pending.length) {
+      const assigned = await prisma.complaint.findMany({
+        where: { assignedVehicleId: vehicle.id, status: { in: ['ASSIGNED', 'IN_PROGRESS'] } },
+        orderBy: [{ isEmergency: 'desc' }, { severity: 'desc' }, { createdAt: 'asc' }],
+      });
+      pending = assigned
+        .filter((c) => c.latitude != null && c.longitude != null)
+        .map((c, i) => ({
+          key: c.id,
+          seq: i + 1,
+          complaintId: c.id,
+          label: c.address || c.code || 'Collection stop',
+          category: c.category,
+          isEmergency: c.isEmergency,
+          latitude: c.latitude,
+          longitude: c.longitude,
+        }));
+
+      /*
+        With no published route these arrive in report order, which sends the
+        driver back and forth across the ward. The same solver the officer's
+        planner uses puts them in a sensible driving order from where the truck
+        is now — and it already keeps emergencies at the front, so urgency is
+        not traded away for mileage.
+      */
+      if (pending.length > 1 && originLat != null && originLng != null) {
+        const solved = solveLocal({
+          stops: pending.map((s) => ({ ...s, coordinates: [s.longitude, s.latitude] })),
+          depot: { coordinates: [originLng, originLat] },
+        });
+        const byKey = new Map(pending.map((s) => [s.key, s]));
+        const reordered = solved.stops
+          .map((s) => byKey.get(String(s.complaintId)))
+          .filter(Boolean);
+        if (reordered.length === pending.length) {
+          pending = reordered.map((s, i) => ({ ...s, seq: i + 1 }));
+          ordering = 'auto-optimised';
+        }
+      }
+    }
+
+    if (originLat == null || originLng == null) {
+      return res.json({ navigating: false, reason: 'No GPS position for this vehicle yet.', stops: pending });
+    }
+    if (!pending.length) {
+      return res.json({ navigating: false, reason: 'No open stops to navigate to.', stops: [] });
+    }
+
+    // OSRM caps waypoints per request; a shift never needs more than this many
+    // legs drawn ahead, and the rest redraw as stops are completed.
+    const MAX_LEGS = 12;
+    const legStops = pending.slice(0, MAX_LEGS);
+
+    const origin = [originLng, originLat];
+    const key = navCacheKey(origin, legStops);
+    const cached = readNavCache(vehicle.id, key);
+    if (cached) return res.json({ ...cached, cached: true });
+
+    const waypoints = [origin, ...legStops.map((s) => [s.longitude, s.latitude])];
+    const nav = await navigationRoute(waypoints);
+
+    let cumulativeSeconds = 0;
+    const stops = legStops.map((s, i) => {
+      const leg = nav.legs[i] || { distanceMeters: 0, durationSeconds: 0 };
+      cumulativeSeconds += leg.durationSeconds;
+      return {
+        ...s,
+        legDistanceMeters: leg.distanceMeters,
+        legDurationSeconds: leg.durationSeconds,
+        etaSeconds: cumulativeSeconds,
+        polylineIndex: nav.breakpoints[i] ?? null,
+      };
+    });
+
+    const payload = {
+      navigating: true,
+      polyline: nav.polyline,
+      breakpoints: nav.breakpoints,
+      stops,
+      truncatedStops: Math.max(0, pending.length - legStops.length),
+      nextStop: stops[0] || null,
+      totalDistanceMeters: nav.distanceMeters,
+      totalDurationSeconds: nav.durationSeconds,
+      // 'fallback' means OSRM was unreachable and the line is approximate —
+      // the UI says so rather than passing a zigzag off as road guidance.
+      source: nav.source,
+      ordering,
+      origin: { latitude: originLat, longitude: originLng },
+    };
+
+    writeNavCache(vehicle.id, key, payload);
+    res.json(payload);
   })
 );
 
