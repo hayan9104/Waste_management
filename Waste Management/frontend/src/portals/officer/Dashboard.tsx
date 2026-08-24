@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Clock, Eye, Siren, Truck, Users } from 'lucide-react';
@@ -15,10 +15,20 @@ export default function OfficerDashboard() {
   const queryClient = useQueryClient();
   const [trucks, setTrucks] = useState<Record<string, any>>({});
 
+  /**
+   * Socket state drives the poll interval. When the socket is up, pushes carry
+   * the updates and polling is only a safety net; when it is down, the
+   * dashboard would otherwise sit frozen while looking authoritative, so it
+   * falls back to polling hard. The indicator in the header says which mode
+   * the numbers are arriving by rather than leaving the officer to guess.
+   */
+  const [connected, setConnected] = useState(false);
+  const livePoll = connected ? 30_000 : 8_000;
+
   const overview = useQuery({
     queryKey: ['officer', 'overview'],
     queryFn: async () => (await api('officer').get('/officer/overview')).data,
-    refetchInterval: 30_000,
+    refetchInterval: livePoll,
   });
   const wards = useQuery({
     queryKey: ['officer', 'wards'],
@@ -31,25 +41,61 @@ export default function OfficerDashboard() {
   const fleet = useQuery({
     queryKey: ['officer', 'fleet'],
     queryFn: async () => (await api('officer').get('/officer/fleet')).data,
-    refetchInterval: 60_000,
+    refetchInterval: connected ? 60_000 : 15_000,
+  });
+
+  /** On-duty crew, so the dashboard shows staffing and not just trucks. */
+  const shifts = useQuery({
+    queryKey: ['officer', 'shifts'],
+    queryFn: async () => (await api('officer').get('/officer/shifts')).data,
+    refetchInterval: livePoll,
   });
 
   const wardRooms = (wards.data ?? []).map((w: any) => `ward:${w.id}`);
 
-  useSocket('officer', wardRooms, {
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['officer'] });
+
+  const socketConnected = useSocket('officer', wardRooms, {
     [SOCKET_EVENTS.TRUCK_UPDATE]: (payload: any) => {
       if (payload?.id) setTrucks((prev) => ({ ...prev, [payload.id]: payload }));
+      // A shift start/end also arrives as a truck update, and that changes the
+      // on-duty count rather than just a map pin.
+      if (payload?.shift) refresh();
     },
     [SOCKET_EVENTS.COMPLAINT_NEW]: (payload: any) => {
       toast.info(`New report ${payload.code} · ${t(`category.${payload.category}`)}`);
-      void queryClient.invalidateQueries({ queryKey: ['officer'] });
+      refresh();
     },
     [SOCKET_EVENTS.EMERGENCY_NEW]: (payload: any) => {
       toast.error(`EMERGENCY ${payload.code} · ${t(`category.${payload.category}`)}`);
-      void queryClient.invalidateQueries({ queryKey: ['officer'] });
+      refresh();
     },
-    [SOCKET_EVENTS.SOS_NEW]: (payload: any) => toast.error(`SOS from driver ${payload.driver?.name}`),
+    // Previously toast-only: the SOS tile kept its old count until the next
+    // poll, so the dashboard contradicted the alert it had just shown.
+    [SOCKET_EVENTS.SOS_NEW]: (payload: any) => {
+      toast.error(`SOS from driver ${payload.driver?.name ?? 'unknown'}`);
+      refresh();
+    },
+    // A driver resolving a stop moves every counter on this page, and was not
+    // handled at all — the numbers only caught up on the next poll.
+    [SOCKET_EVENTS.COMPLAINT_UPDATE]: () => refresh(),
+    [SOCKET_EVENTS.ESCALATION_NEW]: (payload: any) => {
+      toast.warn(`Escalation raised${payload?.code ? ` · ${payload.code}` : ''}`);
+      refresh();
+    },
+    // Emergency auto-dispatch: the officer should see a truck was already sent
+    // before they start assigning one themselves.
+    [SOCKET_EVENTS.ASSIGNMENT_NEW]: (payload: any) => {
+      if (payload?.autoDispatched) {
+        toast.info(
+          `${payload.code} auto-dispatched to ${payload.vehicle?.registrationNumber ?? 'a truck'}`
+        );
+      }
+      refresh();
+    },
   });
+
+  useEffect(() => setConnected(socketConnected), [socketConnected]);
 
   if (overview.isLoading) return <Loading label="Loading your ward…" />;
   if (overview.error) return <ErrorState message="Could not load the dashboard" onRetry={() => overview.refetch()} />;
@@ -59,8 +105,32 @@ export default function OfficerDashboard() {
 
   const mapPoints: Array<[number, number]> = (wards.data ?? []).map((w: any) => [w.center.latitude, w.center.longitude]);
 
+  const onDuty = shifts.data?.totals;
+
   return (
     <div className="space-y-5">
+      {/* Says how the numbers on this page are arriving. A dashboard that
+          claims to be live and has silently lost its socket is worse than one
+          that admits it is polling. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
+            {connected && (
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-75" />
+            )}
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${connected ? 'bg-ok' : 'bg-warn'}`} />
+          </span>
+          <span className="text-fluid-xs font-medium text-muted">
+            {connected ? 'Live — updates pushed as they happen' : 'Reconnecting — refreshing every 8s'}
+          </span>
+        </div>
+        {onDuty && (
+          <span className="text-fluid-xs text-muted">
+            <strong className="text-ink">{onDuty.onDuty}</strong> of {onDuty.workedToday} drivers on duty
+          </span>
+        )}
+      </div>
+
       {/* KPI row — 2-up on phones, 4-up on desktop. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat

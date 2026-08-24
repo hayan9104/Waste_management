@@ -385,8 +385,18 @@ router.post(
       });
       assigned.push(payload);
 
-      // Emit status-update event to complaint room for Citizen live tracking
-      emitTo([`complaint:${id}`, `complaint_${id}`], SOCKET_EVENTS.COMPLAINT_UPDATE, payload);
+      /**
+       * Complaint room for the citizen's live tracking, plus the ward and city
+       * rooms. Without the ward room a second officer on the same ward — and
+       * the admin console — kept showing the complaint as unassigned until
+       * their next poll, so two officers could assign two trucks to the same
+       * report while each believed nobody had.
+       */
+      emitTo(
+        [`complaint:${id}`, `complaint_${id}`, vehicle.wardId ? `ward:${vehicle.wardId}` : null, 'city'],
+        SOCKET_EVENTS.COMPLAINT_UPDATE,
+        payload
+      );
     }
 
     if (vehicle.driverId) {
