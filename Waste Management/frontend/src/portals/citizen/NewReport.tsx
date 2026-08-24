@@ -28,7 +28,7 @@ import {
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, Meter, toast } from '../../components/ui';
 import { CameraCapture } from '../../components/CameraCapture';
-import { BaseMap, PinMarker, FollowTarget, CITY_CENTER, snapToCity } from '../../components/map/Map';
+import { BaseMap, PinMarker, FollowTarget, LocationPicker, CITY_CENTER, snapToCity } from '../../components/map/Map';
 import { CATEGORY_LABELS, confidenceLabel, formatDistance, validateWastePhoto } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
@@ -621,14 +621,14 @@ export default function NewReport() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-fluid-sm font-bold text-ink flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-brand" /> Auto-Detected GPS Location
+                      <MapPin className="h-4 w-4 text-brand" /> Waste Location Pin
                     </h3>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-ok/30 bg-ok/10 px-2 py-0.5 text-[10px] font-bold text-ok">
-                      <Lock className="h-3 w-3" /> Locked
+                    <span className="inline-flex items-center gap-1 rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">
+                      <Crosshair className="h-3 w-3" /> Live GPS Active
                     </span>
                   </div>
                   <p className="text-[11px] text-muted">
-                    Coordinates auto-detected from your device GPS for accurate truck dispatch.
+                    Tap anywhere on the satellite map if you need to fine-tune the exact pin.
                   </p>
                 </div>
                 <button
@@ -643,13 +643,17 @@ export default function NewReport() {
               </div>
 
               <div className="h-[360px] w-full overflow-hidden rounded-2xl border border-line">
-                <BaseMap center={position ? [position.lat, position.lng] : CITY_CENTER} zoom={16}>
+                <BaseMap center={position ? [position.lat, position.lng] : CITY_CENTER} zoom={17}>
                   {position && (
                     <>
-                      <PinMarker
+                      <LocationPicker
                         latitude={position.lat}
                         longitude={position.lng}
-                        label="Auto-Detected GPS Location (Locked)"
+                        onChange={(lat, lng) => {
+                          setPosition({ lat, lng });
+                          void checkForDuplicates({ lat, lng });
+                          toast.info('📍 Pinned location updated');
+                        }}
                       />
                       <FollowTarget latitude={position.lat} longitude={position.lng} />
                     </>
@@ -659,7 +663,7 @@ export default function NewReport() {
 
               <div className="flex items-center justify-between rounded-xl border border-line bg-sunken/60 px-3 py-2 text-fluid-xs text-muted">
                 <span className="flex items-center gap-1.5 font-semibold text-ink">
-                  <Lock className="h-3.5 w-3.5 text-brand" /> GPS Coordinates Locked
+                  <MapPin className="h-3.5 w-3.5 text-brand" /> Target Coordinates
                 </span>
                 <span className="font-mono text-[11px]">
                   {position ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}` : 'Acquiring GPS…'}
