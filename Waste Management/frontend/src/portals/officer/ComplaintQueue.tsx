@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Camera, Check, ChevronLeft, ChevronRight, Eye, Search, Truck, X } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, Modal, toast } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, SEVERITY_TONE, timeAgo, formatDuration } from '../../lib/format';
+import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { useT } from '../../lib/i18n';
 
 /**
@@ -31,16 +32,45 @@ export default function ComplaintQueue() {
     sort: params.get('sort') || 'newest',
   };
 
+  /**
+   * This page had neither a socket subscription nor a refetch interval, so it
+   * showed whatever was true at page load and nothing after: a report filed,
+   * verified or resolved while an officer sat on the queue simply never
+   * appeared. Pushes carry the updates when the socket is up; polling is the
+   * safety net and tightens when it is down.
+   */
+  const [connected, setConnected] = useState(false);
+
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['officer', 'queue', filters, page, search],
     queryFn: async () =>
       (await api('officer').get('/officer/complaints', { params: { ...filters, page, pageSize: 25, search: search || undefined } })).data,
+    refetchInterval: connected ? 45_000 : 10_000,
   });
 
   const fleet = useQuery({
     queryKey: ['officer', 'fleet'],
     queryFn: async () => (await api('officer').get('/officer/fleet')).data,
   });
+
+  const wards = useQuery({
+    queryKey: ['officer', 'wards'],
+    queryFn: async () => (await api('officer').get('/officer/wards')).data,
+  });
+
+  const socketConnected = useSocket(
+    'officer',
+    (wards.data ?? []).map((w: any) => `ward:${w.id}`),
+    {
+      // Anything that changes a row's presence, status or ordering.
+      [SOCKET_EVENTS.COMPLAINT_NEW]: () => queryClient.invalidateQueries({ queryKey: ['officer', 'queue'] }),
+      [SOCKET_EVENTS.COMPLAINT_UPDATE]: () => queryClient.invalidateQueries({ queryKey: ['officer', 'queue'] }),
+      [SOCKET_EVENTS.EMERGENCY_NEW]: () => queryClient.invalidateQueries({ queryKey: ['officer', 'queue'] }),
+      [SOCKET_EVENTS.ASSIGNMENT_NEW]: () => queryClient.invalidateQueries({ queryKey: ['officer', 'queue'] }),
+    }
+  );
+
+  useEffect(() => setConnected(socketConnected), [socketConnected]);
 
   const detail = useQuery({
     queryKey: ['officer', 'complaint', detailId],
@@ -188,12 +218,35 @@ export default function ComplaintQueue() {
                         />
                       </td>
                       <td className="px-3 py-2.5">
-                        <EvidencePhoto
-                          src={assetUrl(c.photoUrl)}
-                          alt=""
-                          compact
-                          className="h-11 w-11 shrink-0 rounded-lg object-cover"
-                        />
+                        {/* Reported, and once it is closed the driver's proof
+                            next to it — an officer scanning the queue can see
+                            the work was actually evidenced without opening
+                            each row. A closed report with no proof is called
+                            out rather than left as a gap. */}
+                        <div className="flex items-center gap-1">
+                          <EvidencePhoto
+                            src={assetUrl(c.photoUrl)}
+                            alt="Reported"
+                            compact
+                            className="h-11 w-11 shrink-0 rounded-lg object-cover"
+                          />
+                          {c.status === 'RESOLVED' &&
+                            (c.resolutionPhotoUrl ? (
+                              <EvidencePhoto
+                                src={assetUrl(c.resolutionPhotoUrl)}
+                                alt="Cleared-site proof"
+                                compact
+                                className="h-11 w-11 shrink-0 rounded-lg border-2 border-ok/60 object-cover"
+                              />
+                            ) : (
+                              <span
+                                title="Closed without a proof photo"
+                                className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-dashed border-warn/50 bg-warn/5 text-warn"
+                              >
+                                <Camera className="h-4 w-4" />
+                              </span>
+                            ))}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5">
                         <span className="font-mono text-fluid-xs">{c.code}</span>
@@ -249,12 +302,22 @@ export default function ComplaintQueue() {
                         setSelected((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
                       }
                     />
-                    <EvidencePhoto
-                      src={assetUrl(c.photoUrl)}
-                      alt=""
-                      compact
-                      className="h-14 w-14 shrink-0 rounded-lg object-cover"
-                    />
+                    <div className="flex shrink-0 items-center gap-1">
+                      <EvidencePhoto
+                        src={assetUrl(c.photoUrl)}
+                        alt="Reported"
+                        compact
+                        className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                      />
+                      {c.status === 'RESOLVED' && c.resolutionPhotoUrl && (
+                        <EvidencePhoto
+                          src={assetUrl(c.resolutionPhotoUrl)}
+                          alt="Cleared-site proof"
+                          compact
+                          className="h-14 w-14 shrink-0 rounded-lg border-2 border-ok/60 object-cover"
+                        />
+                      )}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-mono text-fluid-xs">{c.code}</span>

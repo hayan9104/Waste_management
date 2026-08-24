@@ -54,6 +54,15 @@ export default function Emergencies() {
     },
   });
 
+  const resolveSos = useMutation({
+    mutationFn: async (id: string) => (await api('officer').post(`/officer/sos/${id}/resolve`)).data,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['officer'] });
+      toast.success('SOS closed — the driver has been told it is resolved');
+    },
+    onError: (err) => toast.error(errorMessage(err, 'Could not close that SOS')),
+  });
+
   const acknowledge = useMutation({
     mutationFn: async (id: string) => (await api('officer').post(`/officer/complaints/${id}/verify`, { decision: 'VERIFIED', note: 'Acknowledged by officer' })).data,
     onSuccess: async () => {
@@ -213,15 +222,29 @@ export default function Emergencies() {
                       >
                         Locate
                       </button>
-                      <button
-                        type="button"
-                        className="btn-danger btn-sm"
-                        disabled={alert.status !== 'OPEN' || ackSos.isPending}
-                        onClick={() => ackSos.mutate(alert.id)}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                        {alert.status === 'OPEN' ? 'Respond' : 'Responding'}
-                      </button>
+                      {/* Respond, then close. Acknowledging only records that
+                          an officer has seen it; without a way to finish, an
+                          alert sorted out an hour ago sat here looking
+                          identical to one still stranded. */}
+                      {alert.status === 'OPEN' ? (
+                        <button
+                          type="button"
+                          className="btn-danger btn-sm"
+                          disabled={ackSos.isPending}
+                          onClick={() => ackSos.mutate(alert.id)}
+                        >
+                          <Check className="h-3.5 w-3.5" /> Respond
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-primary btn-sm"
+                          disabled={resolveSos.isPending}
+                          onClick={() => resolveSos.mutate(alert.id)}
+                        >
+                          <Check className="h-3.5 w-3.5" /> Mark resolved
+                        </button>
+                      )}
                     </div>
                   </div>
                 </Card>

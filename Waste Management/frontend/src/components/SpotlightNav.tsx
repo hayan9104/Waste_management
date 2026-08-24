@@ -13,9 +13,18 @@ export interface SpotlightNavProps {
   items: SpotlightNavItem[];
   accent?: 'brand' | 'orange';
   className?: string;
+  /**
+   * Hide labels below 2xl and show icons only.
+   *
+   * A console with eight tabs cannot fit full pills on a 1280-1440px laptop,
+   * which is most of them. The alternative was hiding the whole bar until
+   * 1536px and leaving a hamburger alone in the header — a desktop console
+   * with no visible navigation, which reads as broken rather than compact.
+   */
+  compactUntil2xl?: boolean;
 }
 
-export function SpotlightNav({ items, accent = 'brand', className = '' }: SpotlightNavProps) {
+export function SpotlightNav({ items, accent = 'brand', className = '', compactUntil2xl = false }: SpotlightNavProps) {
   const navRef = useRef<HTMLElement>(null);
   const location = useLocation();
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -176,8 +185,11 @@ export function SpotlightNav({ items, accent = 'brand', className = '' }: Spotli
                 to={item.to}
                 end={item.end}
                 data-nav-index={idx}
+                title={compactUntil2xl ? item.label : undefined}
                 className={({ isActive: matchActive }) =>
-                  `relative flex items-center gap-2 rounded-full px-3.5 py-1.5 text-fluid-xs font-semibold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-brand/50 sm:px-4 ${
+                  `relative flex items-center gap-2 rounded-full py-1.5 text-fluid-xs font-semibold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-brand/50 ${
+                    compactUntil2xl ? 'px-2.5 2xl:px-4' : 'px-3.5 sm:px-4'
+                  } ${
                     matchActive || isActive
                       ? isOrange
                         ? 'text-orange-700 dark:text-orange-300 font-bold'
@@ -187,7 +199,12 @@ export function SpotlightNav({ items, accent = 'brand', className = '' }: Spotli
                 }
               >
                 {Icon && <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />}
-                <span className="whitespace-nowrap">{item.label}</span>
+                {/* The label is still in the DOM when collapsed, so the tab
+                    keeps its accessible name for screen readers and the
+                    native tooltip; only its box is removed. */}
+                <span className={compactUntil2xl ? 'whitespace-nowrap sr-only 2xl:not-sr-only' : 'whitespace-nowrap'}>
+                  {item.label}
+                </span>
                 {item.badge ? (
                   <span className="ml-1 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[0.6rem] font-bold text-white shadow-xs">
                     {item.badge > 99 ? '99+' : item.badge}

@@ -374,7 +374,16 @@ async function main() {
   let resolvedCount = 0;
   const creditTally = new Map();
 
-  for (let d = HISTORY_DAYS; d >= 1; d -= 1) {
+  /**
+   * Down to d = 0, i.e. including today.
+   *
+   * The loop used to stop at yesterday, so the newest report in the system was
+   * always 15+ hours old. That was invisible under day-long SLAs; against a
+   * 3-8 hour window it meant every single open complaint was already past due
+   * — 98 of 108 — which makes the officer's overdue count meaningless and
+   * contradicts the SLA figure sitting next to it.
+   */
+  for (let d = HISTORY_DAYS; d >= 0; d -= 1) {
     const day = new Date();
     day.setDate(day.getDate() - d);
     day.setHours(7, 0, 0, 0);
@@ -404,7 +413,15 @@ async function main() {
         const citizen = citizens[intBetween(r, 0, citizens.length - 1)];
         const point = pointNear(wardAnchors, index, d * 13 + k * 7);
 
-        const createdAt = new Date(day.getTime() + intBetween(r, 0, 11 * 60) * 60_000);
+        /**
+         * Today's reports are placed relative to now rather than to a 07:00
+         * start, so the live backlog is genuinely a few hours old instead of
+         * being back-dated to this morning the moment the seed runs.
+         */
+        const createdAt =
+          d === 0
+            ? new Date(Date.now() - intBetween(r, 5, 400) * 60_000)
+            : new Date(day.getTime() + intBetween(r, 0, 11 * 60) * 60_000);
         const confidence = Number((0.45 + r() * 0.52).toFixed(3));
         const autoApproved = confidence >= 0.7;
 
@@ -413,7 +430,39 @@ async function main() {
          * the last five days keep a realistic open backlog, which is what the
          * officer queue, emergency panel and route optimiser actually need.
          */
-        const shouldResolve = d > 5 ? true : r() > 0.45;
+        /**
+         * An emergency runs a 30-minute clock, so one still open after days is
+         * not a backlog item — it is a contradiction, and it made the officer
+         * panel show week-old "emergencies" that no longer meant anything.
+         * They are always closed unless they arrived in the last few hours.
+         */
+        /**
+         * What stays open, and why.
+         *
+         * Today's work is genuinely in flight, so about half of it is still
+         * open. Yesterday keeps a deliberate 15% tail so SLA breaches,
+         * escalations and the overdue counter have real material to show —
+         * without it those three screens would be permanently empty. Anything
+         * older is closed: a routine report still open after two days against
+         * a four-hour target is not a backlog, it is a data artefact.
+         */
+        /**
+         * An emergency stays open only while its own clock is still running.
+         *
+         * Leaving every one of today's emergencies open produced 21 of them,
+         * nearly all already past a 30-minute deadline — which says the city
+         * ignores its own red button. They are auto-dispatched on arrival, so
+         * the honest picture is a handful genuinely in progress and the rest
+         * cleared.
+         */
+        const withinEmergencyClock = Date.now() - createdAt.getTime() < 25 * 60_000;
+        const shouldResolve = meta.emergency
+          ? !(d === 0 && withinEmergencyClock)
+          : d === 0
+            ? r() > 0.5
+            : d === 1
+              ? r() > 0.15
+              : true;
         /**
          * Most work is cleared well inside its deadline, a minority runs late.
          *
@@ -463,10 +512,21 @@ async function main() {
             // The model is not always right — roughly one in eight is corrected
             // by an officer, so Model Health shows a believable agreement rate
             // rather than a flat 100%.
-            aiCategory: r() > 0.88 ? pick(r, WASTE_CATEGORIES).id : spec.id,
+            /**
+             * Confidence and category are one statement, not two.
+             *
+             * The model disagreeing with the final category is a real and
+             * useful case, but it only makes sense when confidence was low:
+             * a disagreement recorded at 95% says the AI was certain and
+             * wrong, which is not what a low-confidence review queue is for.
+             * Disagreements are therefore confined to the low-confidence
+             * band, and an emergency is never held back for review — it is
+             * already dispatched and on a 30-minute clock.
+             */
+            aiCategory: !autoApproved && r() > 0.6 ? pick(r, WASTE_CATEGORIES).id : spec.id,
             aiConfidence: confidence,
             aiVerified: autoApproved,
-            reviewNeeded: !autoApproved,
+            reviewNeeded: meta.emergency ? false : !autoApproved,
             fraudScore: Number((r() * 0.35).toFixed(3)),
             status,
             severity: meta.severity,
@@ -636,6 +696,7 @@ async function main() {
         aiCategory: spec.id,
         aiConfidence: 0.91,
         aiVerified: true,
+        reviewNeeded: false,
         status: 'PENDING',
         severity: 'CRITICAL',
         isEmergency: true,
@@ -870,7 +931,8 @@ async function main() {
         // Below the auto-approve gate is exactly what "needs a human" means,
         // so the flag is derived from the score rather than set by hand.
         aiVerified: spec.confidence >= 0.7,
-        reviewNeeded: spec.confidence < 0.7,
+        // An emergency is dispatched, not reviewed — same rule as intake.
+        reviewNeeded: emergency ? false : spec.confidence < 0.7,
         fraudScore: Number((r() * 0.12).toFixed(3)),
         status,
         severity: emergency ? 'CRITICAL' : meta.severity,
