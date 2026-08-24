@@ -31,7 +31,18 @@ export default function UserManagement() {
   const users = useQuery({
     queryKey: ['admin', 'users', role, search, page],
     queryFn: async () =>
-      (await api('admin').get('/admin/users', { params: { role: role || undefined, search: search || undefined, page, pageSize: 25 } })).data,
+      (
+        await api('admin').get('/admin/users', {
+          params: {
+            role: role || undefined,
+            // Residents are managed through their own accounts, not here.
+            staffOnly: role ? undefined : true,
+            search: search || undefined,
+            page,
+            pageSize: 25,
+          },
+        })
+      ).data,
   });
   const wards = useQuery({
     queryKey: ['admin', 'wards'],
@@ -96,7 +107,7 @@ export default function UserManagement() {
           />
         </div>
         <div className="flex gap-1.5">
-          {['OFFICER', 'DRIVER', 'CITIZEN', 'ADMIN', ''].map((r) => (
+          {['OFFICER', 'DRIVER', 'ADMIN', ''].map((r) => (
             <button
               key={r || 'all'}
               type="button"
@@ -106,7 +117,7 @@ export default function UserManagement() {
               }}
               className={`chip transition ${role === r ? 'border-brand bg-brand/10 text-brand' : 'text-muted hover:bg-sunken'}`}
             >
-              {r || 'All'}
+              {r === 'OFFICER' ? 'Ward officers' : r === 'DRIVER' ? 'Drivers' : r === 'ADMIN' ? 'Super admins' : 'All staff'}
             </button>
           ))}
         </div>

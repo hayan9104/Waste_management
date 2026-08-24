@@ -267,14 +267,16 @@ async function main() {
    * several seeding steps below need "a truck from ward w", which a flat
    * array indexed by ward can no longer answer.
    */
-  const CREW_MIN = 4;
+  // Raised from 4: the city runs a bigger fleet, so every ward fields 5-6
+  // trucks rather than 4-5.
+  const CREW_MIN = 5;
   const vehicles = [];
   const crews = [];
   let driverSeq = 0;
 
   for (let i = 0; i < wards.length; i += 1) {
     const { ward, index } = wards[i];
-    const crewSize = CREW_MIN + (i % 2);
+    const crewSize = CREW_MIN + (i % 2); // 5 or 6, alternating by ward
     const crew = [];
 
     for (let k = 0; k < crewSize; k += 1) {
@@ -412,7 +414,33 @@ async function main() {
          * officer queue, emergency panel and route optimiser actually need.
          */
         const shouldResolve = d > 5 ? true : r() > 0.45;
-        const resolutionMinutes = Math.round(meta.slaMinutes * (0.35 + r() * 0.95));
+        /**
+         * Most work is cleared well inside its deadline, a minority runs late.
+         *
+         * The old spread was 0.35-1.30x the SLA, which put roughly a third of
+         * every category past its deadline and dragged the city's average
+         * resolution time out to about a day. That is not a data-presentation
+         * problem — it is what the officer and SLA screens are measuring, so
+         * the fix belongs in the work itself. 0.12-0.62x keeps the average
+         * low and compliance high while still leaving genuine breaches for the
+         * escalation and SLA views to show.
+         */
+        const overruns = r() > 0.93;
+        /**
+         * Capped in absolute time as well as relative.
+         *
+         * A pure multiple of the SLA lets the 48-hour categories (construction
+         * debris, other) dominate the city mean however small the multiplier
+         * is: at 0.44x they still take 21 hours each, which is what kept the
+         * headline average near a day while the median sat at four hours. A
+         * crew clearing debris does not take two days because the paperwork
+         * allows two days, so the realistic ceiling is wall-clock, not policy.
+         */
+        const RESOLUTION_CAP_MIN = 14 * 60;
+        const base = meta.slaMinutes * (overruns ? 1.05 + r() * 0.35 : 0.10 + r() * 0.35);
+        const resolutionMinutes = Math.round(
+          overruns ? base : Math.min(base, RESOLUTION_CAP_MIN * (0.35 + r() * 0.65))
+        );
         const resolvedAt = shouldResolve ? new Date(createdAt.getTime() + resolutionMinutes * 60_000) : null;
         const status = resolvedAt ? 'RESOLVED' : pick(r, ['PENDING', 'VERIFIED', 'VERIFIED', 'ASSIGNED', 'IN_PROGRESS']);
 
@@ -1198,14 +1226,29 @@ async function main() {
         },
         orderBy: { resolvedAt: 'desc' },
         take: DEMO_MIN - doneToday,
-        select: { id: true, resolutionPhotoUrl: true, photoUrl: true },
+        select: { id: true, resolutionPhotoUrl: true, photoUrl: true, slaMinutes: true },
       });
       for (let k = 0; k < older.length; k += 1) {
         const c = older[k];
         const at = new Date(dayStart.getTime() + (7 + k) * 3_600_000);
+        /**
+         * Move the whole record, not just the closing timestamp.
+         *
+         * Re-dating resolvedAt alone left complaints created five weeks ago
+         * and "resolved today", i.e. a resolution time of five weeks. Those
+         * few rows then dominated the seven-day average the officer and city
+         * dashboards lead with -- 11.2h against a 30-day mean of 6.3h -- and
+         * counted as SLA breaches for work that was never actually late.
+         * Reporting time moves with the resolution so the duration stays a
+         * believable few hours and dueAt still follows from createdAt.
+         */
+        const durationMin = intBetween(rng('topup-' + c.id), 45, 300);
+        const openedAt = new Date(at.getTime() - durationMin * 60_000);
         await prisma.complaint.update({
           where: { id: c.id },
           data: {
+            createdAt: openedAt,
+            dueAt: new Date(openedAt.getTime() + (c.slaMinutes ?? 1440) * 60_000),
             resolvedAt: at,
             updatedAt: at,
             resolvedById: driver.id,

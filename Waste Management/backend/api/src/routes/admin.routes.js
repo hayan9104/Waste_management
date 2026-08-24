@@ -196,6 +196,16 @@ router.get(
     const q = z
       .object({
         role: z.enum(['CITIZEN', 'DRIVER', 'OFFICER', 'ADMIN']).optional(),
+        /**
+         * Staff-only listing for the Users & roles console.
+         *
+         * That page manages the people who operate the service; residents are
+         * not staff and there are orders of magnitude more of them, so an
+         * unfiltered "All" buried the twenty accounts an admin can actually
+         * act on. Filtering client-side would not help — the pagination is
+         * server-side, so page 1 would still be all citizens.
+         */
+        staffOnly: z.coerce.boolean().optional(),
         wardId: z.string().optional(),
         search: z.string().optional(),
         page: z.coerce.number().min(1).optional(),
@@ -206,7 +216,7 @@ router.get(
     const page = q.page || 1;
     const pageSize = q.pageSize || 25;
     const where = {
-      ...(q.role ? { role: q.role } : {}),
+      ...(q.role ? { role: q.role } : q.staffOnly ? { role: { in: [ROLES.OFFICER, ROLES.DRIVER, ROLES.ADMIN] } } : {}),
       ...(q.wardId ? { wardId: q.wardId } : {}),
       ...(q.search
         ? {
