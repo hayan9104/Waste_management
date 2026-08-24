@@ -314,6 +314,16 @@ model Complaint {
 
   slaMinutes      Int       @default(1440)
   dueAt           DateTime?
+
+  /// Officer deferral. Recorded as fields rather than left to be parsed back
+  /// out of a timeline note, because the citizen is shown the reason and the
+  /// new date verbatim and neither should depend on string formatting.
+  deferredAt     DateTime?
+  deferredReason String?
+  /// How many times this report has been pushed back. A report deferred four
+  /// times is a different problem from one deferred once, and only the count
+  /// makes that visible.
+  deferredCount  Int       @default(0)
   escalationCount Int       @default(0)
   upvotes         Int       @default(0)
   duplicateOfId   String?

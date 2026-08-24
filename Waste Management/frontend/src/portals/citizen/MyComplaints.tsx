@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Camera } from 'lucide-react';
+import { Camera, Clock } from 'lucide-react';
 import { api, assetUrl } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading } from '../../components/ui';
-import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, timeAgo } from '../../lib/format';
+import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, timeAgo, formatDateTime } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
 
@@ -12,9 +12,20 @@ import { useT } from '../../lib/i18n';
 export default function MyComplaints() {
   const t = useT();
   const [filter, setFilter] = useState('all');
+  /**
+   * A page, not a lifetime.
+   *
+   * Sixty cards on a phone is a scroll nobody finishes, and the reports that
+   * need attention are always the newest few. Fifteen covers the visible
+   * work; "Show older reports" fetches the rest for the resident who wants
+   * their history rather than assuming nobody does.
+   */
+  const PAGE = 15;
+  const [limit, setLimit] = useState(PAGE);
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['citizen', 'complaints'],
-    queryFn: async () => (await api('citizen').get('/citizen/complaints', { params: { limit: 60 } })).data,
+    queryKey: ['citizen', 'complaints', limit],
+    queryFn: async () => (await api('citizen').get('/citizen/complaints', { params: { limit } })).data,
   });
 
   const items = (data ?? []).filter((c: any) => {
@@ -82,8 +93,24 @@ export default function MyComplaints() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <p className="truncate text-fluid-sm font-semibold">{t(`category.${c.category}`)}</p>
                       {c.isEmergency && <Badge tone="danger">SOS</Badge>}
+                      {c.deferred && (
+                        <Badge tone="warn">
+                          <Clock className="h-3 w-3" />
+                          {c.deferred.times > 1 ? `Rescheduled ×${c.deferred.times}` : 'Rescheduled'}
+                        </Badge>
+                      )}
                       {c.upvotes > 0 && <Badge tone="info">{t('citizen.complaints.confirmed', { count: c.upvotes })}</Badge>}
                     </div>
+
+                    {/* The officer's own words, not a paraphrase. A resident
+                        whose report slipped is owed the reason and the new
+                        date, not just a status that quietly stopped moving. */}
+                    {c.deferred && (
+                      <p className="mt-1 rounded-lg border border-warn/30 bg-warn/5 px-2 py-1 text-fluid-xs text-warn">
+                        {c.deferred.reason}
+                        {c.deferred.newDueAt && <> · now due {formatDateTime(c.deferred.newDueAt)}</>}
+                      </p>
+                    )}
                     <p className="mt-0.5 truncate text-fluid-xs text-muted">{c.address || '—'}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2">
                       <Badge tone={STATUS_TONE[c.status]}>{t(`status.${c.status}`)}</Badge>
@@ -96,6 +123,14 @@ export default function MyComplaints() {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Offered only when the last page came back full — otherwise this is
+          the end of the resident's history and the button would lie. */}
+      {(data ?? []).length >= limit && (
+        <button type="button" className="btn-ghost btn-sm w-full" onClick={() => setLimit((n) => n + PAGE)}>
+          Show older reports
+        </button>
       )}
     </div>
   );

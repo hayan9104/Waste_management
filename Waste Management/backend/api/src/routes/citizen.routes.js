@@ -289,6 +289,10 @@ router.get(
   '/complaints',
   asyncHandler(async (req, res) => {
     const status = req.query.status ? String(req.query.status) : undefined;
+    const pageSize = Math.min(50, Math.max(1, Number(req.query.limit) || 15));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+
+    const total = await prisma.complaint.count({ where: { citizenId: req.user.id } });
     const rows = await prisma.complaint.findMany({
       where: {
         citizenId: req.user.id,
@@ -296,8 +300,22 @@ router.get(
       },
       include: { ward: true, assignedVehicle: true },
       orderBy: { createdAt: 'desc' },
-      take: 100,
+      /**
+       * A page, not a lifetime. A resident with a year of history was handed a
+       * hundred cards on a phone, and the ones that need attention are always
+       * the newest few. The rest stay reachable through ?limit / ?offset.
+       */
+      take: pageSize,
+      skip: offset,
     });
+    /**
+     * Still an array, so existing callers keep working; the paging figures
+     * ride alongside on headers rather than changing the response shape out
+     * from under the citizen app.
+     */
+    res.set('X-Total-Count', String(total));
+    res.set('X-Page-Size', String(pageSize));
+    res.set('X-Page-Offset', String(offset));
     res.json(rows.map((c) => serializeComplaint(c)));
   })
 );

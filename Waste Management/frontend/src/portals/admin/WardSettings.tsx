@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, MapPinned, Plus, RotateCcw, Trash2, TriangleAlert, Upload, UserX } from 'lucide-react';
@@ -28,17 +28,84 @@ const emptyForm = { id: '', name: '', code: '', zone: '', population: 0, slaMinu
 /** Tangled outline. Red, not amber — amber is too near the normal orange to read as a warning. */
 const CROSSING_OUTLINE = '#ef4444';
 
-/** Numbered handle, so a row in the coordinate list is findable on the map. */
+/**
+ * Numbered handle, so a row in the coordinate list is findable on the map.
+ *
+ * The dot still reads at 22px, but the grab target is a 34px transparent box
+ * around it. A 22px target is under half the ~44px a fingertip needs, so on a
+ * tablet the drag kept missing the corner and panning the map instead.
+ */
 const vertexIcon = (n: number) =>
   L.divIcon({
-    className: '',
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
+    className: 'ward-vertex',
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
     html:
+      `<div style="width:34px;height:34px;display:grid;place-items:center">` +
       `<div style="width:22px;height:22px;border-radius:9999px;background:#fff;border:3px solid ${WARD_OUTLINE};` +
-      `box-shadow:0 1px 3px rgba(0,0,0,0.4);cursor:grab;display:grid;place-items:center;` +
-      `font:700 10px/1 Inter,system-ui,sans-serif;color:#c2410c">${n}</div>`,
+      `box-shadow:0 1px 3px rgba(0,0,0,0.4);display:grid;place-items:center;` +
+      `font:700 10px/1 Inter,system-ui,sans-serif;color:#c2410c">${n}</div></div>`,
   });
+
+/**
+ * One draggable corner.
+ *
+ * Split out and memoised because of how react-leaflet reconciles a Marker: it
+ * compares `icon` and `position` by identity and, when either differs, calls
+ * `setIcon` / `setLatLng` on the live layer. Written inline, `vertexIcon(i + 1)`
+ * and `[lat, lng]` are fresh objects on every render, so every render — including
+ * the ones the drag itself was causing — tore this handle's DOM node down and
+ * rebuilt it underneath the pointer that was dragging it. That, rather than the
+ * redraw, is what made a point stick and then jump.
+ *
+ * With both props memoised on their numbers, a re-render mid-gesture is a
+ * no-op and Leaflet keeps ownership of the drag from press to release.
+ */
+const VertexHandle = memo(function VertexHandle({
+  id,
+  index,
+  lat,
+  lng,
+  onDrag,
+  onDragEnd,
+}: {
+  id: string;
+  index: number;
+  lat: number;
+  lng: number;
+  onDrag: (id: string, lat: number, lng: number) => void;
+  onDragEnd: (id: string, lat: number, lng: number) => void;
+}) {
+  const position = useMemo<[number, number]>(() => [lat, lng], [lat, lng]);
+  const icon = useMemo(() => vertexIcon(index), [index]);
+  const handlers = useMemo(
+    () => ({
+      drag: (e: L.LeafletEvent) => {
+        const p = (e.target as L.Marker).getLatLng();
+        onDrag(id, p.lat, p.lng);
+      },
+      dragend: (e: L.LeafletEvent) => {
+        const p = (e.target as L.Marker).getLatLng();
+        onDragEnd(id, p.lat, p.lng);
+      },
+    }),
+    [id, onDrag, onDragEnd]
+  );
+
+  return (
+    <Marker
+      position={position}
+      icon={icon}
+      draggable
+      /* Deliberately no autoPan: the map carries maxBoundsViscosity={1} to keep
+         it over Gandhinagar, and a pan that the bounds then snap back is the
+         same stutter this change exists to remove. The editor frames the ward
+         on open, so a corner is never off-screen to begin with. */
+      keyboard={false}
+      eventHandlers={handlers}
+    />
+  );
+});
 
 let vertexSeq = 0;
 const makeVertex = (lat: number, lng: number): Vertex => ({
@@ -243,6 +310,54 @@ export default function WardSettings() {
   /* Stable identity: the map click subscription must not tear down and rebuild
      on every drag frame. */
   const handleMapAdd = useCallback((lat: number, lng: number) => addVertexNearestEdge.current(lat, lng), []);
+
+  /**
+   * The outline follows the corner without React in the loop.
+   *
+   * Committing to state on every drag frame re-rendered this whole component
+   * ~60 times a second — every coordinate input row, the area sum and the
+   * O(n^2) self-intersection test — to move one point. The ring is the only
+   * thing that has to change at that rate, so the drag writes straight to the
+   * two Leaflet layers and state is committed once, on release; everything
+   * derived from the ring settles on mouseup, which is when it matters.
+   */
+  const casingRef = useRef<L.Polygon | null>(null);
+  const fillRef = useRef<L.Polygon | null>(null);
+  const lineRef = useRef<L.Polyline | null>(null);
+  const numericRef = useRef(numeric);
+  numericRef.current = numeric;
+
+  const handleVertexDrag = useCallback((id: string, lat: number, lng: number) => {
+    const live = numericRef.current.map(
+      (p) => (p.id === id ? [lat, lng] : [p.lat, p.lng]) as [number, number]
+    );
+    if (live.length >= 3) {
+      casingRef.current?.setLatLngs(live);
+      fillRef.current?.setLatLngs(live);
+    } else if (live.length === 2) {
+      lineRef.current?.setLatLngs(live);
+    }
+  }, []);
+
+  const handleVertexDragEnd = useCallback((id: string, lat: number, lng: number) => {
+    setPoints((prev) =>
+      prev.map((v) => (v.id === id ? { ...v, lat: lat.toFixed(6), lng: lng.toFixed(6) } : v))
+    );
+  }, []);
+
+  /* Memoised so that a background refetch of the ward list cannot restyle or
+     re-seat either outline layer in the middle of a gesture. */
+  const casingOptions = useMemo(() => ({ ...LINE_CASING, weight: 6 }), []);
+  const fillOptions = useMemo(
+    () => ({
+      color: crossing ? CROSSING_OUTLINE : WARD_OUTLINE,
+      weight: 2.5,
+      fillColor: crossing ? CROSSING_OUTLINE : WARD_OUTLINE,
+      fillOpacity: 0.16,
+    }),
+    [crossing]
+  );
+  const lineOptions = useMemo(() => ({ color: WARD_OUTLINE, weight: 2.5, dashArray: '5 5' }), []);
 
   /** Splits the longest edge — the keyboard/no-map path to the same result. */
   const addVertexOnLongestEdge = () =>
@@ -482,19 +597,11 @@ export default function WardSettings() {
                     boundary crosses parks and rooftops. */}
                 {positions.length >= 3 ? (
                   <>
-                    <Polygon positions={positions} pathOptions={{ ...LINE_CASING, weight: 6 }} />
-                    <Polygon
-                      positions={positions}
-                      pathOptions={{
-                        color: crossing ? CROSSING_OUTLINE : WARD_OUTLINE,
-                        weight: 2.5,
-                        fillColor: crossing ? CROSSING_OUTLINE : WARD_OUTLINE,
-                        fillOpacity: 0.16,
-                      }}
-                    />
+                    <Polygon ref={casingRef} positions={positions} pathOptions={casingOptions} />
+                    <Polygon ref={fillRef} positions={positions} pathOptions={fillOptions} />
                   </>
                 ) : positions.length === 2 ? (
-                  <Polyline positions={positions} pathOptions={{ color: WARD_OUTLINE, weight: 2.5, dashArray: '5 5' }} />
+                  <Polyline ref={lineRef} positions={positions} pathOptions={lineOptions} />
                 ) : null}
 
                 {/* Numbered from the full list, not the filtered one, so a
@@ -505,23 +612,14 @@ export default function WardSettings() {
                   const lng = parseFloat(p.lng);
                   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
                   return (
-                    <Marker
+                    <VertexHandle
                       key={p.id}
-                      position={[lat, lng]}
-                      icon={vertexIcon(i + 1)}
-                      draggable
-                      eventHandlers={{
-                        // Live-update on every drag frame, not just on release —
-                        // the outline visibly reshapes as the point moves.
-                        drag: (e) => {
-                          const next = e.target.getLatLng();
-                          setPoints((prev) =>
-                            prev.map((v) =>
-                              v.id === p.id ? { ...v, lat: next.lat.toFixed(6), lng: next.lng.toFixed(6) } : v
-                            )
-                          );
-                        },
-                      }}
+                      id={p.id}
+                      index={i + 1}
+                      lat={lat}
+                      lng={lng}
+                                      onDrag={handleVertexDrag}
+                      onDragEnd={handleVertexDragEnd}
                     />
                   );
                 })}

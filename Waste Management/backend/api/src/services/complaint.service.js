@@ -451,6 +451,10 @@ export function serializeComplaint(c, extra = {}) {
     aiConfidence: c.aiConfidence,
     aiVerified: c.aiVerified,
     reviewNeeded: c.reviewNeeded,
+    /** Present only when an officer has actually deferred this report. */
+    deferred: c.deferredCount > 0
+      ? { at: c.deferredAt, reason: c.deferredReason, times: c.deferredCount, newDueAt: c.dueAt }
+      : null,
     fraudScore: c.fraudScore,
     fraudSignals: c.fraudSignals?.signals ?? [],
     status: c.status,
