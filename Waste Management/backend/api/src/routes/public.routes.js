@@ -18,15 +18,18 @@ router.post(
   '/chatbot',
   chatLimiter,
   asyncHandler(async (req, res) => {
-    const { message, lang } = z
+    const { message, lang, audience } = z
       .object({
         message: z.string().min(1).max(500),
         lang: z.enum(['en', 'hi', 'gu']).optional(),
+        // Which assistant is asking. A driver on the road needs instructions
+        // for the job in front of them, not an explanation of the citizen app.
+        audience: z.enum(['citizen', 'driver']).optional(),
       })
       .parse(req.body);
 
-    const { reply, source } = await getChatReply(message, lang || 'en');
-    res.json({ reply, source });
+    const { reply, source } = await getChatReply(message, lang || 'en', audience || 'citizen');
+    res.json({ reply, source, audience: audience || 'citizen' });
   })
 );
 

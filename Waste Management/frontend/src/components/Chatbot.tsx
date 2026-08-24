@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { Bot, MessageSquare, X, Send, Sparkles, User, HelpCircle, PhoneCall, Award, Trash2, Loader2, ClipboardPlus } from 'lucide-react';
+import { Bot, MessageSquare, X, Send, Sparkles, User, HelpCircle, PhoneCall, Award, Trash2, Loader2, ClipboardPlus, ClipboardList, Siren } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 import { BASE } from '../lib/api';
 import { ComplaintBookingModal } from './ComplaintBookingModal';
+import { DriverAssistantSheet } from './DriverAssistantSheet';
 
 interface Message {
   id: string;
@@ -12,6 +13,8 @@ interface Message {
   timestamp: string;
   /** Renders the "Add details & book" call to action under this reply. */
   action?: 'book';
+  /** Driver portal: which action sheet this reply offers to open. */
+  driverAction?: DriverAction;
 }
 
 /**
@@ -33,6 +36,66 @@ function wantsBooking(userText: string, botText: string) {
   const hay = `${userText} ${botText}`.toLowerCase();
   return BOOKING_HINTS.some((k) => hay.includes(k));
 }
+
+/**
+ * The driver's assistant is the same widget with a different job.
+ *
+ * A driver's questions are about the work in front of them, and every answer
+ * should end in an action they can take one tap away — so the quick prompts,
+ * the welcome line and the buttons under each reply are all different from the
+ * citizen's. Detected from the URL rather than from the stored token, because
+ * a phone that has logged into two portals holds both tokens at once.
+ */
+const DRIVER_KB: Record<'en' | 'hi' | 'gu', { welcome: string; quickPrompts: string[] }> = {
+  en: {
+    welcome:
+      'Namaste! I am your in-cab Sahayak. I can help with your shift, today\'s stops, closing a task with its proof photo, logging fuel, or raising an SOS.',
+    quickPrompts: ['Show my stops', 'How do I close a stop?', 'Log a fuel fill-up', 'My truck broke down'],
+  },
+  hi: {
+    welcome:
+      'नमस्ते! मैं आपका इन-कैब सहायक हूँ। शिफ्ट, आज के स्टॉप, फोटो सबूत के साथ टास्क पूरा करने, ईंधन दर्ज करने या SOS में मदद कर सकता हूँ।',
+    quickPrompts: ['मेरे स्टॉप दिखाओ', 'स्टॉप कैसे बंद करें?', 'ईंधन दर्ज करें', 'गाड़ी खराब हो गई'],
+  },
+  gu: {
+    welcome:
+      'નમસ્તે! હું તમારો ઇન-કેબ સહાયક છું. શિફ્ટ, આજના સ્ટોપ, ફોટો પુરાવા સાથે ટાસ્ક પૂરું કરવા, ઇંધણ નોંધવા કે SOS માં મદદ કરી શકું છું.',
+    quickPrompts: ['મારા સ્ટોપ બતાવો', 'સ્ટોપ કેવી રીતે બંધ કરું?', 'ડીઝલ નોંધો', 'ગાડી બગડી ગઈ'],
+  },
+};
+
+type DriverAction = 'stops' | 'complete' | 'fuel' | 'sos' | 'summary' | 'menu';
+
+/** Maps a turn to the driver sheet it should open, or null for plain chat. */
+function driverActionFor(userText: string, botText: string): DriverAction | null {
+  const hay = `${userText} ${botText}`.toLowerCase();
+  // Order matters: SOS outranks everything, because a breakdown message that
+  // also mentions "fuel" must not open the fuel form.
+  // "broke down" / "broken down" are what a driver actually types; matching only
+  // the single word "breakdown" sent a real breakdown to the generic menu.
+  // Punctures and tyre blowouts are the other common wording.
+  if (
+    /sos|accident|emergency help|unsafe|breakdown|brok(e|en) down|break down|puncture|tyre|tire burst|blowout|दुर्घटना|खराब|पंचर|आपात|અકસ્માત|બગડ|પંક્ચર/.test(
+      hay
+    )
+  )
+    return 'sos';
+  if (/shift|duty|clock in|clock out|शिफ्ट|ड्यूटी|શિફ્ટ|ડ્યુટી/.test(hay)) return 'menu';
+  if (/fuel|diesel|petrol|odometer|ईंधन|डीजल|ડીઝલ|ઇંધણ/.test(hay)) return 'fuel';
+  if (/proof|photo|complete|collected|close (a |the )?stop|फोटो|सबूत|ફોટો|પુરાવો/.test(hay)) return 'complete';
+  if (/stop|task|route|work|today|स्टॉप|काम|रूट|સ્ટોપ|કામ|રૂટ/.test(hay)) return 'stops';
+  if (/summary|how much|so far|सारांश|સારાંશ/.test(hay)) return 'summary';
+  return null;
+}
+
+const DRIVER_CTA: Record<DriverAction, Record<'en' | 'hi' | 'gu', string>> = {
+  stops: { en: "Show today's stops", hi: 'आज के स्टॉप देखें', gu: 'આજના સ્ટોપ જુઓ' },
+  complete: { en: 'Close a stop with photo', hi: 'फोटो के साथ स्टॉप बंद करें', gu: 'ફોટો સાથે સ્ટોપ બંધ કરો' },
+  fuel: { en: 'Log a fuel fill-up', hi: 'ईंधन दर्ज करें', gu: 'ડીઝલ નોંધો' },
+  sos: { en: 'Open SOS', hi: 'SOS खोलें', gu: 'SOS ખોલો' },
+  summary: { en: 'See your day so far', hi: 'आज का सारांश', gu: 'આજનો સારાંશ' },
+  menu: { en: 'Open driver actions', hi: 'ड्राइवर विकल्प खोलें', gu: 'ડ્રાઇવર વિકલ્પો ખોલો' },
+};
 
 const BOOK_CTA: Record<'en' | 'hi' | 'gu', string> = {
   en: 'Add details & book complaint',
@@ -87,13 +150,27 @@ export function Chatbot() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [booking, setBooking] = useState(false);
+  const [driverSheet, setDriverSheet] = useState<DriverAction | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Re-read on every render rather than once: the widget is mounted above the
+  // router and survives navigation between portals.
+  const isDriver = typeof window !== 'undefined' && window.location.pathname.startsWith('/driver');
+  const kb = isDriver ? DRIVER_KB[currentLang] : localized;
 
   useEffect(() => {
     if (isOpen) {
       scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, isOpen]);
+
+  // Keep the opening line honest about which assistant this is — the citizen
+  // welcome on a driver's handset promises the wrong things.
+  useEffect(() => {
+    setMessages((prev) =>
+      prev.length === 1 && prev[0].id === 'welcome' ? [{ ...prev[0], text: kb.welcome }] : prev
+    );
+  }, [kb.welcome]);
 
   /*
     Below lg the panel fills the viewport, so the page behind it must not
@@ -135,7 +212,11 @@ export function Chatbot() {
     setIsTyping(true);
 
     try {
-      const res = await axios.post(`${BASE}/api/public/chatbot`, { message: text, lang: currentLang });
+      const res = await axios.post(`${BASE}/api/public/chatbot`, {
+        message: text,
+        lang: currentLang,
+        audience: isDriver ? 'driver' : 'citizen',
+      });
       const botReply = res.data?.reply || 'I am your Safaai Sahayak. Please tap the Report tab to file a waste complaint.';
 
       const botMsg: Message = {
@@ -143,26 +224,35 @@ export function Chatbot() {
         sender: 'bot',
         text: botReply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        action: wantsBooking(text, botReply) ? 'book' : undefined,
+        action: !isDriver && wantsBooking(text, botReply) ? 'book' : undefined,
+        driverAction: isDriver ? driverActionFor(text, botReply) ?? undefined : undefined,
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch {
-      const fallbackReply =
-        currentLang === 'gu'
-          ? 'હું સફાઈ સહાયક છું. આપ નીચે Report ટેબથી કચરાની ફરિયાદ કરી શકો છો.'
+      /**
+       * The network already failed the driver once; sending them off to hunt
+       * for a tab would fail them twice. Both fallbacks now point at the
+       * button directly below rather than at navigation.
+       */
+      const fallbackReply = isDriver
+        ? currentLang === 'gu'
+          ? 'નેટવર્ક મળતું નથી. નીચેના બટનથી તમારા સ્ટોપ, ડીઝલ કે SOS સીધા ખોલી શકો છો.'
           : currentLang === 'hi'
-            ? 'मैं स्वच्छता सहायक हूँ। आप Report टैब से कचरे की शिकायत दर्ज कर सकते हैं।'
-            : 'I am here to help. Tap the Report tab to file a waste complaint with photo proof.';
+            ? 'नेटवर्क नहीं मिल रहा। नीचे दिए बटन से अपने स्टॉप, ईंधन या SOS सीधे खोल सकते हैं।'
+            : 'I could not reach the network. You can still open your stops, fuel log or SOS from the button below.'
+        : currentLang === 'gu'
+          ? 'હું સફાઈ સહાયક છું. નીચેના બટનથી સીધી ફરિયાદ નોંધાવી શકો છો.'
+          : currentLang === 'hi'
+            ? 'मैं स्वच्छता सहायक हूँ। नीचे दिए बटन से सीधे शिकायत दर्ज कर सकते हैं।'
+            : 'I am here to help. You can file a waste complaint right here using the button below.';
 
       const botMsg: Message = {
         id: String(Date.now() + 1),
         sender: 'bot',
         text: fallbackReply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        // The offline fallback always points at reporting, so it always offers
-        // the button — this is the turn where the network already failed the
-        // user once and sending them off to hunt for a tab would fail twice.
-        action: 'book',
+        action: isDriver ? undefined : 'book',
+        driverAction: isDriver ? driverActionFor(text, '') ?? 'menu' : undefined,
       };
       setMessages((prev) => [...prev, botMsg]);
     } finally {
@@ -211,9 +301,24 @@ export function Chatbot() {
               </span>
               <div className="min-w-0">
                 <h3 className="truncate text-fluid-sm font-bold leading-tight">AI Safaai Sahayak</h3>
-                <p className="truncate text-[11px] opacity-85">Municipal 24/7 Sanitation Assistant</p>
+                <p className="truncate text-[11px] opacity-85">
+                  {isDriver ? 'In-cab driver assistant' : 'Municipal 24/7 Sanitation Assistant'}
+                </p>
               </div>
             </div>
+            {/* Drivers get a permanent way into their actions, so nothing
+                depends on the assistant having guessed the right intent. */}
+            {isDriver && (
+              <button
+                type="button"
+                onClick={() => setDriverSheet('menu')}
+                aria-label="Driver actions"
+                title="Driver actions"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/25 bg-white/15 text-brand-ink transition hover:bg-white/30 active:scale-95"
+              >
+                <ClipboardList className="h-5 w-5" />
+              </button>
+            )}
             {/* A real 40px target on its own ring — easy to miss as a bare
                 icon against the green bar once the panel fills the screen. */}
             <button
@@ -246,6 +351,21 @@ export function Chatbot() {
                   }`}
                 >
                   <p>{m.text}</p>
+
+                  {m.driverAction && (
+                    <button
+                      type="button"
+                      onClick={() => setDriverSheet(m.driverAction!)}
+                      className={`mt-2 flex w-full min-h-touch items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold transition active:scale-[0.98] ${
+                        m.driverAction === 'sos'
+                          ? 'bg-danger text-white hover:brightness-110'
+                          : 'bg-brand text-brand-ink hover:brightness-110'
+                      }`}
+                    >
+                      {m.driverAction === 'sos' ? <Siren className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
+                      {DRIVER_CTA[m.driverAction][currentLang]}
+                    </button>
+                  )}
 
                   {m.action === 'book' && (
                     <button
@@ -286,7 +406,7 @@ export function Chatbot() {
           <div className="shrink-0 border-t border-line/60 bg-sunken/40 px-3 py-2">
             <p className="mb-1.5 text-[10px] font-semibold text-muted uppercase tracking-wider">Quick Suggestions</p>
             <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              {localized.quickPrompts.map((prompt) => (
+              {kb.quickPrompts.map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
@@ -328,6 +448,25 @@ export function Chatbot() {
 
       {/* Booking sheet. Rendered as a sibling of the chat panel, not inside it,
           so on desktop it is not clipped by the 380px floating window. */}
+      <DriverAssistantSheet
+        open={driverSheet !== null}
+        initialMode={driverSheet ?? 'menu'}
+        onClose={() => setDriverSheet(null)}
+        onEvent={(text) =>
+          // Echo what actually happened back into the thread, so the chat is
+          // the driver's own log of the shift.
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: String(Date.now() + 3),
+              sender: 'bot',
+              text,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ])
+        }
+      />
+
       <ComplaintBookingModal
         open={booking}
         onClose={() => setBooking(false)}
