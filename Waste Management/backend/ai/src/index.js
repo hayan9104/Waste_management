@@ -13,6 +13,22 @@ app.use(express.json({ limit: '14mb' }));
 
 const stats = { classify: 0, fraud: 0, hotspot: 0, embed: 0, totalMs: 0, startedAt: Date.now() };
 
+/**
+ * Root health, matching backend/vision's `GET /`.
+ *
+ * The API's aiHealth() probes `/` first and only falls back to `/health`,
+ * so without this the Node stand-in reported as degraded on its first probe
+ * even while it was answering classifications perfectly well.
+ */
+app.get('/', (_req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'safaai-sarathi-ai',
+    message: 'Safaai Sarathi AI stand-in is running.',
+    models: MODEL,
+  });
+});
+
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
@@ -28,16 +44,29 @@ app.get('/health', (_req, res) => {
 
 app.get('/categories', (_req, res) => res.json(CATEGORIES));
 
-/** POST /vision/classify — multipart `image`, or JSON { image: dataURL }. */
-app.post('/vision/classify', upload.single('image'), (req, res) => {
-  const buffer = bufferFrom(req);
-  if (!buffer) return res.status(400).json({ error: 'An image file or base64 data URL is required' });
+/**
+ * POST /vision/classify and POST /api/classify-waste — multipart image, or
+ * JSON { image: dataURL }.
+ *
+ * Two paths and two accepted field names on purpose: the API client was
+ * written against backend/vision's route shape (`/api/classify-waste`, field
+ * `file`) while this service only ever exposed `/vision/classify` with field
+ * `image`. Whichever of the two services is running, the caller should not
+ * have to care -- so this one answers to both.
+ */
+app.post(
+  ['/vision/classify', '/api/classify-waste'],
+  upload.fields([{ name: 'image', maxCount: 1 }, { name: 'file', maxCount: 1 }]),
+  (req, res) => {
+    const buffer = bufferFrom(req);
+    if (!buffer) return res.status(400).json({ error: 'An image file or base64 data URL is required' });
 
-  const result = classify(buffer, req.body?.hint);
-  stats.classify += 1;
-  stats.totalMs += result.latencyMs;
-  return res.json(result);
-});
+    const result = classify(buffer, req.body?.hint);
+    stats.classify += 1;
+    stats.totalMs += result.latencyMs;
+    return res.json(result);
+  }
+);
 
 /** Embedding for duplicate detection. */
 app.post('/vision/embed', upload.single('image'), (req, res) => {
@@ -77,8 +106,15 @@ app.post('/hotspot/predict', (req, res) => {
 });
 
 function bufferFrom(req) {
+  // upload.single() fills req.file; upload.fields() fills req.files keyed by
+  // field name. The classify route accepts either `image` or `file`, so both
+  // shapes have to be read here or a multipart upload silently arrives empty
+  // and the caller gets a 400 for a photo it definitely sent.
   if (req.file?.buffer) return req.file.buffer;
-  const dataUrl = req.body?.image;
+  const fielded = req.files?.image?.[0]?.buffer ?? req.files?.file?.[0]?.buffer;
+  if (fielded) return fielded;
+
+  const dataUrl = req.body?.image ?? req.body?.file;
   if (typeof dataUrl === 'string') {
     const payload = dataUrl.startsWith('data:') ? dataUrl.split(',')[1] : dataUrl;
     try {

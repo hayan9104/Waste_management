@@ -5,23 +5,88 @@ import { CATEGORY_MAP, WASTE_CATEGORIES } from '../config/constants.js';
 
 const client = axios.create({ baseURL: env.aiServiceUrl, timeout: 15000 });
 
+/**
+ * The two AI backends this project ships speak different dialects, and only
+ * one of them can be running on AI_SERVICE_URL at a time:
+ *
+ *   backend/vision (Python/YOLO)  POST /api/classify-waste   field: file
+ *       -> { status, predicted_category, confidence: 0-100, needs_manual_review }
+ *   backend/ai     (Node stand-in) POST /vision/classify     field: image
+ *       -> { category, confidence: 0-1, modelVersion, alternatives, detections }
+ *
+ * Asking for one shape and getting the other is not a soft failure -- it is
+ * three separate silent wrong answers, so both are tried and both are
+ * normalised to one contract before anything downstream sees them.
+ */
+const CLASSIFY_ENDPOINTS = [
+  { path: '/api/classify-waste', field: 'file' },
+  { path: '/vision/classify', field: 'image' },
+];
+
+/**
+ * Folds either backend's response into the canonical shape
+ * `{ modelVersion, category, confidence, alternatives, detections }`.
+ *
+ * Two traps live here. The category key differs (`category` vs
+ * `predicted_category`), so reading only the first silently classified every
+ * photo as OTHER. And the confidence *scale* differs: the Python service
+ * returns a percentage (92.5), while every consumer compares against
+ * AI_CONFIDENCE_AUTO_APPROVE on a 0-1 scale -- so an unnormalised 92.5 clears
+ * a 0.7 gate unconditionally, auto-approving literally every report, and
+ * renders as "9250%" in the UI. Anything above 1 is therefore a percentage.
+ */
+export function normalizeClassification(data, { latencyMs }) {
+  const category = data?.category ?? data?.predicted_category ?? data?.label ?? null;
+
+  let confidence = Number(data?.confidence ?? 0);
+  if (!Number.isFinite(confidence)) confidence = 0;
+  if (confidence > 1) confidence /= 100;
+  confidence = Math.min(1, Math.max(0, confidence));
+
+  return {
+    modelVersion: data?.modelVersion ?? data?.model_version ?? 'vision-service',
+    engine: data?.engine ?? null,
+    category: category ? String(category).trim().toUpperCase() : null,
+    label: data?.label ?? null,
+    confidence: Number(confidence.toFixed(3)),
+    alternatives: Array.isArray(data?.alternatives) ? data.alternatives : [],
+    detections: Array.isArray(data?.detections) ? data.detections : [],
+    needsManualReview: data?.needs_manual_review ?? data?.needsManualReview ?? null,
+    remark: data?.remark ?? null,
+    latencyMs: data?.latencyMs ?? latencyMs,
+  };
+}
+
 export async function classifyWaste({ buffer, mimetype = 'image/jpeg', filename = 'photo.jpg', hint }) {
   const started = Date.now();
-  try {
-    const form = new FormData();
-    form.append('file', new Blob([buffer], { type: mimetype }), filename);
-    if (hint) form.append('hint', hint);
+  const failures = [];
 
-    const { data } = await client.post('/api/classify-waste', form);
-    return { ...data, latencyMs: data.latencyMs ?? Date.now() - started, degraded: false };
-  } catch (err) {
-    return {
-      ...localClassify(buffer, hint),
-      latencyMs: Date.now() - started,
-      degraded: true,
-      degradedReason: `Vision service unreachable at ${env.aiServiceUrl} (${err.code || err.message}) — deterministic fallback engaged`,
-    };
+  for (const { path, field } of CLASSIFY_ENDPOINTS) {
+    try {
+      const form = new FormData();
+      form.append(field, new Blob([buffer], { type: mimetype }), filename);
+      if (hint) form.append('hint', hint);
+
+      const { data } = await client.post(path, form);
+      const result = normalizeClassification(data, { latencyMs: Date.now() - started });
+      // A 200 with no usable category is not a successful classification --
+      // treat it as this endpoint being the wrong dialect and try the other.
+      if (!result.category) {
+        failures.push(`${path}: 200 but no category in response`);
+        continue;
+      }
+      return { ...result, degraded: false, endpoint: path };
+    } catch (err) {
+      failures.push(`${path}: ${err.response?.status || err.code || err.message}`);
+    }
   }
+
+  return {
+    ...localClassify(buffer, hint),
+    latencyMs: Date.now() - started,
+    degraded: true,
+    degradedReason: `Vision service unusable at ${env.aiServiceUrl} (${failures.join('; ')}) — deterministic fallback engaged`,
+  };
 }
 
 /** Fraud/troll scoring. Features are computed from data we actually hold. */
