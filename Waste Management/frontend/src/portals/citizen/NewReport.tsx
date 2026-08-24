@@ -103,37 +103,47 @@ export default function NewReport() {
 
   async function locate() {
     if (!navigator.geolocation) {
-      toast.warn('Browser GPS not supported. Fetching approximate location.');
+      toast.warn('Browser GPS not supported. Fetching approximate network location.');
       const ipPos = await fetchIpLocation();
-      setPosition(ipPos ? { lat: ipPos.lat, lng: ipPos.lng } : { lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
+      if (ipPos) setPosition({ lat: ipPos.lat, lng: ipPos.lng });
       return;
     }
     setLocating(true);
+
+    const onGpsSuccess = (pos: GeolocationPosition) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
+      setPosition({ lat, lng });
+      setGeoDenied(false);
+      setLocating(false);
+      toast.success(`📍 Device GPS Locked (±${Math.round(acc || 5)}m): ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    };
+
+    // Tier 1: True High-Accuracy Hardware GPS
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setPosition({ lat, lng });
-        setGeoDenied(false);
-        setLocating(false);
-        toast.success(`📍 Live GPS Locked: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      onGpsSuccess,
+      (err) => {
+        // Tier 2: Standard fast device location (Wi-Fi / cellular trilateration)
+        navigator.geolocation.getCurrentPosition(
+          onGpsSuccess,
+          async (err2) => {
+            setLocating(false);
+            if (err.code === 1 || err2.code === 1) {
+              setGeoDenied(true);
+              toast.warn('⚠️ Location Permission Blocked! Please click the lock icon in your URL bar and allow Location Access.');
+            } else {
+              toast.warn('Device GPS fix timed out — trying network location.');
+            }
+            const ipPos = await fetchIpLocation();
+            if (ipPos) {
+              setPosition({ lat: ipPos.lat, lng: ipPos.lng });
+            }
+          },
+          { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 }
+        );
       },
-      async (err) => {
-        setLocating(false);
-        if (err.code === 1) {
-          setGeoDenied(true);
-          toast.warn('Browser Location Blocked! Please allow location permission in URL bar.');
-        } else {
-          toast.warn('Location fix delayed — using network approximate location.');
-        }
-        const ipPos = await fetchIpLocation();
-        if (ipPos) {
-          setPosition({ lat: ipPos.lat, lng: ipPos.lng });
-        } else if (!position) {
-          setPosition({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   }
 
