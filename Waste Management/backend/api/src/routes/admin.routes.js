@@ -637,6 +637,94 @@ router.get(
   asyncHandler(async (req, res) => res.json(await analytics.hotspotForecast(null, req.query.date)))
 );
 
+/**
+ * Every truck's route for today in one response, for the city-wide overlay.
+ *
+ * /fleet/:id/route answers "show me this one truck", which is the wrong shape
+ * for a command centre: with 4-5 trucks per ward the interesting question is
+ * where all of them are working at once, and clicking each in turn to build
+ * that picture in your head is not an answer.
+ *
+ * Polylines are decimated to at most MAX_OVERVIEW_POINTS before being sent.
+ * Road-snapped OSRM geometry runs to several hundred points per route, and
+ * thirty of those is megabytes of JSON to draw lines a few pixels wide at
+ * city zoom. The selected route is still fetched at full fidelity through
+ * /fleet/:id/route, so detail is never lost where it is actually visible.
+ */
+const MAX_OVERVIEW_POINTS = 120;
+
+function decimate(points, max = MAX_OVERVIEW_POINTS) {
+  if (!Array.isArray(points) || points.length <= max) return points ?? [];
+  const step = Math.ceil(points.length / max);
+  const out = [];
+  for (let i = 0; i < points.length; i += step) out.push(points[i]);
+  // Always keep the true endpoint, or the drawn line stops short of the depot.
+  const last = points[points.length - 1];
+  if (out[out.length - 1] !== last) out.push(last);
+  return out;
+}
+
+router.get(
+  ['/live-routes', '/fleet/routes'],
+  asyncHandler(async (req, res) => {
+    const routes = await prisma.route.findMany({
+      where: {
+        date: today(),
+        status: { in: ['PUBLISHED', 'IN_PROGRESS'] },
+        ...(req.query.wardId ? { wardId: String(req.query.wardId) } : {}),
+      },
+      include: {
+        vehicle: { select: { id: true, registrationNumber: true, status: true, lastLat: true, lastLng: true, lastPingAt: true } },
+        driver: { select: { id: true, name: true, phone: true } },
+        ward: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: [{ wardId: 'asc' }, { label: 'asc' }],
+    });
+
+    const now = Date.now();
+    res.json(
+      routes.map((r) => {
+        const stops = Array.isArray(r.orderedStops) ? r.orderedStops : [];
+        const done = stops.filter((st) => st.status === 'DONE').length;
+        const pingAgeSec = r.vehicle?.lastPingAt
+          ? Math.round((now - new Date(r.vehicle.lastPingAt).getTime()) / 1000)
+          : null;
+
+        return {
+          id: r.id,
+          label: r.label,
+          status: r.status,
+          ward: r.ward,
+          driver: r.driver,
+          vehicle: r.vehicle && {
+            id: r.vehicle.id,
+            registrationNumber: r.vehicle.registrationNumber,
+            status: r.vehicle.status,
+            latitude: r.vehicle.lastLat,
+            longitude: r.vehicle.lastLng,
+            isOffline: pingAgeSec == null || pingAgeSec > 120,
+          },
+          distanceKm: r.distanceKm,
+          durationMin: r.durationMin,
+          stopsTotal: stops.length,
+          stopsDone: done,
+          progressPct: stops.length ? Math.round((done / stops.length) * 100) : 0,
+          hasEmergency: stops.some((st) => st.isEmergency && st.status !== 'DONE'),
+          polyline: decimate(r.polylineGeometry),
+          /** Stop coordinates only — the overlay draws dots, not stop detail. */
+          stops: stops.map((st) => ({
+            seq: st.seq,
+            latitude: st.latitude,
+            longitude: st.longitude,
+            status: st.status ?? 'PENDING',
+            isEmergency: Boolean(st.isEmergency),
+          })),
+        };
+      })
+    );
+  })
+);
+
 router.get('/categories', (_req, res) => res.json(WASTE_CATEGORIES));
 
 /**

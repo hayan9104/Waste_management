@@ -13,6 +13,7 @@ export default function MasterFleet() {
   const [selectedWard, setSelectedWard] = useState<string>('');
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [livePositions, setLivePositions] = useState<Record<string, any>>({});
+  const [showAllRoutes, setShowAllRoutes] = useState(true);
   const [form, setForm] = useState({
     registrationNumber: '',
     wardId: '',
@@ -43,6 +44,19 @@ export default function MasterFleet() {
     queryFn: async () => (await api('admin').get(`/admin/fleet/${selectedVehicleId}/route`)).data,
     enabled: Boolean(selectedVehicleId),
     refetchInterval: 15_000,
+  });
+
+  /**
+   * Every published route for today, so the map answers "where is the whole
+   * city working right now" rather than only "where is this one truck".
+   * Geometry arrives decimated; the selected route is still drawn from the
+   * full-fidelity /fleet/:id/route response above.
+   */
+  const liveRoutes = useQuery({
+    queryKey: ['admin', 'live-routes', selectedWard],
+    queryFn: async () =>
+      (await api('admin').get('/admin/live-routes', { params: { wardId: selectedWard || undefined } })).data,
+    refetchInterval: 30_000,
   });
 
   // Subscribe to all ward rooms and city room for live truck telemetry pings
@@ -141,14 +155,45 @@ export default function MasterFleet() {
             </span>
             <h2 className="text-fluid-sm font-bold">Live Fleet GPS Map</h2>
           </div>
-          <span className="text-fluid-xs text-muted">
-            {vehicles.filter((v: any) => !v.isOffline && v.latitude != null).length} active on-road
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowAllRoutes((v) => !v)}
+              aria-pressed={showAllRoutes}
+              className={`chip transition ${showAllRoutes ? 'border-brand bg-brand/10 text-brand' : 'text-muted hover:bg-sunken'}`}
+            >
+              <RouteIcon className="h-3.5 w-3.5" />
+              All routes ({(liveRoutes.data ?? []).length})
+            </button>
+            <span className="text-fluid-xs text-muted">
+              {vehicles.filter((v: any) => !v.isOffline && v.latitude != null).length} active on-road
+            </span>
+          </div>
         </div>
 
         <div className="h-[44dvh] min-h-[320px] w-full xl:h-[420px]">
           <BaseMap center={CITY_CENTER} zoom={12} satellite>
             {mapPoints.length > 0 && <FitBounds points={mapPoints} />}
+
+            {/* Every other truck's route, drawn thin and translucent so the
+                city-wide picture reads without competing with the selection.
+                A route still carrying an unfinished emergency stop is drawn in
+                the danger colour — that is the one a command centre needs to
+                pick out of thirty lines at a glance. */}
+            {showAllRoutes &&
+              (liveRoutes.data ?? [])
+                .filter((r: any) => r.vehicle?.id !== selectedVehicleId && r.polyline?.length > 1)
+                .map((r: any) => (
+                  <Polyline
+                    key={r.id}
+                    positions={r.polyline.map(([lng, lat]: [number, number]) => [lat, lng])}
+                    pathOptions={{
+                      color: r.hasEmergency ? '#ef4444' : '#0ea5e9',
+                      weight: r.hasEmergency ? 3 : 2,
+                      opacity: r.hasEmergency ? 0.85 : 0.45,
+                    }}
+                  />
+                ))}
 
             {/* The selected vehicle's actual planned route, drawn on the road. */}
             {route.data?.route?.polyline?.length > 1 && (
