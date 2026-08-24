@@ -26,6 +26,11 @@ enum Role {
   ADMIN
 }
 
+enum AssignmentType {
+  MANUAL
+  AUTO
+}
+
 enum ComplaintStatus {
   PENDING
   VERIFIED
@@ -247,10 +252,11 @@ model Ward {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  residents   User[]
-  officers    WardOfficer[]
-  complaints  Complaint[]
-  vehicles    Vehicle[]
+  residents          User[]
+  officers           WardOfficer[]
+  complaints         Complaint[]
+  detectedComplaints Complaint[]              @relation("ComplaintDetectedWard")
+  vehicles           Vehicle[]
   routes      Route[]
   predictions HotspotPrediction[]
   contacts    EmergencyContact[]
@@ -291,6 +297,9 @@ model Complaint {
   reviewNeeded Boolean        @default(false) // confidence < threshold -> human review
   fraudScore   Float          @default(0)
   fraudSignals Json?
+
+  assignmentType AssignmentType  @default(MANUAL)
+  detectedWardId String?
 
   status      ComplaintStatus @default(PENDING)
   severity    Severity        @default(MEDIUM)
@@ -333,6 +342,7 @@ model Complaint {
 
   citizen          User                 @relation("ComplaintCitizen", fields: [citizenId], references: [id], onDelete: Cascade)
   ward             Ward?                @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  detectedWard     Ward?                @relation("ComplaintDetectedWard", fields: [detectedWardId], references: [id], onDelete: SetNull)
   assignedVehicle  Vehicle?             @relation(fields: [assignedVehicleId], references: [id], onDelete: SetNull)
   assignedBy       User?                @relation("ComplaintAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
   resolvedBy       User?                @relation("ComplaintResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
@@ -345,6 +355,8 @@ model Complaint {
   creditEntries    GreenCredit[]
 
   @@index([status])
+  @@index([assignmentType])
+  @@index([detectedWardId])
   @@index([wardId, status])
   @@index([isEmergency, status])
   @@index([createdAt])
