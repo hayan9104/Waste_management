@@ -120,3 +120,58 @@ export function confidenceLabel(confidence: number, threshold = 0.7) {
   if (confidence >= 0.45) return { label: 'Needs review', tone: 'warn' as const };
   return { label: 'Low confidence', tone: 'danger' as const };
 }
+
+/**
+ * Analyzes photo luminance and contrast to prevent black screens,
+ * covered lenses, solid colors, or blank test images from being submitted.
+ */
+export async function validateWastePhoto(file: File): Promise<{ valid: boolean; reason?: string }> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { valid: true };
+    ctx.drawImage(bitmap, 0, 0, 64, 64);
+    const imgData = ctx.getImageData(0, 0, 64, 64).data;
+
+    let totalLuminance = 0;
+    let minLum = 255;
+    let maxLum = 0;
+    const numPixels = 64 * 64;
+
+    for (let i = 0; i < imgData.length; i += 4) {
+      const r = imgData[i];
+      const g = imgData[i + 1];
+      const b = imgData[i + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      totalLuminance += lum;
+      if (lum < minLum) minLum = lum;
+      if (lum > maxLum) maxLum = lum;
+    }
+
+    const avgLuminance = totalLuminance / numPixels;
+    const variance = maxLum - minLum;
+
+    // Pitch black or covered lens
+    if (avgLuminance < 16) {
+      return {
+        valid: false,
+        reason: 'The captured image appears completely dark or covered. Please point your camera directly at the actual garbage site with sufficient lighting.',
+      };
+    }
+
+    // Solid blank color or completely washed out
+    if (variance < 8 && (avgLuminance < 30 || avgLuminance > 230)) {
+      return {
+        valid: false,
+        reason: 'The photo appears blank or obscured. Please capture a genuine and clear photo of the civic waste issue.',
+      };
+    }
+
+    return { valid: true };
+  } catch {
+    return { valid: true };
+  }
+}
