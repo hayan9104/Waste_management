@@ -124,15 +124,15 @@ export default function Fleet() {
                 {w.drivers.map((d: any) => (
                   <li key={d.id} className="flex items-center gap-2 text-fluid-xs">
                     <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${d.isOffline ? 'bg-faint' : 'bg-ok'}`}
-                      title={d.isOffline ? 'Handset not reporting' : 'Live'}
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${d.onBreak ? 'bg-warn' : d.isOffline ? 'bg-faint' : 'bg-ok'}`}
+                      title={d.onBreak ? 'On a rest break' : d.isOffline ? 'Handset not reporting' : 'Live'}
                     />
                     <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
                     <span className="shrink-0 font-mono text-faint">
                       {d.vehicle?.registrationNumber ?? 'no truck'}
                     </span>
-                    <span className="w-12 shrink-0 text-right tabular-nums text-muted">
-                      {d.route ? `${d.route.stopsDone}/${d.route.stopsTotal}` : '—'}
+                    <span className="w-16 shrink-0 text-right tabular-nums text-muted">
+                      {d.onBreak ? 'on break' : d.route ? `${d.route.stopsDone}/${d.route.stopsTotal}` : '—'}
                     </span>
                   </li>
                 ))}

@@ -86,6 +86,8 @@ enum NotificationType {
 
 enum ShiftStatus {
   ACTIVE
+  /// Clocked in but stood down — a rest or meal break, truck stationary.
+  ON_BREAK
   ENDED
 }
 
@@ -610,20 +612,48 @@ model DriverShift {
   distanceKm Float?
   stopsDone  Int    @default(0)
 
+  /// Total minutes stood down across every break, filled on clock-out.
+  breakMinutes Int @default(0)
+
   notes  String?
   status ShiftStatus @default(ACTIVE)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  driver  User     @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
-  ward    Ward?    @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  driver  User         @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicle Vehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  ward    Ward?        @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  breaks  ShiftBreak[]
 
   @@index([driverId, date])
   @@index([date, status])
   @@index([status, startedAt])
   @@map("driver_shifts")
+}
+
+/// One rest period inside a shift.
+///
+/// Stored as rows rather than a running counter on the shift so the officer
+/// can see when and how long, not merely a total — "40 minutes of break" reads
+/// very differently from "four ten-minute stops" when a route is running late.
+/// An open break is one with endedAt still null; there is at most one per
+/// shift, which the service enforces.
+model ShiftBreak {
+  id        String    @id @default(cuid())
+  shiftId   String
+  reason    String?
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  /// Where the driver stood down, for the officer's map.
+  latitude  Float?
+  longitude Float?
+
+  shift DriverShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([shiftId, startedAt])
+  @@map("shift_breaks")
 }
 
 /// "Tomorrow this zone likely overflows" (plan §2.3, §7).

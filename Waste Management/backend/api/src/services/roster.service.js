@@ -79,7 +79,10 @@ export async function wardRoster(wardIds) {
     prisma.driverShift.findMany({
       where: { driverId: { in: driverIds }, date: today() },
       orderBy: { startedAt: 'desc' },
-      select: { id: true, driverId: true, status: true, startedAt: true, endedAt: true, distanceKm: true, stopsDone: true },
+      select: {
+        id: true, driverId: true, status: true, startedAt: true, endedAt: true,
+        distanceKm: true, stopsDone: true, breakMinutes: true,
+      },
     }),
   ]);
 
@@ -141,7 +144,11 @@ export async function wardRoster(wardIds) {
           },
           sos: sosByDriver.get(d.id) ?? null,
           shift: shiftByDriver.get(d.id) ?? null,
-          onDuty: shiftByDriver.get(d.id)?.status === 'ACTIVE',
+          // A driver on a rest break is still on duty — they have not gone
+          // home — but they are not working, and a supervisor needs both facts
+          // rather than one standing in for the other.
+          onDuty: ['ACTIVE', 'ON_BREAK'].includes(shiftByDriver.get(d.id)?.status),
+          onBreak: shiftByDriver.get(d.id)?.status === 'ON_BREAK',
         };
       });
 
@@ -150,6 +157,7 @@ export async function wardRoster(wardIds) {
       driverCount: roster.length,
       activeCount: roster.filter((d) => d.isActive && !d.isOffline).length,
       onDutyCount: roster.filter((d) => d.onDuty).length,
+      onBreakCount: roster.filter((d) => d.onBreak).length,
       onRouteCount: roster.filter((d) => d.route && d.route.status !== 'COMPLETED').length,
       drivers: roster,
     };

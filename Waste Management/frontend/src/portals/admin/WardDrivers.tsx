@@ -37,13 +37,15 @@ type RosterDriver = {
   sos: { id: string; createdAt: string; message: string | null } | null;
   shift: {
     id: string;
-    status: 'ACTIVE' | 'ENDED';
+    status: 'ACTIVE' | 'ON_BREAK' | 'ENDED';
     startedAt: string;
     endedAt: string | null;
     distanceKm: number | null;
     stopsDone: number;
+    breakMinutes: number | null;
   } | null;
   onDuty: boolean;
+  onBreak: boolean;
 };
 
 type RosterWard = {
@@ -51,6 +53,7 @@ type RosterWard = {
   driverCount: number;
   activeCount: number;
   onDutyCount: number;
+  onBreakCount: number;
   onRouteCount: number;
   drivers: RosterDriver[];
 };
@@ -154,7 +157,7 @@ export default function WardDrivers() {
           icon={<Users className="h-8 w-8" />}
         />
       ) : (
-        wards.map(({ ward, driverCount, onDutyCount, onRouteCount, drivers }) => (
+        wards.map(({ ward, driverCount, onDutyCount, onBreakCount, onRouteCount, drivers }) => (
           <Card key={ward.id} className="overflow-hidden p-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-sunken/60 px-4 py-3">
               <span className="font-mono text-fluid-xs text-muted">{ward.code}</span>
@@ -163,6 +166,7 @@ export default function WardDrivers() {
               <div className="ml-auto flex flex-wrap items-center gap-1.5">
                 <Badge tone="brand">{driverCount} drivers</Badge>
                 <Badge tone={onDutyCount ? 'ok' : 'neutral'}>{onDutyCount} on duty</Badge>
+                {onBreakCount > 0 && <Badge tone="warn">{onBreakCount} on break</Badge>}
                 <Badge tone={onRouteCount ? 'info' : 'neutral'}>{onRouteCount} on beat</Badge>
               </div>
             </div>
@@ -227,12 +231,14 @@ export default function WardDrivers() {
                     <div className="flex flex-wrap items-center gap-1.5 sm:col-span-2 sm:justify-end">
                       {d.sos && <Badge tone="danger">SOS</Badge>}
                       {!d.isActive && <Badge tone="neutral">Blocked</Badge>}
-                      <Badge tone={d.onDuty ? 'brand' : d.shift?.status === 'ENDED' ? 'neutral' : 'warn'}>
-                        {d.onDuty
-                          ? `On duty · ${timeAgo(d.shift!.startedAt)}`
-                          : d.shift?.status === 'ENDED'
-                            ? 'Clocked off'
-                            : 'Not clocked in'}
+<Badge tone={d.onBreak ? 'warn' : d.onDuty ? 'brand' : d.shift?.status === 'ENDED' ? 'neutral' : 'warn'}>
+                        {d.onBreak
+                          ? 'On break'
+                          : d.onDuty
+                            ? `On duty · ${timeAgo(d.shift!.startedAt)}`
+                            : d.shift?.status === 'ENDED'
+                              ? 'Clocked off'
+                              : 'Not clocked in'}
                       </Badge>
                       {d.vehicle?.maintenanceFlag && <Badge tone="warn">Maintenance</Badge>}
                       <Badge tone={d.isOffline ? 'neutral' : 'ok'}>

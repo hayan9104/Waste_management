@@ -128,11 +128,13 @@ export default function MasterFleet() {
             <select
               value={selectedWard}
               onChange={(e) => setSelectedWard(e.target.value)}
-              className="bg-transparent text-fluid-xs font-semibold text-ink focus:outline-none"
+              className="cursor-pointer bg-elevated text-fluid-xs font-semibold text-ink focus:outline-none [&>option]:bg-elevated [&>option]:text-ink"
             >
-              <option value="">All Wards (City-Wide)</option>
+              <option value="" className="bg-elevated text-ink">
+                All Wards (City-Wide)
+              </option>
               {(wards.data ?? []).map((w: any) => (
-                <option key={w.id} value={w.id}>
+                <option key={w.id} value={w.id} className="bg-elevated text-ink">
                   {w.name} ({w.code})
                 </option>
               ))}
@@ -237,7 +239,7 @@ export default function MasterFleet() {
                   heading={v.heading ?? 0}
                   active={v.status === 'ON_ROUTE' && !v.isOffline}
                   variant={v.id === selectedVehicleId ? 'tracker' : 'default'}
-                  onClick={() => setSelectedVehicleId(v.id)}
+                  onClick={() => setSelectedVehicleId(selectedVehicleId === v.id ? null : v.id)}
                 >
                   <div className="space-y-0.5">
                     <p className="font-semibold">{v.registrationNumber}</p>
@@ -396,9 +398,11 @@ export default function MasterFleet() {
                       <button
                         type="button"
                         className={`btn-ghost btn-sm ${selectedVehicleId === v.id ? 'border-brand text-brand' : ''}`}
-                        onClick={() => setSelectedVehicleId(v.id)}
+                        aria-pressed={selectedVehicleId === v.id}
+                        onClick={() => setSelectedVehicleId(selectedVehicleId === v.id ? null : v.id)}
                       >
-                        <RouteIcon className="h-3.5 w-3.5" /> View route
+                        <RouteIcon className="h-3.5 w-3.5" />
+                        {selectedVehicleId === v.id ? 'Hide route' : 'View route'}
                       </button>
                       <button
                         type="button"

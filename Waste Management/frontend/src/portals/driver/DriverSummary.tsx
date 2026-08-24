@@ -12,6 +12,8 @@ import {
   LogIn,
   LogOut,
   Loader2,
+  Coffee,
+  Play,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, SectionTitle, Stat, toast } from '../../components/ui';
@@ -58,6 +60,24 @@ export default function DriverSummary() {
     onError: (err) => toast.error(errorMessage(err, 'Could not start your shift')),
   });
 
+  const startBreak = useMutation({
+    mutationFn: async () => (await api('driver').post('/driver/shift/break/start', await fix())).data,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['driver'] });
+      toast.success('On break — your truck is parked and your officer can see you are resting');
+    },
+    onError: (err) => toast.error(errorMessage(err, 'Could not start your break')),
+  });
+
+  const endBreak = useMutation({
+    mutationFn: async () => (await api('driver').post('/driver/shift/break/end')).data,
+    onSuccess: async (res) => {
+      await queryClient.invalidateQueries({ queryKey: ['driver'] });
+      toast.success(`Back on duty — ${formatDuration(res.breakMinutes ?? 0)} of break so far`);
+    },
+    onError: (err) => toast.error(errorMessage(err, 'Could not end your break')),
+  });
+
   const endShift = useMutation({
     mutationFn: async () =>
       (await api('driver').post('/driver/shift/end', { ...(await fix()), notes: endNotes || undefined })).data,
@@ -90,15 +110,29 @@ export default function DriverSummary() {
           </div>
         </div>
 
+{/* Three states, and none of them is inferred from GPS. A live GPS signal
+           only means the handset is reporting; it says nothing about whether
+           the driver has clocked in, and conflating the two is what made the
+           old badge claim "Shift Active" for a driver who never started one. */}
         <Badge
-          tone={current.data?.onShift ? 'ok' : data.shift?.status === 'ENDED' ? 'neutral' : 'warn'}
+          tone={
+            current.data?.shift?.onBreak
+              ? 'warn'
+              : current.data?.onShift
+                ? 'ok'
+                : data.shift?.status === 'ENDED'
+                  ? 'neutral'
+                  : 'warn'
+          }
           className="text-fluid-xs font-bold py-1 px-3"
         >
-          {current.data?.onShift
-            ? 'On duty'
-            : data.shift?.status === 'ENDED'
-              ? 'Shift ended'
-              : 'Not clocked in'}
+          {current.data?.shift?.onBreak
+            ? 'On break'
+            : current.data?.onShift
+              ? 'On duty'
+              : data.shift?.status === 'ENDED'
+                ? 'Shift ended'
+                : 'Not clocked in'}
         </Badge>
       </div>
 
@@ -114,13 +148,20 @@ export default function DriverSummary() {
             {current.data?.onShift ? (
               <p className="mt-1 text-fluid-xs text-muted">
                 Clocked in at <strong className="text-ink">{formatDateTime(current.data.shift.startedAt)}</strong> ·{' '}
-                {formatDuration(current.data.shift.minutes ?? 0)} on duty
+                {formatDuration(current.data.shift.workedMinutes ?? 0)} worked
+                {(current.data.shift.breakMinutes ?? 0) > 0 && (
+                  <> · {formatDuration(current.data.shift.breakMinutes)} rest</>
+                )}
+                {current.data.shift.onBreak && (
+                  <> · <strong className="text-warn">on break since {formatDateTime(current.data.shift.breakStartedAt)}</strong></>
+                )}
               </p>
             ) : data.shift?.status === 'ENDED' ? (
               <p className="mt-1 text-fluid-xs text-muted">
                 {formatDateTime(data.shift.startedAt)} → {formatDateTime(data.shift.endedAt)} ·{' '}
-                {formatDuration(data.shift.minutes ?? 0)} · {data.shift.distanceKm ?? 0} km ·{' '}
-                {data.shift.stopsDone ?? 0} stops
+                {formatDuration(data.shift.workedMinutes ?? data.shift.minutes ?? 0)} worked
+                {(data.shift.breakMinutes ?? 0) > 0 && <> · {formatDuration(data.shift.breakMinutes)} rest</>} ·{' '}
+                {data.shift.distanceKm ?? 0} km · {data.shift.stopsDone ?? 0} stops
               </p>
             ) : (
               <p className="mt-1 text-fluid-xs text-muted">
@@ -130,15 +171,38 @@ export default function DriverSummary() {
           </div>
 
           {current.data?.onShift ? (
-            <button
-              type="button"
-              className="btn-danger btn-sm shrink-0"
-              disabled={endShift.isPending}
-              onClick={() => endShift.mutate()}
-            >
-              {endShift.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
-              End shift
-            </button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {current.data.shift?.onBreak ? (
+                <button
+                  type="button"
+                  className="btn-primary btn-sm"
+                  disabled={endBreak.isPending}
+                  onClick={() => endBreak.mutate()}
+                >
+                  {endBreak.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                  Back on duty
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  disabled={startBreak.isPending}
+                  onClick={() => startBreak.mutate()}
+                >
+                  {startBreak.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Coffee className="h-3.5 w-3.5" />}
+                  Take a break
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-danger btn-sm"
+                disabled={endShift.isPending}
+                onClick={() => endShift.mutate()}
+              >
+                {endShift.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+                End shift
+              </button>
+            </div>
           ) : (
             <button
               type="button"

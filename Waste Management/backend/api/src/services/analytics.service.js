@@ -134,6 +134,23 @@ export async function wardPerformance(wardIds) {
   });
   const since = startOfDay(6);
 
+  /**
+   * Who actually runs each ward.
+   *
+   * The ward editor let an admin register an officer but never showed the
+   * result, so there was no way to tell an unstaffed ward from a staffed one
+   * — or to notice a ward that had quietly lost its officer.
+   */
+  const wardOfficers = await prisma.wardOfficer.findMany({
+    where: wardIds === null ? {} : { wardId: { in: wardIds } },
+    include: { officer: { select: { id: true, name: true, email: true, phone: true, isActive: true, avatarColor: true } } },
+  });
+  const officersByWard = new Map();
+  for (const link of wardOfficers) {
+    if (!officersByWard.has(link.wardId)) officersByWard.set(link.wardId, []);
+    officersByWard.get(link.wardId).push({ ...link.officer, isPrimary: link.isPrimary });
+  }
+
   const results = [];
   for (const ward of wards) {
     const [open, recent, vehicles] = await Promise.all([
@@ -164,6 +181,7 @@ export async function wardPerformance(wardIds) {
       slaCompliancePct: resolved.length ? Math.round((onTime / resolved.length) * 100) : 0,
       avgResolutionMinutes: Math.round(avg(resolved.map((c) => (c.resolvedAt - c.createdAt) / 60_000))),
       vehicles,
+      officers: officersByWard.get(ward.id) ?? [],
       /** 0-100 pressure score — drives the heatmap colour ramp. */
       load: Math.min(100, Math.round(open * 6 + recent.filter((c) => c.isEmergency).length * 12)),
     });

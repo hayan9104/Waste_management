@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MapPinned, Plus, RotateCcw, Trash2, TriangleAlert, Upload } from 'lucide-react';
+import { Loader2, MapPinned, Plus, RotateCcw, Trash2, TriangleAlert, Upload, UserX } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
-import { Card, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
+import { Badge, Card, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
 import { BaseMap, WardLayer, FitBounds, Polygon, Polyline, Marker, useMap, WARD_OUTLINE, LINE_CASING, CITY_CENTER } from '../../components/map/Map';
 
 /**
@@ -355,6 +355,37 @@ export default function WardSettings() {
                 <dd className="tabular-nums">{Math.max(0, (w.boundary?.coordinates?.[0]?.length ?? 1) - 1)}</dd>
               </div>
             </dl>
+
+            {/* Registered officers. An admin could register one here and never
+                see the result, so an unstaffed ward looked identical to a
+                staffed one — and a ward that quietly lost its officer looked
+                fine too. Called out explicitly when there is nobody. */}
+            <div className="mt-3 border-t border-line pt-2.5">
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Ward officers {w.officers?.length ? `(${w.officers.length})` : ''}
+              </p>
+              {w.officers?.length ? (
+                <ul className="space-y-1.5">
+                  {w.officers.map((o: any) => (
+                    <li key={o.id} className="flex items-center gap-2">
+                      <span
+                        className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white"
+                        style={{ backgroundColor: o.avatarColor || '#f59e0b' }}
+                      >
+                        {o.name?.slice(0, 1) ?? '?'}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-fluid-xs font-medium">{o.name}</span>
+                      {o.isPrimary && <Badge tone="brand">Primary</Badge>}
+                      {!o.isActive && <Badge tone="neutral">Blocked</Badge>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="flex items-center gap-1.5 text-fluid-xs text-warn">
+                  <UserX className="h-3.5 w-3.5 shrink-0" /> No officer registered for this ward
+                </p>
+              )}
+            </div>
             <button
               type="button"
               className="btn-ghost btn-sm mt-3 w-full"

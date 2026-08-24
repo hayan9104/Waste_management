@@ -19,12 +19,94 @@ import { HttpError } from '../middleware/error.js';
  */
 
 /** The shift a driver is currently clocked into, or null. */
+/**
+ * The shift a driver is currently clocked into, or null.
+ *
+ * ON_BREAK counts as clocked in. A driver on a rest break has not gone home —
+ * treating a break as "off shift" would drop them off the officer's on-duty
+ * board the moment they stopped for tea, and make the shift clock restart when
+ * they came back.
+ */
 export async function activeShift(driverId) {
   return prisma.driverShift.findFirst({
-    where: { driverId, status: 'ACTIVE' },
+    where: { driverId, status: { in: ['ACTIVE', 'ON_BREAK'] } },
     orderBy: { startedAt: 'desc' },
-    include: { vehicle: { select: { id: true, registrationNumber: true } }, ward: { select: { id: true, name: true } } },
+    include: {
+      vehicle: { select: { id: true, registrationNumber: true } },
+      ward: { select: { id: true, name: true } },
+      breaks: { orderBy: { startedAt: 'asc' } },
+    },
   });
+}
+
+/** Minutes stood down so far, counting an open break up to now. */
+function breakMinutesOf(shift, until = new Date()) {
+  const rows = Array.isArray(shift?.breaks) ? shift.breaks : [];
+  return rows.reduce((n, b) => {
+    const end = b.endedAt ? new Date(b.endedAt) : until;
+    return n + Math.max(0, Math.round((end - new Date(b.startedAt)) / 60_000));
+  }, 0);
+}
+
+/**
+ * Stand down for a rest. Idempotent like startShift, for the same reason: a
+ * second tap on a flaky connection is not the driver's mistake.
+ */
+export async function startBreak({ driver, vehicle, latitude, longitude, reason }) {
+  const shift = await activeShift(driver.id);
+  if (!shift) throw new HttpError(409, 'You are not currently clocked in');
+
+  const open = shift.breaks?.find((b) => !b.endedAt);
+  if (open) return { shift, alreadyOnBreak: true };
+
+  await prisma.shiftBreak.create({
+    data: {
+      shiftId: shift.id,
+      reason: reason?.slice(0, 120) || null,
+      startedAt: new Date(),
+      latitude: latitude ?? vehicle?.lastLat ?? null,
+      longitude: longitude ?? vehicle?.lastLng ?? null,
+    },
+  });
+  await prisma.driverShift.update({ where: { id: shift.id }, data: { status: 'ON_BREAK' } });
+
+  // A truck whose driver is resting is not working a route. Parking it keeps
+  // the officer's fleet map honest, and the simulator stops driving it.
+  if (vehicle && !vehicle.maintenanceFlag) {
+    await prisma.vehicle.update({ where: { id: vehicle.id }, data: { status: 'IDLE', lastSpeed: 0 } });
+  }
+
+  const fresh = await activeShift(driver.id);
+  emitTo([shift.wardId ? `ward:${shift.wardId}` : null, 'city'], SOCKET_EVENTS.TRUCK_UPDATE, {
+    vehicleId: vehicle?.id ?? null,
+    driverId: driver.id,
+    shift: { id: shift.id, status: 'ON_BREAK', startedAt: shift.startedAt },
+  });
+  return { shift: fresh, alreadyOnBreak: false };
+}
+
+/** Back on the road. Closes the open break and returns the truck to service. */
+export async function endBreak({ driver, vehicle }) {
+  const shift = await activeShift(driver.id);
+  if (!shift) throw new HttpError(409, 'You are not currently clocked in');
+
+  const open = shift.breaks?.find((b) => !b.endedAt);
+  if (!open) return { shift, alreadyWorking: true };
+
+  await prisma.shiftBreak.update({ where: { id: open.id }, data: { endedAt: new Date() } });
+  await prisma.driverShift.update({ where: { id: shift.id }, data: { status: 'ACTIVE' } });
+
+  if (vehicle && !vehicle.maintenanceFlag) {
+    await prisma.vehicle.update({ where: { id: vehicle.id }, data: { status: 'ON_ROUTE' } });
+  }
+
+  const fresh = await activeShift(driver.id);
+  emitTo([shift.wardId ? `ward:${shift.wardId}` : null, 'city'], SOCKET_EVENTS.TRUCK_UPDATE, {
+    vehicleId: vehicle?.id ?? null,
+    driverId: driver.id,
+    shift: { id: shift.id, status: 'ACTIVE', startedAt: shift.startedAt },
+  });
+  return { shift: fresh, alreadyWorking: false };
 }
 
 export async function startShift({ driver, vehicle, latitude, longitude, odometerKm }) {
@@ -49,7 +131,11 @@ export async function startShift({ driver, vehicle, latitude, longitude, odomete
       startOdometerKm: odometerKm ?? vehicle?.odometerKm ?? null,
       status: 'ACTIVE',
     },
-    include: { vehicle: { select: { id: true, registrationNumber: true } }, ward: { select: { id: true, name: true } } },
+    include: {
+      vehicle: { select: { id: true, registrationNumber: true } },
+      ward: { select: { id: true, name: true } },
+      breaks: { orderBy: { startedAt: 'asc' } },
+    },
   });
 
   // A truck whose driver just clocked in is on duty; leaving it OFFLINE would
@@ -87,10 +173,20 @@ export async function endShift({ driver, vehicle, latitude, longitude, odometerK
       })
     : 0;
 
+  // Clocking out while still on a break would leave that break open forever
+  // and its minutes uncounted, so close it at the same moment.
+  const endedAtNow = new Date();
+  const stillResting = open.breaks?.find((b) => !b.endedAt);
+  if (stillResting) {
+    await prisma.shiftBreak.update({ where: { id: stillResting.id }, data: { endedAt: endedAtNow } });
+  }
+  const restMinutes = breakMinutesOf(open, endedAtNow);
+
   const shift = await prisma.driverShift.update({
     where: { id: open.id },
     data: {
-      endedAt: new Date(),
+      breakMinutes: restMinutes,
+      endedAt: endedAtNow,
       endLat: latitude ?? vehicle?.lastLat ?? null,
       endLng: longitude ?? vehicle?.lastLng ?? null,
       endOdometerKm: odometerKm ?? null,
@@ -99,7 +195,14 @@ export async function endShift({ driver, vehicle, latitude, longitude, odometerK
       notes: notes?.slice(0, 300) || null,
       status: 'ENDED',
     },
-    include: { vehicle: { select: { id: true, registrationNumber: true } }, ward: { select: { id: true, name: true } } },
+    include: {
+      vehicle: { select: { id: true, registrationNumber: true } },
+      ward: { select: { id: true, name: true } },
+      // Without this the clock-out response reported breaks: [] even when the
+      // driver had taken several, so the summary they land on after ending a
+      // shift contradicted the shift they just worked.
+      breaks: { orderBy: { startedAt: 'asc' } },
+    },
   });
 
   // Clocking out parks the truck. Without this the fleet map would keep
@@ -122,6 +225,12 @@ export function serializeShift(shift) {
   if (!shift) return null;
   const end = shift.endedAt ? new Date(shift.endedAt) : new Date();
   const minutes = Math.max(0, Math.round((end - new Date(shift.startedAt)) / 60_000));
+  // Prefer the stored total once the shift is closed; recompute live while it
+  // is still running so an open break's minutes tick up rather than sitting at
+  // whatever they were when it started.
+  const breakMinutes = shift.endedAt ? shift.breakMinutes ?? 0 : breakMinutesOf(shift, end);
+  const rows = Array.isArray(shift.breaks) ? shift.breaks : [];
+  const onBreak = shift.status === 'ON_BREAK';
   return {
     id: shift.id,
     date: shift.date,
@@ -129,6 +238,18 @@ export function serializeShift(shift) {
     startedAt: shift.startedAt,
     endedAt: shift.endedAt,
     minutes,
+    breakMinutes,
+    /** Time actually on the job — what a supervisor is really asking about. */
+    workedMinutes: Math.max(0, minutes - breakMinutes),
+    onBreak,
+    breakStartedAt: rows.find((b) => !b.endedAt)?.startedAt ?? null,
+    breaks: rows.map((b) => ({
+      id: b.id,
+      reason: b.reason,
+      startedAt: b.startedAt,
+      endedAt: b.endedAt,
+      minutes: Math.max(0, Math.round(((b.endedAt ? new Date(b.endedAt) : end) - new Date(b.startedAt)) / 60_000)),
+    })),
     distanceKm: shift.distanceKm,
     stopsDone: shift.stopsDone,
     startOdometerKm: shift.startOdometerKm,
@@ -150,12 +271,14 @@ export async function shiftBoard(wardIds) {
 
   const [active, endedToday] = await Promise.all([
     prisma.driverShift.findMany({
-      where: { status: 'ACTIVE', ...wardWhere },
+      // ON_BREAK is still on duty — see activeShift.
+      where: { status: { in: ['ACTIVE', 'ON_BREAK'] }, ...wardWhere },
       orderBy: { startedAt: 'asc' },
       include: {
         driver: { select: { id: true, name: true, phone: true, avatarColor: true } },
         vehicle: { select: { id: true, registrationNumber: true } },
         ward: { select: { id: true, name: true, code: true } },
+        breaks: { orderBy: { startedAt: 'asc' } },
       },
     }),
     prisma.driverShift.findMany({
@@ -165,6 +288,7 @@ export async function shiftBoard(wardIds) {
         driver: { select: { id: true, name: true, phone: true, avatarColor: true } },
         vehicle: { select: { id: true, registrationNumber: true } },
         ward: { select: { id: true, name: true, code: true } },
+        breaks: { orderBy: { startedAt: 'asc' } },
       },
     }),
   ]);
@@ -178,9 +302,12 @@ export async function shiftBoard(wardIds) {
     endedToday: endedToday.map(withDriver),
     totals: {
       onDuty: active.length,
+      /** Clocked in but standing down right now — counted inside onDuty. */
+      onBreak: active.filter((s) => s.status === 'ON_BREAK').length,
       completed: endedToday.length,
       workedToday: active.length + endedToday.length,
       hoursLogged: Number((totalMinutes / 60).toFixed(1)),
+      breakHours: Number((endedToday.reduce((n, s) => n + (s.breakMinutes ?? 0), 0) / 60).toFixed(1)),
       distanceKm: Number(endedToday.reduce((n, s) => n + (s.distanceKm ?? 0), 0).toFixed(1)),
     },
   };
@@ -192,9 +319,13 @@ export async function shiftHistory(driverId, days = 14) {
   const rows = await prisma.driverShift.findMany({
     where: { driverId, startedAt: { gte: since } },
     orderBy: { startedAt: 'desc' },
-    include: { vehicle: { select: { id: true, registrationNumber: true } }, ward: { select: { id: true, name: true } } },
+    include: {
+      vehicle: { select: { id: true, registrationNumber: true } },
+      ward: { select: { id: true, name: true } },
+      breaks: { orderBy: { startedAt: 'asc' } },
+    },
   });
   return rows.map(serializeShift);
 }
 
-export default { activeShift, startShift, endShift, serializeShift, shiftBoard, shiftHistory };
+export default { activeShift, startShift, endShift, startBreak, endBreak, serializeShift, shiftBoard, shiftHistory };
