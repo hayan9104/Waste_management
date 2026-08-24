@@ -58,7 +58,7 @@ const RECENT_DAYS = 1;
  * screen. Today's volume is therefore sized from the crew that has to clear
  * it, which is also how a real ward is staffed.
  */
-const STOPS_PER_TRUCK_TODAY = 5;
+const STOPS_PER_TRUCK_TODAY = 3.5;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -843,18 +843,7 @@ async function main() {
         ],
       },
       orderBy: { createdAt: 'asc' },
-      /**
-       * Only the morning's work goes onto the published route.
-       *
-       * Routing every outstanding report left nothing for an officer to
-       * dispatch — the queue was full but every row already had a truck, so
-       * Auto-assign had one complaint to act on across two wards and looked
-       * broken. A real day does not work that way either: the beat is planned
-       * from what was on the books when it was published, and everything
-       * reported after that waits for someone to dispatch it. Three stops per
-       * truck is the published plan; the rest is the live backlog.
-       */
-      take: crew.length * 3,
+      take: crew.length * 6,
     });
     if (open.length < 2) continue;
 

@@ -17,7 +17,6 @@ import { notify } from '../services/notification.service.js';
 import { hashPassword } from '../lib/password.js';
 import { wardRoster } from '../services/roster.service.js';
 import { shiftBoard } from '../services/shift.service.js';
-import { planAutoAssign } from '../services/dispatch.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.OFFICER), loadUser);
@@ -536,105 +535,6 @@ router.post(
       vehicle: { id: vehicle.id, registrationNumber: vehicle.registrationNumber },
       driver: vehicle.driver,
       complaints: assigned,
-    });
-  })
-);
-
-
-/**
- * POST /api/officer/complaints/auto-assign
- *
- * Hands the outstanding unassigned queue to the crew in one press. The plan is
- * worked out in dispatch.service; this applies it through the same transition
- * and the same notifications a manual assignment uses, so the audit trail and
- * what the driver sees are identical either way.
- */
-router.post(
-  ['/complaints/auto-assign', '/auto-assign'],
-  writeLimiter,
-  audited('complaint_auto_assign', 'complaints'),
-  asyncHandler(async (req, res) => {
-    const body = z
-      .object({
-        // Optional: auto-assign only a selection. Omit for the whole queue.
-        complaintIds: z.array(z.string()).optional(),
-      })
-      .parse(req.body ?? {});
-
-    const { ids } = await scope(req);
-    const plan = await planAutoAssign(ids, body.complaintIds?.length ? body.complaintIds : null);
-
-    if (!plan.assignments.length) {
-      return res.json({
-        success: true,
-        assignedCount: 0,
-        trucksUsed: 0,
-        perDriver: [],
-        skipped: plan.skipped.map((s) => ({ code: s.complaint.code, reason: s.reason })),
-        message: plan.skipped.length
-          ? plan.skipped[0].reason
-          : 'Nothing waiting — every report in your wards already has a truck.',
-      });
-    }
-
-    // Grouped so each driver gets one notification naming all their new stops,
-    // rather than one buzz per complaint.
-    const byVehicle = new Map();
-    for (const a of plan.assignments) {
-      const row = byVehicle.get(a.vehicle.id) ?? { vehicle: a.vehicle, complaints: [] };
-      row.complaints.push(a.complaint);
-      byVehicle.set(a.vehicle.id, row);
-    }
-
-    const perDriver = [];
-    for (const { vehicle, complaints } of byVehicle.values()) {
-      const payloads = [];
-      for (const c of complaints) {
-        const payload = await transition({
-          complaintId: c.id,
-          status: 'ASSIGNED',
-          actorId: req.user.id,
-          note: `Auto-assigned to ${vehicle.registrationNumber} (Driver: ${vehicle.driver?.name || 'Assigned Crew'})`,
-          extra: { assignedVehicleId: vehicle.id },
-        });
-        payloads.push(payload);
-        emitTo(
-          [`complaint:${c.id}`, `complaint_${c.id}`, vehicle.wardId ? `ward:${vehicle.wardId}` : null, 'city'],
-          SOCKET_EVENTS.COMPLAINT_UPDATE,
-          payload
-        );
-      }
-
-      if (vehicle.driverId) {
-        await notify({
-          userId: vehicle.driverId,
-          type: 'ASSIGNMENT',
-          title: `${payloads.length} new stop${payloads.length === 1 ? '' : 's'} assigned`,
-          body: `${vehicle.registrationNumber} — open your route to see them.`,
-          payload: { complaintIds: complaints.map((c) => c.id) },
-        });
-        const driverRooms = [`truck:${vehicle.id}`, `user:${vehicle.driverId}`, `driver_${vehicle.driverId}`];
-        emitTo(driverRooms, SOCKET_EVENTS.ASSIGNMENT_NEW, { vehicleId: vehicle.id, complaints: payloads });
-        emitTo(driverRooms, 'new_task_assigned', { vehicleId: vehicle.id, complaints: payloads });
-      }
-
-      perDriver.push({
-        vehicleId: vehicle.id,
-        registrationNumber: vehicle.registrationNumber,
-        driver: vehicle.driver,
-        count: payloads.length,
-        codes: complaints.map((c) => c.code),
-      });
-    }
-
-    perDriver.sort((a, b) => b.count - a.count);
-
-    res.json({
-      success: true,
-      assignedCount: plan.assignments.length,
-      trucksUsed: plan.trucksUsed,
-      perDriver,
-      skipped: plan.skipped.map((s) => ({ code: s.complaint.code, reason: s.reason })),
     });
   })
 );

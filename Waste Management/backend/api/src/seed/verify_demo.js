@@ -215,22 +215,6 @@ async function main() {
     check(`officer${n} has scheduled requests`, items.length >= 5, `got ${items.length}`);
   }
 
-  /**
-   * Auto-assign needs something to assign.
-   *
-   * The route builder used to take every outstanding report onto a published
-   * route, so the queue was full but every row already had a crew and the
-   * Auto-assign bar never appeared. Three stops per truck are planned in the
-   * morning; the rest is the live backlog an officer dispatches. Asserted
-   * read-only — pressing the button is a write, so it is not done here.
-   */
-  const queue = (await getJson(tokens.officer, '/officer/queue')).body?.items ?? [];
-  const waiting = queue.filter(
-    (c) => !c.assignedVehicleId && !['RESOLVED', 'REJECTED'].includes(c.status)
-  );
-  check('officer queue has unassigned work for auto-assign', waiting.length >= 1,
-    `every report in the queue already has a truck (${queue.length} rows)`);
-
   // GPS health has to be measured, not assumed: a fleet that is uniformly
   // "Strong signal" is the signature of no ping data at all.
   const grades = new Set(roster.map((d) => d.gps?.status).filter(Boolean));
