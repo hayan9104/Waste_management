@@ -83,6 +83,7 @@ export async function createComplaint({
 
   // ---- 2. Ward attribution (PostGIS ST_Contains, done in app code) -------
   const ward = await wardForPoint({ latitude, longitude });
+  const detectedWardId = ward?.id ?? null;
 
   // ---- 3. Fraud signals ---------------------------------------------------
   const fraud = await scoreFraud(await buildFraudFeatures({ citizen, latitude, longitude, ai }));
@@ -93,11 +94,32 @@ export async function createComplaint({
   const slaMinutes = emergency ? env.escalation.emergencyMinutes : meta.slaMinutes;
   const now = new Date();
 
+  // ---- 5. Automated Driver Assignment for Ward ---------------------------
+  let autoAssignedDriver = null;
+  let finalStatus = autoApproved && !duplicate ? 'VERIFIED' : 'PENDING';
+  let assignmentType = 'MANUAL';
+  let assignedVehicleId = null;
+  let assignedAt = null;
+
+  if (ward && !emergency && !duplicate) {
+    autoAssignedDriver = await findBestDriverForWard(ward.id);
+    if (autoAssignedDriver) {
+      assignedVehicleId = autoAssignedDriver.vehicle.id;
+      finalStatus = 'ASSIGNED';
+      assignmentType = 'AUTO';
+      assignedAt = now;
+    }
+  }
+
   const complaint = await prisma.complaint.create({
     data: {
       code: complaintCode(),
       citizenId,
       wardId: ward?.id ?? null,
+      detectedWardId,
+      assignmentType,
+      assignedVehicleId,
+      assignedAt,
       category,
       aiCategory: photo?.buffer ? aiCategory : null,
       aiConfidence: confidence,
@@ -114,7 +136,7 @@ export async function createComplaint({
       reviewNeeded: emergency ? false : !autoApproved || fraud.score >= env.ai.fraudReviewThreshold,
       fraudScore: fraud.score,
       fraudSignals: fraud.signals?.length ? { signals: fraud.signals, modelVersion: fraud.modelVersion } : undefined,
-      status: autoApproved && !duplicate ? 'VERIFIED' : 'PENDING',
+      status: finalStatus,
       severity: emergency ? 'CRITICAL' : meta.severity,
       isEmergency: emergency,
       channel,
@@ -127,10 +149,29 @@ export async function createComplaint({
       dueAt: new Date(now.getTime() + slaMinutes * 60_000),
       duplicateOfId: duplicate?.complaint.id ?? null,
     },
-    include: { ward: true, citizen: { select: { id: true, name: true } } },
+    include: {
+      ward: true,
+      detectedWard: true,
+      citizen: { select: { id: true, name: true } },
+      assignedVehicle: { include: { driver: { select: { id: true, name: true, phone: true } } } },
+    },
   });
 
-  await addEvent(complaint.id, complaint.status, autoApproved ? `AI verified (${Math.round(confidence * 100)}% confidence)` : 'Awaiting verification', null);
+  if (assignmentType === 'AUTO' && autoAssignedDriver) {
+    await addEvent(
+      complaint.id,
+      'ASSIGNED',
+      `Auto-assigned to driver ${autoAssignedDriver.driver.name} (${autoAssignedDriver.vehicle.registrationNumber}) for ${ward.name}`,
+      null
+    );
+  } else {
+    await addEvent(
+      complaint.id,
+      complaint.status,
+      autoApproved ? `AI verified (${Math.round(confidence * 100)}% confidence)` : 'Awaiting verification',
+      null
+    );
+  }
 
   // ---- Duplicate bookkeeping ---------------------------------------------
   if (duplicate) {
@@ -168,6 +209,22 @@ export async function createComplaint({
   const rooms = [ward ? `ward:${ward.id}` : null, 'city'];
 
   emitTo(rooms, emergency ? SOCKET_EVENTS.EMERGENCY_NEW : SOCKET_EVENTS.COMPLAINT_NEW, payload);
+
+  if (assignmentType === 'AUTO' && autoAssignedDriver) {
+    await notify({
+      userId: autoAssignedDriver.driver.id,
+      type: 'ASSIGNMENT',
+      title: `New Auto-Assigned Task ${complaint.code}`,
+      body: `Auto-assigned complaint in ${ward?.name || 'your ward'}: ${address || meta.label}`,
+      payload: { complaintId: complaint.id, code: complaint.code },
+    });
+
+    emitTo(
+      [`user:${autoAssignedDriver.driver.id}`, `truck:${autoAssignedDriver.vehicle.id}`, `ward:${ward?.id}`, 'city'],
+      SOCKET_EVENTS.ASSIGNMENT_NEW,
+      payload
+    );
+  }
 
   let dispatched = null;
   if (emergency) {
@@ -245,10 +302,13 @@ export async function createComplaint({
 }
 
 /**
- * Ward lookup: bounding-box pre-filter in SQL (indexed), exact ray-cast here.
- * This is the two-phase strategy PostGIS would run internally.
+ * Ward lookup: bounding-box pre-filter in SQL (indexed), exact ray-cast,
+ * with centroid-distance fallback for boundary or out-of-bounds coordinates.
  */
 export async function wardForPoint({ latitude, longitude }) {
+  if (latitude == null || longitude == null) return null;
+
+  // Phase 1: Bounding box pre-filter in SQL
   const candidates = await prisma.ward.findMany({
     where: {
       minLat: { lte: latitude },
@@ -257,10 +317,72 @@ export async function wardForPoint({ latitude, longitude }) {
       maxLng: { gte: longitude },
     },
   });
+
+  // Phase 2: Exact Point-in-Polygon ray-casting
   for (const ward of candidates) {
     if (pointInPolygon({ latitude, longitude }, ward.boundary)) return ward;
   }
-  return candidates[0] ?? null;
+
+  // Phase 3: If point is outside candidate boxes, check all wards
+  const allWards = await prisma.ward.findMany({
+    select: { id: true, name: true, code: true, boundary: true, centerLat: true, centerLng: true },
+  });
+
+  for (const ward of allWards) {
+    if (pointInPolygon({ latitude, longitude }, ward.boundary)) return ward;
+  }
+
+  // Phase 4: Boundary / edge fallback — nearest ward centroid
+  let bestWard = null;
+  let bestDistance = Infinity;
+  for (const ward of allWards) {
+    const d = distanceMeters({ latitude, longitude }, { latitude: ward.centerLat, longitude: ward.centerLng });
+    if (d < bestDistance) {
+      bestDistance = d;
+      bestWard = ward;
+    }
+  }
+
+  return bestWard ?? candidates[0] ?? null;
+}
+
+/**
+ * Finds the best active driver and vehicle mapped to a specific ward
+ * using Least-Active-Task load balancing.
+ */
+export async function findBestDriverForWard(wardId) {
+  if (!wardId) return null;
+
+  const vehicles = await prisma.vehicle.findMany({
+    where: {
+      wardId,
+      maintenanceFlag: false,
+      driverId: { not: null },
+      driver: { is: { isActive: true } },
+    },
+    include: {
+      driver: { select: { id: true, name: true, phone: true, isActive: true } },
+    },
+  });
+
+  if (!vehicles.length) return null;
+
+  // Calculate active complaint loads for each driver/vehicle
+  const vehicleLoads = await Promise.all(
+    vehicles.map(async (v) => {
+      const activeCount = await prisma.complaint.count({
+        where: {
+          assignedVehicleId: v.id,
+          status: { in: ['ASSIGNED', 'IN_PROGRESS'] },
+        },
+      });
+      return { vehicle: v, driver: v.driver, activeCount };
+    })
+  );
+
+  // Sort ascending by active ticket count (least loaded driver gets the new task)
+  vehicleLoads.sort((a, b) => a.activeCount - b.activeCount);
+  return vehicleLoads[0] || null;
 }
 
 /**
@@ -467,6 +589,9 @@ export function serializeComplaint(c, extra = {}) {
     address: c.address,
     photoUrl: c.photoUrl,
     resolutionPhotoUrl: c.resolutionPhotoUrl,
+    assignmentType: c.assignmentType || 'MANUAL',
+    detectedWardId: c.detectedWardId || null,
+    detectedWard: c.detectedWard ? { id: c.detectedWard.id, name: c.detectedWard.name, code: c.detectedWard.code } : null,
     wardId: c.wardId,
     ward: c.ward ? { id: c.ward.id, name: c.ward.name, code: c.ward.code } : null,
     citizen: c.citizen ? { id: c.citizen.id, name: c.citizen.name } : null,
