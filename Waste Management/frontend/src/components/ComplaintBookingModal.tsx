@@ -98,35 +98,46 @@ export function ComplaintBookingModal({
       return;
     }
     setLocating(true);
+
+    const onGpsSuccess = (pos: GeolocationPosition) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
+      setPosition({ lat, lng });
+      setLocating(false);
+      toast.success(`📍 Live Device GPS Locked (±${Math.round(acc || 5)}m): ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    };
+
+    // Tier 1: Hardware High-Accuracy GPS
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setPosition({ lat, lng });
-        setLocating(false);
-        toast.success(`📍 Live GPS locked: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-      },
-      async (err) => {
-        setLocating(false);
-        if (err.code === 1) {
-          toast.warn('GPS location permission blocked. Please allow location access in your browser address bar.');
-        } else {
-          toast.warn('Could not acquire fast GPS satellite lock. Trying network location…');
-        }
-        // Fallback: try fetching IP-based approximate location if GPS timed out
-        try {
-          const res = await fetch('https://ipapi.co/json/');
-          if (res.ok) {
-            const data = await res.json();
-            if (data.latitude && data.longitude) {
-              setPosition({ lat: Number(data.latitude), lng: Number(data.longitude) });
+      onGpsSuccess,
+      (err) => {
+        // Tier 2: Standard fast device location (Wi-Fi/Cellular)
+        navigator.geolocation.getCurrentPosition(
+          onGpsSuccess,
+          async (err2) => {
+            setLocating(false);
+            if (err.code === 1 || err2.code === 1) {
+              toast.warn('⚠️ Location Permission Blocked. Please allow location access in your browser address bar.');
+            } else {
+              toast.warn('Could not acquire fast GPS satellite lock. Trying network location…');
             }
-          }
-        } catch {
-          // ignore
-        }
+            try {
+              const res = await fetch('https://ipapi.co/json/');
+              if (res.ok) {
+                const data = await res.json();
+                if (data.latitude && data.longitude) {
+                  setPosition({ lat: Number(data.latitude), lng: Number(data.longitude) });
+                }
+              }
+            } catch {
+              // ignore
+            }
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   }, []);
 

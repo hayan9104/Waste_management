@@ -61,7 +61,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Stat label="Open" value={kpis.openComplaints} hint={`${kpis.complaintsToday} today`} icon={<Clock className="h-4 w-4" />} />
         <Stat label="Emergencies" value={kpis.emergenciesOpen} tone={kpis.emergenciesOpen ? 'danger' : 'ok'} icon={<Siren className="h-4 w-4" />} />
         <Stat label="Overdue" value={kpis.overdue} tone={kpis.overdue ? 'warn' : 'ok'} />

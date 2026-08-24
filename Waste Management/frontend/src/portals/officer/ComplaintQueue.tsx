@@ -142,12 +142,13 @@ export default function ComplaintQueue() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <Card className="p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[12rem] flex-1">
+      <Card className="p-3.5 space-y-2.5">
+        {/* Top search & dropdowns row */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:min-w-[14rem] sm:flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
             <input
-              className="field pl-9"
+              className="field w-full pl-9 text-fluid-xs sm:text-fluid-sm min-h-[40px]"
               placeholder="Search by ticket or address"
               value={search}
               onChange={(e) => {
@@ -157,22 +158,35 @@ export default function ComplaintQueue() {
             />
           </div>
 
-          <select className="field w-auto min-w-[8rem]" value={filters.status ?? ''} onChange={(e) => setFilter('status', e.target.value)}>
-            <option value="">All statuses</option>
-            <option value="AUTO_ASSIGNED">Auto-assigned</option>
-            {Object.entries(STATUS_LABELS).map(([id, label]) => (
-              <option key={id} value={id}>{label}</option>
-            ))}
-          </select>
+          <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center">
+            <select
+              className="field w-full sm:w-auto sm:min-w-[8.5rem] text-fluid-xs min-h-[40px]"
+              value={filters.status ?? ''}
+              onChange={(e) => setFilter('status', e.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="AUTO_ASSIGNED">Auto-assigned</option>
+              {Object.entries(STATUS_LABELS).map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
 
-          <select className="field w-auto min-w-[9rem]" value={filters.sort} onChange={(e) => setFilter('sort', e.target.value)}>
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="severity">Severity</option>
-            <option value="confidence">Lowest AI confidence</option>
-            <option value="due">Due soonest</option>
-          </select>
+            <select
+              className="field w-full sm:w-auto sm:min-w-[9.5rem] text-fluid-xs min-h-[40px]"
+              value={filters.sort}
+              onChange={(e) => setFilter('sort', e.target.value)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="severity">Severity</option>
+              <option value="confidence">Lowest AI confidence</option>
+              <option value="due">Due soonest</option>
+            </select>
+          </div>
+        </div>
 
+        {/* Quick filter chips row with horizontal scroll affordance on small screens */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           {[
             { key: 'reviewNeeded', label: 'Review needed' },
             { key: 'emergency', label: 'Emergencies' },
@@ -182,7 +196,11 @@ export default function ComplaintQueue() {
               key={f.key}
               type="button"
               onClick={() => setFilter(f.key, params.get(f.key) ? undefined : '1')}
-              className={`chip transition ${params.get(f.key) ? 'border-brand bg-brand/10 text-brand' : 'text-muted hover:bg-sunken'}`}
+              className={`chip whitespace-nowrap px-3 py-1.5 text-[11px] font-semibold transition cursor-pointer min-h-[36px] ${
+                params.get(f.key)
+                  ? 'border-brand bg-brand/10 text-brand font-bold shadow-xs'
+                  : 'text-muted hover:bg-sunken hover:text-ink'
+              }`}
             >
               {f.label}
             </button>
