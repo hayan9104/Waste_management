@@ -239,7 +239,7 @@ export function Toaster() {
   }, []);
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[80] flex flex-col items-center gap-2 px-3 sm:inset-x-auto sm:right-4 sm:items-end">
+    <div className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[130] flex flex-col items-center gap-2 px-3 sm:inset-x-auto sm:right-4 sm:items-end">
       {items.map((t) => (
         <div
           key={t.id}
