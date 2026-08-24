@@ -479,6 +479,12 @@ async function main() {
    * tracker has something to follow the moment a judge signs in. Without this
    * the flagship "your truck arrives in 12 minutes" card can be empty purely by
    * chance.
+   *
+   * Coded SS-LIVE*, not SS-DEMO*: the five hand-built showcase complaints own
+   * the SS-DEMO codes, and these four exist for a different reason — a
+   * per-citizen guarantee rather than a walkthrough of the lifecycle. Sharing
+   * the prefix collided on the unique code index and made the two sets
+   * indistinguishable on screen.
    */
   for (let i = 0; i < 4; i += 1) {
     const citizen = citizens[i];
@@ -492,7 +498,7 @@ async function main() {
     created += 1;
     await prisma.complaint.create({
       data: {
-        code: `SS-DEMO${i + 1}`,
+        code: `SS-LIVE${i + 1}`,
         citizenId: citizen.id,
         wardId: home.ward.id,
         category: spec.id,
