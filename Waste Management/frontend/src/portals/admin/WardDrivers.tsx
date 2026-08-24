@@ -279,9 +279,17 @@ export default function WardDrivers() {
           {tracked.gps && (
             <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-4">
               <GpsFact label="Accuracy" value={tracked.gps.accuracyReported ? `±${tracked.gps.accuracyM} m` : 'Not reported'} />
+              {/* Count and cadence, not a ratio against an expected total: the
+                  expectation is extrapolated from the median gap and a truck
+                  reports far more often while driving than while working a
+                  stop, so "55 of ~147" read as a fault on a healthy truck. */}
               <GpsFact
                 label={`Fixes / ${tracked.gps.windowMinutes} min`}
-                value={tracked.gps.expectedFixes ? `${tracked.gps.fixes} of ~${tracked.gps.expectedFixes}` : String(tracked.gps.fixes)}
+                value={
+                  tracked.gps.medianGapSec
+                    ? `${tracked.gps.fixes} · every ${tracked.gps.medianGapSec}s`
+                    : String(tracked.gps.fixes)
+                }
               />
               <GpsFact label="Dropouts" value={String(tracked.gps.dropouts)} />
               <GpsFact
