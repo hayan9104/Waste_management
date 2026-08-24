@@ -15,6 +15,7 @@ import { serializeVehicle, today, startOfToday } from '../services/tracking.serv
 import { emitTo } from '../sockets/realtime.js';
 import { notify } from '../services/notification.service.js';
 import { hashPassword } from '../lib/password.js';
+import { wardRoster } from '../services/roster.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.OFFICER), loadUser);
@@ -31,6 +32,19 @@ router.get(
   asyncHandler(async (req, res) => {
     const { ids } = await scope(req);
     res.json(await analytics.wardPerformance(ids));
+  })
+);
+
+/**
+ * Ward-wise driver roster, scoped to this officer's wards — who is on the
+ * ward's crew, what each is driving, and how far through today's beat they
+ * are. Shares one implementation with the admin console's city-wide view.
+ */
+router.get(
+  ['/ward-drivers', '/drivers'],
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    res.json(await wardRoster(ids));
   })
 );
 

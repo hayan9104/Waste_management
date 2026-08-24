@@ -1,5 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
-import { BarChart3, FileDown, LayoutDashboard, ScrollText, Truck, Users, MapPinned } from 'lucide-react';
+import { BarChart3, FileDown, LayoutDashboard, ScrollText, Truck, Users, MapPinned, IdCard } from 'lucide-react';
 import { ConsoleShell, type NavItem } from '../../components/shells';
 import { useT } from '../../lib/i18n';
 import AdminDashboard from './Dashboard';
@@ -9,6 +9,7 @@ import CityAnalytics from './CityAnalytics';
 import ComplianceExport from './ComplianceExport';
 import AuditLog from './AuditLog';
 import WardSettings from './WardSettings';
+import WardDrivers from './WardDrivers';
 
 /**
  * Shared by AdminPortal and the standalone /ai.health page, so both consoles
@@ -19,6 +20,7 @@ export function useAdminNav(): NavItem[] {
   return [
     { to: '/admin', label: t('admin.nav.dashboard'), icon: LayoutDashboard, end: true },
     { to: '/admin/fleet', label: t('admin.nav.fleet'), icon: Truck },
+    { to: '/admin/ward-drivers', label: t('admin.nav.wardDrivers'), icon: IdCard },
     { to: '/admin/users', label: t('admin.nav.users'), icon: Users },
     { to: '/admin/analytics', label: t('admin.nav.analytics'), icon: BarChart3 },
     { to: '/admin/compliance', label: t('admin.nav.compliance'), icon: FileDown },
@@ -41,6 +43,7 @@ export default function AdminPortal() {
       <Routes>
         <Route index element={<AdminDashboard />} />
         <Route path="fleet" element={<MasterFleet />} />
+        <Route path="ward-drivers" element={<WardDrivers />} />
         <Route path="users" element={<UserManagement />} />
         <Route path="analytics" element={<CityAnalytics />} />
         <Route path="compliance" element={<ComplianceExport />} />

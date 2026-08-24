@@ -645,6 +645,7 @@ export const en: Record<string, string> = {
   'admin.subtitle': 'Gandhinagar Municipal Corporation',
   'admin.nav.dashboard': 'City command',
   'admin.nav.fleet': 'Master fleet',
+  'admin.nav.wardDrivers': 'Ward drivers',
   'admin.nav.users': 'Users & roles',
   'admin.nav.analytics': 'City analytics',
   'admin.nav.compliance': 'Compliance export',

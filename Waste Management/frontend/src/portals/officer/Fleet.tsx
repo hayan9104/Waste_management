@@ -41,6 +41,16 @@ export default function Fleet() {
     queryKey: ['officer', 'wards'],
     queryFn: async () => (await api('officer').get('/officer/wards')).data,
   });
+  /**
+   * The vehicle grid below answers "what is truck X doing"; the officer also
+   * needs "who crews this ward", which a vehicle-keyed list cannot show at a
+   * glance once a ward runs four or five trucks.
+   */
+  const roster = useQuery({
+    queryKey: ['officer', 'ward-drivers'],
+    queryFn: async () => (await api('officer').get('/officer/ward-drivers')).data,
+    refetchInterval: 30_000,
+  });
 
   useSocket('officer', (wards.data ?? []).map((w: any) => `ward:${w.id}`), {
     [SOCKET_EVENTS.TRUCK_UPDATE]: (payload: any) => {
@@ -98,6 +108,39 @@ export default function Fleet() {
           </button>
         }
       />
+
+      {(roster.data ?? []).length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {(roster.data ?? []).map((w: any) => (
+            <Card key={w.ward.id} className="p-3.5">
+              <div className="flex items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-fluid-sm font-bold">{w.ward.name}</p>
+                <Badge tone="brand">{w.driverCount} drivers</Badge>
+              </div>
+              <p className="mt-0.5 text-fluid-xs text-muted">
+                {w.activeCount} reporting · {w.onRouteCount} on beat
+              </p>
+              <ul className="mt-2.5 space-y-1.5">
+                {w.drivers.map((d: any) => (
+                  <li key={d.id} className="flex items-center gap-2 text-fluid-xs">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${d.isOffline ? 'bg-faint' : 'bg-ok'}`}
+                      title={d.isOffline ? 'Handset not reporting' : 'Live'}
+                    />
+                    <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
+                    <span className="shrink-0 font-mono text-faint">
+                      {d.vehicle?.registrationNumber ?? 'no truck'}
+                    </span>
+                    <span className="w-12 shrink-0 text-right tabular-nums text-muted">
+                      {d.route ? `${d.route.stopsDone}/${d.route.stopsTotal}` : '—'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {positioned.length > 0 && (
         <Card className="overflow-hidden p-0">

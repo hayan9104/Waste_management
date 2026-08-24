@@ -17,6 +17,7 @@ import { aiHealth } from '../services/ai.service.js';
 import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
 import env from '../config/env.js';
 import { CITY } from '../seed/city.js';
+import { wardRoster } from '../services/roster.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -636,6 +637,18 @@ router.get(
 );
 
 router.get('/categories', (_req, res) => res.json(WASTE_CATEGORIES));
+
+/**
+ * Ward-wise driver roster — every ward with its crew, each driver's truck,
+ * today's route progress and whether their handset is still reporting.
+ * /fleet answers this per vehicle and /users answers it as a flat directory;
+ * neither one answers "show me ward W's drivers", which is what both the
+ * admin console and the ward officer actually ask.
+ */
+router.get(
+  ['/ward-drivers', '/wards/drivers'],
+  asyncHandler(async (_req, res) => res.json(await wardRoster(null)))
+);
 
 /**
  * Re-seed the demo dataset (plan §8 note: routes are stored per calendar day,

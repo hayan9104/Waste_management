@@ -545,6 +545,7 @@ export const hi: Record<string, string> = {
   'admin.subtitle': 'गांधीनगर नगर निगम',
   'admin.nav.dashboard': 'शहर नियंत्रण',
   'admin.nav.fleet': 'मास्टर वाहन सूची',
+  'admin.nav.wardDrivers': 'वार्ड-वार ड्राइवर',
   'admin.nav.users': 'उपयोगकर्ता और भूमिकाएँ',
   'admin.nav.analytics': 'शहर विश्लेषण',
   'admin.nav.compliance': 'अनुपालन निर्यात',
