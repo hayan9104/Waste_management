@@ -779,6 +779,35 @@ router.post(
   '/reseed-demo-data',
   writeLimiter,
   asyncHandler(async (req, res) => {
+    /**
+     * The most destructive action the product exposes: it drops and recreates
+     * every table. It was the one privileged action with no audit trail at
+     * all, so afterwards there was no record of who wiped the database or
+     * what was there before.
+     *
+     * Recorded before the work starts, not after: the handler responds
+     * immediately and does the wipe in the background, so an audit written on
+     * completion would never be written at all if the process died mid-wipe --
+     * exactly the case where the record matters most. The counts are captured
+     * first so the entry says what was destroyed, not just that something was.
+     */
+    const [wards, users, complaints, vehicles, routes] = await Promise.all([
+      prisma.ward.count(),
+      prisma.user.count(),
+      prisma.complaint.count(),
+      prisma.vehicle.count(),
+      prisma.route.count(),
+    ]);
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'demo_data_reseed',
+      targetTable: 'database',
+      targetId: null,
+      before: { wards, users, complaints, vehicles, routes },
+      after: { note: 'Full wipe and re-seed started in the background' },
+      req,
+    });
+
     const { runSeed } = await import('../seed/seed.js');
     res.json({ ok: true, message: 'Re-seed started in the background. This can take a few minutes -- check the server Logs for progress and a final summary.' });
 
@@ -804,6 +833,21 @@ router.post(
   '/backfill-photos',
   writeLimiter,
   asyncHandler(async (req, res) => {
+    // Additive rather than destructive, but it still rewrites a column across
+    // potentially thousands of rows, so it belongs in the trail.
+    const [missingPhoto, missingResolution] = await Promise.all([
+      prisma.complaint.count({ where: { photoUrl: null } }),
+      prisma.complaint.count({ where: { status: 'RESOLVED', resolutionPhotoUrl: null } }),
+    ]);
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'complaint_photo_backfill',
+      targetTable: 'complaints',
+      targetId: null,
+      before: { complaintsMissingPhoto: missingPhoto, resolvedMissingProof: missingResolution },
+      req,
+    });
+
     res.json({ ok: true, message: 'Photo backfill started in the background -- check the server Logs for progress and a final summary.' });
 
     (async () => {
@@ -859,6 +903,18 @@ router.post(
       await prisma.complaint.delete({ where: { id: c.id } });
     }
 
+    // Deleting citizen reports is irreversible; the codes are recorded so the
+    // trail names exactly which ones went, not merely how many.
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'complaint_cleanup_broken_photos',
+      targetTable: 'complaints',
+      targetId: null,
+      before: { checked: candidates.length, candidates: candidates.map((c) => c.code) },
+      after: { deleted: toDelete.length, deletedCodes: toDelete.map((c) => c.code) },
+      req,
+    });
+
     res.json({
       ok: true,
       checked: candidates.length,
@@ -882,6 +938,19 @@ router.post(
     for (const { id } of matches) {
       await prisma.complaint.delete({ where: { id } });
     }
+
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'complaint_delete_by_code',
+      targetTable: 'complaints',
+      targetId: null,
+      // Requested and deleted are kept apart on purpose: a code that matched
+      // nothing is a different event from one that was destroyed, and folding
+      // them together hides which is which.
+      before: { requested: codes },
+      after: { deleted: matches.map((c) => c.code) },
+      req,
+    });
 
     res.json({ ok: true, requested: codes, deleted: matches.map((c) => c.code) });
   })

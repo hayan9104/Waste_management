@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -6,9 +6,38 @@ import { Badge, Card, EmptyState, ErrorState, Loading, SectionTitle } from '../.
 import { formatDateTime, timeAgo } from '../../lib/format';
 
 /** Immutable audit log (plan §2.4): every privileged action, who/when/what. */
+/**
+ * Renders a recorded before/after payload.
+ *
+ * These were being written to the database and never shown, which made the
+ * trail answer "who did something" but not "what changed" -- the question an
+ * audit log exists for. Destructive entries carry the codes of the rows they
+ * destroyed, so this is the only place that evidence is readable.
+ */
+function Payload({ label, value }: { label: string; value: unknown }) {
+  if (value == null) return null;
+  return (
+    <div className="min-w-0 flex-1">
+      <p className="mb-1 text-fluid-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <pre className="max-h-56 overflow-auto rounded-xl bg-sunken p-2.5 text-[11px] leading-relaxed text-ink">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
+/** Actions that destroy or mass-rewrite rows get flagged so they stand out. */
+const DESTRUCTIVE = new Set([
+  'demo_data_reseed',
+  'complaint_delete_by_code',
+  'complaint_cleanup_broken_photos',
+  'user_block',
+]);
+
 export default function AuditLog() {
   const [action, setAction] = useState('');
   const [page, setPage] = useState(1);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['admin', 'audit', action, page],
@@ -59,11 +88,13 @@ export default function AuditLog() {
                     <th className="px-4 py-2.5">Action</th>
                     <th className="px-4 py-2.5">Target</th>
                     <th className="px-4 py-2.5">IP</th>
+                    <th className="px-4 py-2.5 text-right">Changes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
                   {data.items.map((entry: any) => (
-                    <tr key={entry.id} className="hover:bg-sunken/50">
+                    <Fragment key={entry.id}>
+                    <tr className="hover:bg-sunken/50">
                       <td className="px-4 py-2.5 text-fluid-xs">
                         <p>{formatDateTime(entry.createdAt)}</p>
                         <p className="text-muted">{timeAgo(entry.createdAt)}</p>
@@ -80,13 +111,42 @@ export default function AuditLog() {
                       </td>
                       <td className="px-4 py-2.5">
                         <code className="rounded bg-sunken px-1.5 py-0.5 text-fluid-xs">{entry.action}</code>
+                        {DESTRUCTIVE.has(entry.action) && <Badge tone="danger" className="ml-1.5">Destructive</Badge>}
                       </td>
                       <td className="px-4 py-2.5 text-fluid-xs">
                         <span className="text-muted">{entry.targetTable}</span>
                         {entry.targetId && <span className="ml-1 font-mono text-faint">{entry.targetId.slice(-8)}</span>}
                       </td>
                       <td className="px-4 py-2.5 font-mono text-fluid-xs text-muted">{entry.ip ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {entry.before || entry.after ? (
+                          <button
+                            type="button"
+                            className="btn-ghost btn-sm"
+                            aria-expanded={openId === entry.id}
+                            onClick={() => setOpenId(openId === entry.id ? null : entry.id)}
+                          >
+                            {openId === entry.id ? 'Hide' : 'View'}
+                          </button>
+                        ) : (
+                          <span className="text-fluid-xs text-faint">—</span>
+                        )}
+                      </td>
                     </tr>
+                    {openId === entry.id && (entry.before || entry.after) && (
+                      <tr>
+                        <td colSpan={6} className="bg-sunken/40 px-4 py-3">
+                          <div className="flex flex-col gap-3 sm:flex-row">
+                            <Payload label="Before" value={entry.before} />
+                            <Payload label="After" value={entry.after} />
+                          </div>
+                          {entry.userAgent && (
+                            <p className="mt-2 truncate text-[11px] text-faint">{entry.userAgent}</p>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -108,6 +168,24 @@ export default function AuditLog() {
                     {entry.targetTable}
                     {entry.targetId ? ` · ${entry.targetId.slice(-8)}` : ''}
                   </p>
+                  {(entry.before || entry.after) && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm mt-2"
+                        aria-expanded={openId === entry.id}
+                        onClick={() => setOpenId(openId === entry.id ? null : entry.id)}
+                      >
+                        {openId === entry.id ? 'Hide changes' : 'View changes'}
+                      </button>
+                      {openId === entry.id && (
+                        <div className="mt-2 flex flex-col gap-3">
+                          <Payload label="Before" value={entry.before} />
+                          <Payload label="After" value={entry.after} />
+                        </div>
+                      )}
+                    </>
+                  )}
                 </Card>
               </li>
             ))}

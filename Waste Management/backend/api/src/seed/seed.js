@@ -198,7 +198,7 @@ async function main() {
       avatarColor: '#0f766e',
     },
   });
-  await prisma.user.create({
+  const admin2 = await prisma.user.create({
     data: {
       name: 'Dy. Commissioner R. Shah',
       email: 'admin2@safaai.gov.in',
@@ -778,6 +778,103 @@ async function main() {
     await prisma.vehicle.update({ where: { id: vehicle.id }, data: { odometerKm: odometer } });
   }
   console.log(`[seed] ${fuelEntries} fuel log entries across ${FUEL_HISTORY_DAYS} days`);
+
+  // -------------------------------------------------------- audit trail ----
+  /**
+   * Audit entries for the privileged actions the seeded history implies.
+   *
+   * The wipe clears audit_logs, so a freshly seeded database showed an empty
+   * audit page -- which reads as "this feature does not work" rather than
+   * "nothing has happened yet". These mirror decisions the seeded data already
+   * asserts were made: an officer verified this complaint, assigned that
+   * vehicle, escalated the overdue one. Nothing is invented that the rest of
+   * the dataset does not already claim happened.
+   *
+   * Deliberately NOT seeded: destructive actions (reseed, delete-by-code,
+   * user blocks). A fabricated record of someone deleting citizen reports is
+   * not demo colour, it is a false accusation sitting in an immutable log.
+   */
+  const auditSamples = [];
+  const auditables = await prisma.complaint.findMany({
+    where: { status: { in: ['VERIFIED', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'] } },
+    select: { id: true, code: true, wardId: true, status: true, createdAt: true, assignedVehicleId: true },
+    orderBy: { createdAt: 'desc' },
+    take: 90,
+  });
+
+  const officerForWard = new Map();
+  for (let i = 0; i < officers.length; i += 1) {
+    for (const w of [wards[i * 2], wards[i * 2 + 1]].filter(Boolean)) {
+      officerForWard.set(w.ward.id, officers[i]);
+    }
+  }
+
+  for (let i = 0; i < auditables.length; i += 1) {
+    const c = auditables[i];
+    const actor = officerForWard.get(c.wardId) ?? officers[i % officers.length];
+    const r = rng(`audit-${c.id}`);
+    const at = new Date(c.createdAt.getTime() + intBetween(r, 5, 90) * 60_000);
+
+    auditSamples.push({
+      actorId: actor.id,
+      action: 'complaint_verify',
+      targetTable: 'complaints',
+      targetId: c.id,
+      before: { status: 'PENDING', reviewNeeded: true },
+      after: { status: 'VERIFIED', code: c.code },
+      ip: `10.${intBetween(r, 10, 40)}.${intBetween(r, 0, 255)}.${intBetween(r, 2, 254)}`,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SafaaiSarathi/Officer',
+      createdAt: at,
+    });
+
+    if (c.assignedVehicleId) {
+      auditSamples.push({
+        actorId: actor.id,
+        action: 'complaint_assign',
+        targetTable: 'complaints',
+        targetId: c.id,
+        before: { status: 'VERIFIED', assignedVehicleId: null },
+        after: { status: 'ASSIGNED', assignedVehicleId: c.assignedVehicleId, code: c.code },
+        ip: `10.${intBetween(r, 10, 40)}.${intBetween(r, 0, 255)}.${intBetween(r, 2, 254)}`,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SafaaiSarathi/Officer',
+        createdAt: new Date(at.getTime() + intBetween(r, 2, 30) * 60_000),
+      });
+    }
+  }
+
+  // Ward and fleet administration by the two admin accounts.
+  for (let i = 0; i < wards.length; i += 1) {
+    const r = rng(`audit-ward-${i}`);
+    const at = new Date(Date.now() - intBetween(r, 2, 40) * 86_400_000);
+    auditSamples.push({
+      actorId: (i % 2 === 0 ? admin : admin2).id,
+      action: 'ward_update',
+      targetTable: 'wards',
+      targetId: wards[i].ward.id,
+      before: { slaMinutes: 1440 },
+      after: { slaMinutes: 1440, name: wards[i].ward.name },
+      ip: `10.8.${intBetween(r, 0, 255)}.${intBetween(r, 2, 254)}`,
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) SafaaiSarathi/Admin',
+      createdAt: at,
+    });
+  }
+
+  for (const { vehicle, driver } of vehicles.slice(0, 12)) {
+    const r = rng(`audit-veh-${vehicle.id}`);
+    auditSamples.push({
+      actorId: admin.id,
+      action: 'vehicle_create',
+      targetTable: 'vehicles',
+      targetId: vehicle.id,
+      after: { registrationNumber: vehicle.registrationNumber, driverId: driver.id },
+      ip: `10.8.${intBetween(r, 0, 255)}.${intBetween(r, 2, 254)}`,
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) SafaaiSarathi/Admin',
+      createdAt: new Date(Date.now() - intBetween(r, 20, 60) * 86_400_000),
+    });
+  }
+
+  await prisma.auditLog.createMany({ data: auditSamples });
+  console.log(`[seed] ${auditSamples.length} audit log entries`);
 
   // ------------------------------------------ scheduled pickup requests ----
   /**
