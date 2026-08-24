@@ -190,7 +190,17 @@ router.get(
     const filter = {
       ...where,
       ...(q.wardId ? { wardId: q.wardId } : {}),
-      ...(statusConstraint ? { status: statusConstraint } : {}),
+      /**
+       * A queue is work outstanding, not an archive.
+       *
+       * With no status filter this returned everything ever filed, and since
+       * the default order is worst-first the entire first page came back
+       * RESOLVED — closed reports carrying stale review flags, and an SLA
+       * column counting days since a deadline that had actually been met. An
+       * officer opening their queue is asking what still needs doing; history
+       * stays reachable by naming a status explicitly.
+       */
+      ...(statusConstraint ? { status: statusConstraint } : { status: { notIn: ['RESOLVED', 'REJECTED'] } }),
       ...(q.minConfidence != null ? { aiConfidence: { gte: q.minConfidence } } : {}),
       ...(q.category ? { category: q.category } : {}),
       ...(q.severity ? { severity: q.severity } : {}),
@@ -377,6 +387,11 @@ router.post(
         dueAt,
         slaMinutes: complaint.slaMinutes + body.hours * 60,
         reviewNeeded: false,
+        deferredAt: new Date(),
+        deferredReason: body.reason,
+        // Incremented, not set: the citizen is entitled to know this is the
+        // third time their report has been pushed back, not just that it was.
+        deferredCount: { increment: 1 },
       },
       include: { ward: true, citizen: { select: { id: true, name: true } }, assignedVehicle: true },
     });

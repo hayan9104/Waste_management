@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { Check, MapPin, Sparkles, Truck, Users } from 'lucide-react';
+import { Check, Clock, MapPin, Sparkles, Truck, Users } from 'lucide-react';
 import { api, assetUrl } from '../../lib/api';
 import { Badge, Card, ErrorState, EvidencePhoto, Loading, Meter } from '../../components/ui';
 import { BackLink } from '../../components/shells';
@@ -71,6 +71,33 @@ export default function ComplaintDetail() {
                 </span>
               </div>
             )}
+          </div>
+        </Card>
+      )}
+
+      {/* Rescheduled by the ward officer.
+          Stated before the timeline rather than buried inside it: a resident
+          opening a report that has stopped moving is asking why, and the
+          answer is the officer's own reason and the new date. The count is
+          shown because being put off four times is a different experience
+          from being put off once. */}
+      {data.deferred && (
+        <Card className="border-warn/30 bg-warn/5 p-4">
+          <div className="flex items-start gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-warn/15 text-warn">
+              <Clock className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-fluid-sm font-semibold text-warn">
+                Rescheduled by the ward officer
+                {data.deferred.times > 1 && ` · ${data.deferred.times} times`}
+              </p>
+              <p className="mt-1 text-fluid-sm text-ink">{data.deferred.reason}</p>
+              <p className="mt-1 text-fluid-xs text-muted">
+                {data.deferred.newDueAt && <>Now expected by {formatDateTime(data.deferred.newDueAt)} · </>}
+                deferred {timeAgo(data.deferred.at)}
+              </p>
+            </div>
           </div>
         </Card>
       )}
