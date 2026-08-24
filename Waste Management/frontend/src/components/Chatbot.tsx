@@ -1,15 +1,44 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { Bot, MessageSquare, X, Send, Sparkles, User, HelpCircle, PhoneCall, Award, Trash2, Loader2 } from 'lucide-react';
+import { Bot, MessageSquare, X, Send, Sparkles, User, HelpCircle, PhoneCall, Award, Trash2, Loader2, ClipboardPlus } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 import { BASE } from '../lib/api';
+import { ComplaintBookingModal } from './ComplaintBookingModal';
 
 interface Message {
   id: string;
   sender: 'bot' | 'user';
   text: string;
   timestamp: string;
+  /** Renders the "Add details & book" call to action under this reply. */
+  action?: 'book';
 }
+
+/**
+ * Whether a turn is about filing a report, in any of the three languages.
+ *
+ * Matched against the user's own words as well as the reply: the assistant
+ * paraphrases, and an answer that never happens to use the word "report" would
+ * otherwise lose the button on exactly the turn that earned it. Cheap keyword
+ * matching rather than another model call — a false positive costs one ignored
+ * button, and the user can always type again.
+ */
+const BOOKING_HINTS = [
+  'report', 'complaint', 'complain', 'file a', 'garbage', 'waste', 'dump', 'bin', 'rubbish', 'trash',
+  'शिकायत', 'रिपोर्ट', 'कचरा', 'कूड़ा', 'दर्ज',
+  'ફરિયાદ', 'રિપોર્ટ', 'કચરો', 'નોંધ',
+];
+
+function wantsBooking(userText: string, botText: string) {
+  const hay = `${userText} ${botText}`.toLowerCase();
+  return BOOKING_HINTS.some((k) => hay.includes(k));
+}
+
+const BOOK_CTA: Record<'en' | 'hi' | 'gu', string> = {
+  en: 'Add details & book complaint',
+  hi: 'विवरण भरें और शिकायत दर्ज करें',
+  gu: 'વિગતો ભરો અને ફરિયાદ નોંધાવો',
+};
 
 const KNOWLEDGE_BASE = {
   en: {
@@ -57,6 +86,7 @@ export function Chatbot() {
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [booking, setBooking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -113,6 +143,7 @@ export function Chatbot() {
         sender: 'bot',
         text: botReply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        action: wantsBooking(text, botReply) ? 'book' : undefined,
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch {
@@ -128,6 +159,10 @@ export function Chatbot() {
         sender: 'bot',
         text: fallbackReply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        // The offline fallback always points at reporting, so it always offers
+        // the button — this is the turn where the network already failed the
+        // user once and sending them off to hunt for a tab would fail twice.
+        action: 'book',
       };
       setMessages((prev) => [...prev, botMsg]);
     } finally {
@@ -211,6 +246,18 @@ export function Chatbot() {
                   }`}
                 >
                   <p>{m.text}</p>
+
+                  {m.action === 'book' && (
+                    <button
+                      type="button"
+                      onClick={() => setBooking(true)}
+                      className="mt-2 flex w-full min-h-touch items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2 text-[12px] font-semibold text-brand-ink transition hover:brightness-110 active:scale-[0.98]"
+                    >
+                      <ClipboardPlus className="h-3.5 w-3.5" />
+                      {BOOK_CTA[currentLang]}
+                    </button>
+                  )}
+
                   <span
                     className={`block mt-1 text-[10px] ${
                       m.sender === 'user' ? 'text-brand-ink/70 text-right' : 'text-faint'
@@ -278,6 +325,31 @@ export function Chatbot() {
           </form>
         </div>
       )}
+
+      {/* Booking sheet. Rendered as a sibling of the chat panel, not inside it,
+          so on desktop it is not clipped by the 380px floating window. */}
+      <ComplaintBookingModal
+        open={booking}
+        onClose={() => setBooking(false)}
+        onBooked={(code) => {
+          // Echo the ticket back into the conversation so the chat itself is
+          // the record of what was filed.
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: String(Date.now() + 2),
+              sender: 'bot',
+              text:
+                currentLang === 'gu'
+                  ? `તમારી ફરિયાદ નોંધાઈ ગઈ છે. ટિકિટ નંબર: ${code}. તમે "My Reports" માંથી સ્થિતિ જોઈ શકો છો.`
+                  : currentLang === 'hi'
+                    ? `आपकी शिकायत दर्ज हो गई है। टिकट नंबर: ${code}. आप "My Reports" में स्थिति देख सकते हैं।`
+                    : `Your complaint is filed. Ticket number: ${code}. You can follow its status under My Reports.`,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ]);
+        }}
+      />
     </>
   );
 }
