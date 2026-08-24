@@ -112,6 +112,17 @@ export default function Emergencies() {
             </div>
           </div>
 
+          <div className="mt-2.5 flex items-center gap-1.5 text-fluid-xs">
+            {c.vehicle ? (
+              <>
+                <Badge tone="ok">Truck dispatched</Badge>
+                <span className="truncate font-mono text-muted">{c.vehicle.registrationNumber}</span>
+              </>
+            ) : (
+              <Badge tone="warn">No truck assigned yet</Badge>
+            )}
+          </div>
+
           <div className="mt-3">
             <Meter
               value={c.sla?.pctElapsed ?? 0}

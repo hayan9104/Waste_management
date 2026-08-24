@@ -91,10 +91,19 @@ export default function DriverStops() {
 
   // Real-time task assignment listener over Socket.io
   useSocket('driver', vehicleId ? [`truck:${vehicleId}`] : [], {
-    [SOCKET_EVENTS.ASSIGNMENT_NEW]: () => {
+    [SOCKET_EVENTS.ASSIGNMENT_NEW]: (payload: any) => {
       queryClient.invalidateQueries({ queryKey: ['driver'] });
       playNotificationSound();
-      toast.info('🔔 New collection task assigned by Ward Officer!');
+      if (payload?.isEmergency) {
+        // Auto-dispatched emergencies jump the queue and carry a 30-minute
+        // clock — announcing them as a routine assignment buries the one
+        // thing about them that matters.
+        toast.error(
+          `🚨 EMERGENCY ${payload.code ?? ''} — ${payload.address ?? 'reported location'}. Added as your next stop.`
+        );
+      } else {
+        toast.info('🔔 New collection task assigned by Ward Officer!');
+      }
     },
     new_task_assigned: () => {
       queryClient.invalidateQueries({ queryKey: ['driver'] });

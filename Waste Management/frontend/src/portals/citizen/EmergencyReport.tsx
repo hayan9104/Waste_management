@@ -72,7 +72,18 @@ export default function EmergencyReport() {
 
       const { data } = await api('citizen').post('/citizen/emergency', form);
       await queryClient.invalidateQueries({ queryKey: ['citizen'] });
-      toast.success(`Emergency ${data.complaint.code} raised — the ward officer has been paged`);
+      /**
+       * Say which truck is coming when one actually is. "A truck has been
+       * dispatched" when none was would be the worst possible lie to tell
+       * someone standing next to medical waste, so the no-truck case is
+       * reported as plainly as the success case.
+       */
+      const truck = data.dispatch?.vehicle?.registrationNumber;
+      if (truck) {
+        toast.success(`Emergency ${data.complaint.code} raised — truck ${truck} dispatched and the ward officer paged`);
+      } else {
+        toast.success(`Emergency ${data.complaint.code} raised — the ward officer has been paged`);
+      }
       navigate(`/app/complaints/${data.complaint.id}`, { replace: true });
     } catch (err) {
       toast.error(errorMessage(err, 'Could not raise the emergency'));
@@ -93,7 +104,8 @@ export default function EmergencyReport() {
           <div>
             <h1 className="text-fluid-lg font-bold text-danger">Emergency report</h1>
             <p className="mt-1 text-fluid-sm text-muted">
-              This skips the normal queue and alerts the ward officer immediately, with a 30-minute escalation timer.
+              This skips the normal queue: the nearest available truck is dispatched straight away and the ward
+              officer is paged, with a 30-minute escalation timer.
             </p>
           </div>
         </div>
