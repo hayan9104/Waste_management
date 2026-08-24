@@ -403,8 +403,9 @@ export function StaffAssistantSheet({
                 {mode === 'crew' && (
                   crew.isLoading ? <Loading /> : crew.data ? (
                     <>
-                      <div className="mb-3 grid grid-cols-3 gap-2">
+                      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <Tile label="On duty" value={crew.data.totals.onDuty} />
+                        <Tile label="On break" value={crew.data.totals.onBreak ?? 0} />
                         <Tile label="Worked today" value={crew.data.totals.workedToday} />
                         <Tile label="Hours" value={crew.data.totals.hoursLogged} />
                       </div>
@@ -412,10 +413,12 @@ export function StaffAssistantSheet({
                         <ul className="space-y-2">
                           {crew.data.onDuty.map((s: any) => (
                             <li key={s.id} className="flex items-center gap-2.5 rounded-2xl border border-line bg-elevated p-3">
-                              <span className="h-2 w-2 shrink-0 rounded-full bg-ok" />
+                              <span className={`h-2 w-2 shrink-0 rounded-full ${s.onBreak ? 'bg-warn' : 'bg-ok'}`} />
                               <span className="min-w-0 flex-1 truncate text-fluid-xs font-medium">{s.driver?.name}</span>
                               <span className="shrink-0 font-mono text-[11px] text-muted">{s.vehicle?.registrationNumber ?? '—'}</span>
-                              <span className="w-16 shrink-0 text-right text-[11px] text-muted">{formatDuration(s.minutes ?? 0)}</span>
+                              <span className="w-20 shrink-0 text-right text-[11px] text-muted">
+                                {s.onBreak ? 'on break' : formatDuration(s.workedMinutes ?? s.minutes ?? 0)}
+                              </span>
                             </li>
                           ))}
                         </ul>

@@ -64,11 +64,32 @@ async function syncTrucks() {
     include: { vehicle: true },
   });
 
+  /**
+   * Drivers currently standing down. Their trucks must not keep driving: a
+   * vehicle moving along its route while the officer's board says its driver
+   * is on a rest break is the two screens contradicting each other, and the
+   * break is the fact the driver actually asserted.
+   */
+  const resting = new Set(
+    (
+      await prisma.driverShift.findMany({
+        where: { status: 'ON_BREAK', date: today() },
+        select: { vehicleId: true },
+      })
+    )
+      .map((r) => r.vehicleId)
+      .filter(Boolean)
+  );
+
   const active = new Set();
   for (const route of routes) {
     const path = route.polylineGeometry;
     if (!Array.isArray(path) || path.length < 2) continue;
     if (route.vehicle?.maintenanceFlag) continue;
+    if (resting.has(route.vehicleId)) {
+      state.trucks.delete(route.vehicleId);
+      continue;
+    }
 
     active.add(route.vehicleId);
     const existing = state.trucks.get(route.vehicleId);

@@ -12,7 +12,7 @@ import { emitTo } from '../sockets/realtime.js';
 import { notify, notifyWardOfficers, awardCredits } from '../services/notification.service.js';
 import { distanceKm } from '../lib/geo.js';
 import { ensureRoadSnappedPolyline, navigationRoute, solveLocal } from '../services/routing.service.js';
-import { startShift, endShift, activeShift, serializeShift, shiftHistory } from '../services/shift.service.js';
+import { startShift, endShift, startBreak, endBreak, activeShift, serializeShift, shiftHistory } from '../services/shift.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.DRIVER), loadUser);
@@ -669,6 +669,41 @@ router.post(
     const vehicle = await myVehicle(req.user.id).catch(() => null);
     const shift = await endShift({ driver: req.user, vehicle, ...body });
     res.json(serializeShift(shift));
+  })
+);
+
+/**
+ * Rest break — POST /api/driver/shift/break/start and /break/end.
+ *
+ * Separate from clocking out: a driver stopping for a meal has not gone home,
+ * so the shift clock keeps running and they stay on the officer's on-duty
+ * board. What changes is that the time is counted as rest rather than work,
+ * and the truck is parked.
+ */
+router.post(
+  '/shift/break/start',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
+        reason: z.string().max(120).optional(),
+      })
+      .parse(req.body ?? {});
+    const vehicle = await myVehicle(req.user.id).catch(() => null);
+    const { shift, alreadyOnBreak } = await startBreak({ driver: req.user, vehicle, ...body });
+    res.status(alreadyOnBreak ? 200 : 201).json({ ...serializeShift(shift), alreadyOnBreak });
+  })
+);
+
+router.post(
+  '/shift/break/end',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const vehicle = await myVehicle(req.user.id).catch(() => null);
+    const { shift, alreadyWorking } = await endBreak({ driver: req.user, vehicle });
+    res.json({ ...serializeShift(shift), alreadyWorking });
   })
 );
 
