@@ -39,7 +39,7 @@ const median = (nums) => {
  * one good signal while another is failing: no fix at all outranks a stale
  * fix, which outranks poor accuracy, which outranks dropouts.
  */
-function grade({ lastPingAgeSec, fixes, dropouts, accuracyM, expectedFixes }) {
+function grade({ lastPingAgeSec, dropouts, accuracyM }) {
   if (lastPingAgeSec == null) {
     return { status: 'NO_SIGNAL', label: 'Never reported', tone: 'neutral' };
   }
@@ -49,11 +49,22 @@ function grade({ lastPingAgeSec, fixes, dropouts, accuracyM, expectedFixes }) {
   if (accuracyM != null && accuracyM > ACCURACY_POOR_M) {
     return { status: 'POOR', label: `Weak fix (±${Math.round(accuracyM)} m)`, tone: 'danger' };
   }
-  // Fewer than two thirds of the fixes we should have seen means the handset
-  // is dropping them, even though the last one happened to arrive just now.
-  if (expectedFixes >= 4 && fixes < expectedFixes * 0.66) {
-    return { status: 'PATCHY', label: `Dropping fixes (${fixes}/${expectedFixes})`, tone: 'warn' };
-  }
+  /**
+   * Dropouts are measured, not inferred.
+   *
+   * There used to be a second test here: fewer than two thirds of
+   * `expectedFixes` also counted as dropping. But `expectedFixes` is
+   * extrapolated from the *median* gap, and a truck's cadence is bimodal — a
+   * fix every few seconds while it drives, then a longer quiet stretch while
+   * it works a stop. The median only ever sees the driving half, so the
+   * expectation came out roughly three times the real one and healthy trucks
+   * were labelled "Dropping fixes (55/147)" while reporting zero actual
+   * dropouts at a steady four-second cadence. Eighteen of thirty-five trucks
+   * were being accused of a fault they did not have.
+   *
+   * A gap longer than DROPOUT_GAP_SEC is a fact about the data. That is the
+   * whole test now; the counts are still returned below as evidence.
+   */
   if (dropouts > 0) {
     return { status: 'PATCHY', label: `${dropouts} dropout${dropouts > 1 ? 's' : ''} in ${WINDOW_MIN} min`, tone: 'warn' };
   }
@@ -132,7 +143,7 @@ export async function gpsHealthFor(vehicleIds) {
       : rows.length;
 
     out.set(v.id, {
-      ...grade({ lastPingAgeSec, fixes: rows.length, dropouts, accuracyM, expectedFixes }),
+      ...grade({ lastPingAgeSec, dropouts, accuracyM }),
       lastPingAgeSec,
       fixes: rows.length,
       expectedFixes,

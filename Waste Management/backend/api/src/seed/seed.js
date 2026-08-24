@@ -1955,21 +1955,59 @@ async function main() {
    * each get a full lifecycle of their own, and the ward follows the citizen
    * so an officer's list is never empty either.
    */
-  const SCHEDULE_ROUNDS = 5;
+  /**
+   * Six rounds, not five: two demo rounds plus four that deal evenly over the
+   * eight wards is exactly five per ward, which is the floor that keeps the
+   * thinnest-scoped officer (one ward, Sector 14-17) off an almost-empty page.
+   */
+  const SCHEDULE_ROUNDS = 6;
+  /**
+   * Residents grouped by the ward they live in, so a request can be dealt to a
+   * ward and still belong to somebody who actually lives there.
+   */
+  const citizensByWard = new Map();
+  for (const c of citizens) {
+    if (!c.wardId) continue;
+    if (!citizensByWard.has(c.wardId)) citizensByWard.set(c.wardId, []);
+    citizensByWard.get(c.wardId).push(c);
+  }
+
+  /**
+   * Two demo rounds, then spread the rest across every ward.
+   *
+   * Giving the first four rounds to the four named demo citizens put 40 of the
+   * 50 requests into those four citizens' wards: Sectors 1-4, 5-8, 9-13 and
+   * 14-17 held eleven or twelve each while the other four wards held one. The
+   * officers scoped to those wards opened Advance Scheduled Requests on an
+   * empty screen — the page reads as broken rather than quiet, and it is the
+   * ward that decides who sees it.
+   *
+   * Two rounds still give the demo citizens a full lifecycle to walk through;
+   * the remaining thirty are dealt ward by ward so every officer has a list.
+   */
+  const DEMO_ROUNDS = 2;
   let scheduledCount = 0;
   for (let i = 0; i < SCHEDULE_SPECS.length * SCHEDULE_ROUNDS; i += 1) {
     const spec = SCHEDULE_SPECS[i % SCHEDULE_SPECS.length];
     const round = Math.floor(i / SCHEDULE_SPECS.length);
     const r = rng(`scheduled-${i}`);
-    // Rounds 0-3 belong to the four named demo citizens, one round each, so
-    // each of them ends up with a full ten-row lifecycle. Later rounds spread
-    // across the rest of the population.
-    const citizenIdx = round < 4 ? round : (i * 5 + 2) % citizens.length;
-    const citizen = citizens[citizenIdx];
+
+    let citizen;
+    let wardSlot;
+    if (round < DEMO_ROUNDS) {
+      // The named demo citizens, so their own Schedule tab has a full history.
+      citizen = citizens[round];
+      wardSlot = wards.findIndex((w) => w.ward.id === citizen.wardId);
+    } else {
+      // Deal round-robin over the wards, then pick somebody who lives there.
+      wardSlot = i % wards.length;
+      const locals = citizensByWard.get(wards[wardSlot].ward.id) ?? [];
+      citizen = locals.length ? locals[(i * 7 + round) % locals.length] : citizens[i % citizens.length];
+      if (!locals.length) wardSlot = wards.findIndex((w) => w.ward.id === citizen.wardId);
+    }
     // Ward follows the citizen, not the loop counter, so the request, the
     // citizen and the officer who sees it are all in the same place.
-    const wardSlot = wards.findIndex((w) => w.ward.id === citizen.wardId);
-    const { ward, index } = wards[wardSlot >= 0 ? wardSlot : citizenIdx % wards.length];
+    const { ward, index } = wards[wardSlot >= 0 ? wardSlot : i % wards.length];
     const home = crews[index][0];
     const point = pointNear(wardAnchors, index, 5000 + i * 11);
 
