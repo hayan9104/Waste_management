@@ -374,7 +374,16 @@ async function main() {
   let resolvedCount = 0;
   const creditTally = new Map();
 
-  for (let d = HISTORY_DAYS; d >= 1; d -= 1) {
+  /**
+   * Down to d = 0, i.e. including today.
+   *
+   * The loop used to stop at yesterday, so the newest report in the system was
+   * always 15+ hours old. That was invisible under day-long SLAs; against a
+   * 3-8 hour window it meant every single open complaint was already past due
+   * — 98 of 108 — which makes the officer's overdue count meaningless and
+   * contradicts the SLA figure sitting next to it.
+   */
+  for (let d = HISTORY_DAYS; d >= 0; d -= 1) {
     const day = new Date();
     day.setDate(day.getDate() - d);
     day.setHours(7, 0, 0, 0);
@@ -404,7 +413,15 @@ async function main() {
         const citizen = citizens[intBetween(r, 0, citizens.length - 1)];
         const point = pointNear(wardAnchors, index, d * 13 + k * 7);
 
-        const createdAt = new Date(day.getTime() + intBetween(r, 0, 11 * 60) * 60_000);
+        /**
+         * Today's reports are placed relative to now rather than to a 07:00
+         * start, so the live backlog is genuinely a few hours old instead of
+         * being back-dated to this morning the moment the seed runs.
+         */
+        const createdAt =
+          d === 0
+            ? new Date(Date.now() - intBetween(r, 5, 400) * 60_000)
+            : new Date(day.getTime() + intBetween(r, 0, 11 * 60) * 60_000);
         const confidence = Number((0.45 + r() * 0.52).toFixed(3));
         const autoApproved = confidence >= 0.7;
 
@@ -419,7 +436,33 @@ async function main() {
          * panel show week-old "emergencies" that no longer meant anything.
          * They are always closed unless they arrived in the last few hours.
          */
-        const shouldResolve = meta.emergency ? d > 0 : d > 5 ? true : r() > 0.45;
+        /**
+         * What stays open, and why.
+         *
+         * Today's work is genuinely in flight, so about half of it is still
+         * open. Yesterday keeps a deliberate 15% tail so SLA breaches,
+         * escalations and the overdue counter have real material to show —
+         * without it those three screens would be permanently empty. Anything
+         * older is closed: a routine report still open after two days against
+         * a four-hour target is not a backlog, it is a data artefact.
+         */
+        /**
+         * An emergency stays open only while its own clock is still running.
+         *
+         * Leaving every one of today's emergencies open produced 21 of them,
+         * nearly all already past a 30-minute deadline — which says the city
+         * ignores its own red button. They are auto-dispatched on arrival, so
+         * the honest picture is a handful genuinely in progress and the rest
+         * cleared.
+         */
+        const withinEmergencyClock = Date.now() - createdAt.getTime() < 25 * 60_000;
+        const shouldResolve = meta.emergency
+          ? !(d === 0 && withinEmergencyClock)
+          : d === 0
+            ? r() > 0.5
+            : d === 1
+              ? r() > 0.15
+              : true;
         /**
          * Most work is cleared well inside its deadline, a minority runs late.
          *

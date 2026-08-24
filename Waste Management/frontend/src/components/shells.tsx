@@ -196,7 +196,7 @@ export function ConsoleShell({
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-line 2xl:hidden text-ink cursor-pointer"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-line lg:hidden text-ink cursor-pointer"
               aria-label="Open Navigation"
             >
               <Menu className="h-5 w-5" />
@@ -229,8 +229,8 @@ export function ConsoleShell({
               fallback. Below 2xl the hamburger drawer (below) carries
               navigation instead — a vertical list has no width limit to run
               into. */}
-          <div className="hidden min-w-0 flex-1 items-center justify-center 2xl:flex">
-            <SpotlightNav items={nav} accent={accent} className="shrink-0" />
+          <div className="hidden min-w-0 flex-1 items-center justify-center lg:flex">
+            <SpotlightNav items={nav} accent={accent} className="shrink-0" compactUntil2xl />
           </div>
 
           {/* Right Header Actions — language + theme fold into the account

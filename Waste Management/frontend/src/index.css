@@ -146,6 +146,32 @@
     @apply inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-fluid-xs font-medium;
   }
 
+  /**
+   * Touch devices get real tap targets; pointer devices keep their density.
+   *
+   * The compact controls measure 27-31px tall, which is fine under a mouse and
+   * awkward under a thumb — and `btn-sm` explicitly sets `min-h-0`, so it
+   * opts out of the shared touch minimum. Widening them everywhere would
+   * bloat the officer and admin consoles, where the whole point of the small
+   * variant is fitting real work on one screen. Scoping it to coarse pointers
+   * fixes the phone without touching the desktop.
+   *
+   * Inline tel: links are the other case — a phone number in a table row is a
+   * 17px-tall tap target on a roster page a supervisor genuinely uses from a
+   * phone.
+   */
+  @media (pointer: coarse) {
+    .btn-sm {
+      @apply min-h-touch px-3.5;
+    }
+    .chip {
+      @apply min-h-[2.25rem] px-3;
+    }
+    a[href^='tel:'] {
+      @apply inline-flex min-h-[2rem] items-center;
+    }
+  }
+
   /* Any table wider than its container scrolls inside itself, never the page. */
   .table-scroll {
     @apply -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0;
