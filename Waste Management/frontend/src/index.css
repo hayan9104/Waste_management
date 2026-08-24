@@ -257,3 +257,18 @@
 .truck-marker__body {
   transition: transform 300ms ease-out;
 }
+
+/* Ward boundary editor — the draggable corners.
+   touch-action:none is what lets a finger drag the corner at all: without it
+   the browser claims the gesture as a page scroll and the point never moves.
+   Leaflet puts .leaflet-drag-target on whatever is being dragged, which is
+   the only reliable hook for a grabbing cursor that survives the pointer
+   leaving the 34px handle mid-drag. */
+.ward-vertex {
+  touch-action: none;
+  cursor: grab;
+}
+.ward-vertex:active,
+.leaflet-drag-target.ward-vertex {
+  cursor: grabbing;
+}
