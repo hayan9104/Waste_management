@@ -192,7 +192,7 @@ export function ConsoleShell({
       <header className="fixed inset-x-0 top-0 z-40 h-[calc(4rem+env(safe-area-inset-top))] border-b border-line bg-surface/95 pt-[env(safe-area-inset-top)] shadow-xs backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8 xl:px-10">
           {/* Logo & Console Title */}
-          <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
@@ -229,8 +229,12 @@ export function ConsoleShell({
               fallback. Below 2xl the hamburger drawer (below) carries
               navigation instead — a vertical list has no width limit to run
               into. */}
-          <div className="hidden min-w-0 flex-1 items-center justify-center lg:flex">
-            <SpotlightNav items={nav} accent={accent} className="shrink-0" compactUntil2xl />
+          {/* min-w-0 plus a shrinkable child: without both, the nav is a
+              rigid block inside a flex row and overflows into the logo on one
+              side and the account controls on the other rather than giving
+              way. */}
+          <div className="hidden min-w-0 flex-1 items-center justify-center overflow-hidden lg:flex">
+            <SpotlightNav items={nav} accent={accent} className="min-w-0 max-w-full" compactUntil2xl />
           </div>
 
           {/* Right Header Actions — language + theme fold into the account
