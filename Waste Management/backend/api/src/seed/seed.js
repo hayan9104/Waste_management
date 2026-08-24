@@ -651,6 +651,278 @@ async function main() {
   }
   console.log(`[seed] ${routes} optimised routes published for today across ${wards.length} wards`);
 
+
+  // ------------------------------------------------- showcase complaints ----
+  /**
+   * Five hand-built complaints, one frozen at each stage of the lifecycle.
+   *
+   * The 45 days of generated history give the charts something real to read,
+   * but they are random: there is no guarantee that a walkthrough will find a
+   * report sitting in review, another with a truck en route, and a third
+   * closed with before/after proof. These five are pinned to the top of every
+   * list with fixed codes so a demo can be walked in order, and every row that
+   * refers to them is written from the same source of truth -- the complaint,
+   * its timeline, the route stop, the assigned truck, the citizen's credits
+   * and notifications all agree, because they are derived here rather than
+   * generated independently.
+   *
+   * SS-DEMO1  pending, AI unsure          -> officer review queue
+   * SS-DEMO2  verified + assigned         -> citizen live-tracks the truck
+   * SS-DEMO3  in progress                 -> driver on site
+   * SS-DEMO4  resolved with proof photos  -> before/after + credits awarded
+   * SS-DEMO5  emergency, auto-dispatched  -> 30-minute clock, stop 1
+   */
+  const todayKeyForShowcase = new Date().toISOString().slice(0, 10);
+
+  /**
+   * Only trucks that actually have a route today can carry a showcase stop.
+   *
+   * Picking any ON_ROUTE crew member is not enough: a truck whose share of the
+   * ward backlog came to fewer than two stops is deliberately left routeless
+   * above, and assigning a demo complaint to it produces exactly the defect
+   * this data exists to avoid -- the complaint insists a truck is coming while
+   * that driver's stop list has never heard of it.
+   */
+  const routedToday = await prisma.route.findMany({
+    where: { date: todayKeyForShowcase },
+    select: { id: true, vehicleId: true },
+  });
+  const routeByVehicle = new Map(routedToday.map((r) => [r.vehicleId, r]));
+  const routedCrew = vehicles.filter((v) => routeByVehicle.has(v.vehicle.id));
+  if (routedCrew.length === 0) {
+    console.warn('[seed] no routes published today — showcase stops will not appear on any handset');
+  }
+
+  const SHOWCASE = [
+    {
+      code: 'SS-DEMO1',
+      stage: 'PENDING',
+      category: 'GARBAGE_PILE',
+      confidence: 0.52,
+      minutesAgo: 25,
+      street: 'Ch Road',
+      description: 'Pile of household waste dumped at the corner, growing since yesterday.',
+    },
+    {
+      code: 'SS-DEMO2',
+      stage: 'ASSIGNED',
+      category: 'OVERFLOWING_BIN',
+      confidence: 0.91,
+      minutesAgo: 95,
+      street: 'Sector 7 Circle Road',
+      description: 'Community bin overflowing onto the footpath outside the market.',
+    },
+    {
+      code: 'SS-DEMO3',
+      stage: 'IN_PROGRESS',
+      category: 'ILLEGAL_DUMPING',
+      confidence: 0.87,
+      minutesAgo: 150,
+      street: 'Kudasan Main Road',
+      description: 'Construction and household waste tipped on the roadside overnight.',
+    },
+    {
+      code: 'SS-DEMO4',
+      stage: 'RESOLVED',
+      category: 'CONSTRUCTION_DEBRIS',
+      confidence: 0.94,
+      minutesAgo: 320,
+      street: 'Gh Road',
+      description: 'Rubble left behind after a shop renovation, blocking half the lane.',
+    },
+    {
+      code: 'SS-DEMO5',
+      stage: 'EMERGENCY',
+      category: 'MEDICAL_WASTE',
+      confidence: 0.96,
+      minutesAgo: 8,
+      street: 'Sector 16 Ch Road',
+      description: 'Used syringes and dressings dumped beside the clinic gate.',
+    },
+  ];
+
+  const showcaseIds = [];
+  for (let i = 0; i < SHOWCASE.length; i += 1) {
+    const spec = SHOWCASE[i];
+    const r = rng('showcase-' + spec.code);
+    const meta = CATEGORY_MAP[spec.category];
+    const citizen = citizens[i % 4]; // the four named citizen logins
+    // A truck with a real route today, so the stop lands on a handset the
+    // driver can actually open. The ward is taken from the truck rather than
+    // chosen separately, so the report, the truck and the ward always agree
+    // — the verifier asserts exactly that.
+    const handler = routedCrew.length ? routedCrew[i % routedCrew.length] : crews[i % wards.length][0];
+    const { ward, index } = handler;
+
+    const createdAt = new Date(Date.now() - spec.minutesAgo * 60_000);
+    const point = pointNear(wardAnchors, index, 7000 + i * 31);
+    const emergency = spec.stage === 'EMERGENCY';
+    const slaMinutes = emergency ? 30 : meta.slaMinutes;
+    const assigned = spec.stage !== 'PENDING';
+    const resolved = spec.stage === 'RESOLVED';
+    const resolvedAt = resolved ? new Date(createdAt.getTime() + 210 * 60_000) : null;
+
+    const photoUrl = CITIZEN_PHOTO_POOL[i % CITIZEN_PHOTO_POOL.length];
+    const resolutionPhotoUrl = resolved
+      ? CITIZEN_PHOTO_POOL[(i + 1) % CITIZEN_PHOTO_POOL.length]
+      : null;
+
+    const status = emergency ? 'ASSIGNED' : spec.stage === 'RESOLVED' ? 'RESOLVED' : spec.stage;
+
+    const complaint = await prisma.complaint.create({
+      data: {
+        code: spec.code,
+        citizenId: citizen.id,
+        wardId: ward.id,
+        category: spec.category,
+        aiCategory: spec.category,
+        aiConfidence: spec.confidence,
+        // Below the auto-approve gate is exactly what "needs a human" means,
+        // so the flag is derived from the score rather than set by hand.
+        aiVerified: spec.confidence >= 0.7,
+        reviewNeeded: spec.confidence < 0.7,
+        fraudScore: Number((r() * 0.12).toFixed(3)),
+        status,
+        severity: emergency ? 'CRITICAL' : meta.severity,
+        isEmergency: emergency,
+        channel: 'APP',
+        description: spec.description,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        address: intBetween(r, 1, 120) + ', ' + spec.street + ', ' + ward.name,
+        photoUrl,
+        resolutionPhotoUrl,
+        slaMinutes,
+        dueAt: new Date(createdAt.getTime() + slaMinutes * 60_000),
+        createdAt,
+        updatedAt: resolvedAt || createdAt,
+        resolvedAt,
+        resolvedById: resolved ? handler.driver.id : null,
+        assignedVehicleId: assigned ? handler.vehicle.id : null,
+        assignedAt: assigned ? new Date(createdAt.getTime() + 6 * 60_000) : null,
+      },
+    });
+    showcaseIds.push(complaint.id);
+
+    // Timeline: only the steps this stage has actually reached.
+    const events = [{ status: 'PENDING', note: 'Report received from citizen app', at: createdAt }];
+    if (spec.confidence >= 0.7) {
+      events.push({
+        status: 'VERIFIED',
+        note: 'AI verified as ' + meta.label + ' (' + Math.round(spec.confidence * 100) + '% confidence)',
+        at: new Date(createdAt.getTime() + 60_000),
+      });
+    }
+    if (emergency) {
+      events.push({
+        status: 'ASSIGNED',
+        note: 'Emergency auto-dispatched to ' + handler.vehicle.registrationNumber + ' — ward officer paged',
+        at: new Date(createdAt.getTime() + 2 * 60_000),
+      });
+    } else if (assigned) {
+      events.push({
+        status: 'ASSIGNED',
+        note: 'Assigned to ' + handler.vehicle.registrationNumber + ' (' + handler.driver.name + ')',
+        at: new Date(createdAt.getTime() + 6 * 60_000),
+      });
+    }
+    if (spec.stage === 'IN_PROGRESS') {
+      events.push({ status: 'IN_PROGRESS', note: 'Driver is on site and collection has started', at: new Date(createdAt.getTime() + 40 * 60_000) });
+    }
+    if (resolved) {
+      events.push({ status: 'IN_PROGRESS', note: 'Driver is on site and collection has started', at: new Date(createdAt.getTime() + 150 * 60_000) });
+      events.push({ status: 'RESOLVED', note: 'Cleared by crew, photo proof attached', at: resolvedAt });
+    }
+    await prisma.complaintEvent.createMany({
+      data: events.map((e) => ({ complaintId: complaint.id, status: e.status, note: e.note, createdAt: e.at })),
+    });
+
+    // The citizen's own notification trail, matching those same steps.
+    const notes = [
+      {
+        type: 'COMPLAINT_UPDATE',
+        title: 'Report ' + spec.code + ' received',
+        body: spec.confidence >= 0.7 ? 'AI verified as ' + meta.label + '. Assigning a vehicle shortly.' : 'Received. An officer will verify it shortly.',
+        at: createdAt,
+      },
+    ];
+    if (assigned) {
+      notes.push({
+        type: 'ASSIGNMENT',
+        title: emergency ? 'Truck dispatched for ' + spec.code : spec.code + ' assigned to a vehicle',
+        body: 'Vehicle ' + handler.vehicle.registrationNumber + ' is on the way. You can track it live.',
+        at: new Date(createdAt.getTime() + 6 * 60_000),
+      });
+    }
+    if (resolved) {
+      notes.push({
+        type: 'CREDIT_AWARDED',
+        title: spec.code + ' resolved — credits added',
+        body: 'The site was cleared and photo proof attached. +' + (CREDIT_RULES.reportSubmitted + CREDIT_RULES.reportResolved) + ' Green Credits.',
+        at: resolvedAt,
+      });
+    }
+    await prisma.notification.createMany({
+      data: notes.map((n) => ({ userId: citizen.id, type: n.type, title: n.title, body: n.body, payload: { complaintId: complaint.id, code: spec.code }, createdAt: n.at })),
+    });
+
+    if (resolved) {
+      // Credits are flushed above from the generated history, so this one is
+      // added on top of the balance rather than overwriting it.
+      const delta = CREDIT_RULES.reportSubmitted + CREDIT_RULES.reportResolved;
+      const fresh = await prisma.user.update({
+        where: { id: citizen.id },
+        data: { greenCredits: { increment: delta } },
+        select: { greenCredits: true },
+      });
+      await prisma.greenCredit.create({
+        data: {
+          userId: citizen.id,
+          delta,
+          balanceAfter: fresh.greenCredits,
+          reason: 'Report ' + spec.code + ' resolved with photo proof',
+          reasonCode: 'report_resolved',
+          complaintId: complaint.id,
+          createdAt: resolvedAt,
+        },
+      });
+    }
+
+    // Put it on the driver's actual route for today, so the stop list, the map
+    // and the complaint agree instead of telling three different stories.
+    if (assigned) {
+      const routeRef = routeByVehicle.get(handler.vehicle.id);
+      const route = routeRef ? await prisma.route.findUnique({ where: { id: routeRef.id } }) : null;
+      if (route) {
+        const existing = Array.isArray(route.orderedStops) ? route.orderedStops : [];
+        const stop = {
+          complaintId: complaint.id,
+          code: spec.code,
+          label: complaint.address,
+          category: spec.category,
+          severity: complaint.severity,
+          isEmergency: emergency,
+          reportedAt: createdAt,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          serviceMin: 10,
+          etaMin: 0,
+          eta: null,
+          legKm: null,
+          status: resolved ? 'DONE' : 'PENDING',
+          ...(resolved ? { doneAt: resolvedAt.toISOString() } : {}),
+        };
+        // Emergencies go to the front, exactly as live auto-dispatch does.
+        const merged = emergency ? [stop, ...existing] : [...existing, stop];
+        await prisma.route.update({
+          where: { id: route.id },
+          data: { orderedStops: merged.map((st, n) => ({ ...st, seq: n + 1 })) },
+        });
+      }
+    }
+  }
+  console.log('[seed] ' + showcaseIds.length + ' showcase complaints (SS-DEMO1..SS-DEMO' + SHOWCASE.length + ') pinned to the top');
+
   // ------------------------------------------------------ driver shifts ----
   /**
    * A week of clock-in/clock-out history per driver, plus today's state.
