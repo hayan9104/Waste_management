@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Card, toast } from '../../components/ui';
+import { CITY_CENTER, snapToCity } from '../../components/map/Map';
 
 const SOS_REASONS = [
   { id: 'breakdown', label: 'Vehicle Breakdown / Puncture', icon: Wrench },
@@ -33,8 +34,11 @@ export default function DriverSos() {
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => setPosition({ lat: 23.0225, lng: 72.5714 }),
+        (pos) => {
+          const snapped = snapToCity(pos.coords.latitude, pos.coords.longitude);
+          setPosition({ lat: snapped.lat, lng: snapped.lng });
+        },
+        () => setPosition({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] }),
         { enableHighAccuracy: true, timeout: 8000 }
       );
     }
@@ -42,8 +46,8 @@ export default function DriverSos() {
 
   const raise = useMutation({
     mutationFn: async () => {
-      const lat = position?.lat ?? 23.0225;
-      const lng = position?.lng ?? 72.5714;
+      const lat = position?.lat ?? CITY_CENTER[0];
+      const lng = position?.lng ?? CITY_CENTER[1];
       return (
         await api('driver').post('/driver/sos', {
           reason,

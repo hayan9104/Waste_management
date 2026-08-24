@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, toast } from '../../components/ui';
-import { BaseMap, LocationPicker } from '../../components/map/Map';
+import { BaseMap, LocationPicker, CITY_CENTER, snapToCity } from '../../components/map/Map';
 import { useT } from '../../lib/i18n';
 
 type Step = 'where' | 'what' | 'when' | 'review';
@@ -57,7 +57,7 @@ export default function SchedulePickup() {
   const [step, setStep] = useState<Step>('where');
   const [locationType, setLocationType] = useState<'MY_HOME' | 'COMMON_PLOT_SOCIETY'>('MY_HOME');
   const [address, setAddress] = useState('');
-  const [position, setPosition] = useState<{ lat: number; lng: number }>({ lat: 23.0225, lng: 72.5714 });
+  const [position, setPosition] = useState<{ lat: number; lng: number }>({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
   const [eventReason, setEventReason] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['Organic', 'Plastic/Recyclable']);
   const [expectedQuantity, setExpectedQuantity] = useState<'SMALL' | 'MEDIUM' | 'LARGE'>('MEDIUM');
@@ -76,17 +76,18 @@ export default function SchedulePickup() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          const snapped = snapToCity(pos.coords.latitude, pos.coords.longitude);
+          setPosition({ lat: snapped.lat, lng: snapped.lng });
           if (!address) {
-            setAddress(`Navrangpura, Ahmedabad, Gujarat 380009 (Lat: ${pos.coords.latitude.toFixed(4)}, Lng: ${pos.coords.longitude.toFixed(4)})`);
+            setAddress(`Sector 16, Gandhinagar, Gujarat 382016 (Lat: ${snapped.lat.toFixed(4)}, Lng: ${snapped.lng.toFixed(4)})`);
           }
         },
         () => {
-          if (!address) setAddress('Navrangpura, Ahmedabad, Gujarat 380009');
+          if (!address) setAddress('Sector 16, Gandhinagar, Gujarat 382016');
         }
       );
     } else {
-      setAddress('Navrangpura, Ahmedabad, Gujarat 380009');
+      setAddress('Sector 16, Gandhinagar, Gujarat 382016');
     }
   }, []);
 

@@ -544,6 +544,7 @@ export const gu: Record<string, string> = {
   'admin.subtitle': 'ગાંધીનગર મ્યુનિસિપલ કોર્પોરેશન',
   'admin.nav.dashboard': 'શહેર નિયંત્રણ',
   'admin.nav.fleet': 'માસ્ટર વાહન યાદી',
+  'admin.nav.wardDrivers': 'વોર્ડ પ્રમાણે ડ્રાઇવર',
   'admin.nav.users': 'વપરાશકર્તા અને ભૂમિકા',
   'admin.nav.analytics': 'શહેર વિશ્લેષણ',
   'admin.nav.compliance': 'અનુપાલન નિકાસ',

@@ -15,6 +15,8 @@ import { serializeVehicle, today, startOfToday } from '../services/tracking.serv
 import { emitTo } from '../sockets/realtime.js';
 import { notify } from '../services/notification.service.js';
 import { hashPassword } from '../lib/password.js';
+import { wardRoster } from '../services/roster.service.js';
+import { shiftBoard } from '../services/shift.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.OFFICER), loadUser);
@@ -31,6 +33,48 @@ router.get(
   asyncHandler(async (req, res) => {
     const { ids } = await scope(req);
     res.json(await analytics.wardPerformance(ids));
+  })
+);
+
+/**
+ * Ward-wise driver roster, scoped to this officer's wards — who is on the
+ * ward's crew, what each is driving, and how far through today's beat they
+ * are. Shares one implementation with the admin console's city-wide view.
+ */
+router.get(
+  ['/ward-drivers', '/drivers'],
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    res.json(await wardRoster(ids));
+  })
+);
+
+/** Shift board for this officer's wards — who is on duty, who has clocked off. */
+router.get(
+  ['/shifts', '/driver-shifts'],
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    res.json(await shiftBoard(ids));
+  })
+);
+
+/** Fuel & expenditure for this officer's wards. */
+router.get(
+  ['/fuel', '/expenditure'],
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json(await analytics.fuelAndExpenditure(ids, days));
+  })
+);
+
+/** SLA resolution analytics for this officer's wards. */
+router.get(
+  '/sla',
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json(await analytics.slaPerformance(ids, days));
   })
 );
 
@@ -341,8 +385,18 @@ router.post(
       });
       assigned.push(payload);
 
-      // Emit status-update event to complaint room for Citizen live tracking
-      emitTo([`complaint:${id}`, `complaint_${id}`], SOCKET_EVENTS.COMPLAINT_UPDATE, payload);
+      /**
+       * Complaint room for the citizen's live tracking, plus the ward and city
+       * rooms. Without the ward room a second officer on the same ward — and
+       * the admin console — kept showing the complaint as unassigned until
+       * their next poll, so two officers could assign two trucks to the same
+       * report while each believed nobody had.
+       */
+      emitTo(
+        [`complaint:${id}`, `complaint_${id}`, vehicle.wardId ? `ward:${vehicle.wardId}` : null, 'city'],
+        SOCKET_EVENTS.COMPLAINT_UPDATE,
+        payload
+      );
     }
 
     if (vehicle.driverId) {
@@ -650,22 +704,13 @@ router.get(
     const { ids } = await scope(req);
     const range = req.query.range === 'month' ? 30 : 7;
 
-    const [trends, categories, wards, status, fuelLogs] = await Promise.all([
+    const [trends, categories, wards, status, fuel] = await Promise.all([
       analytics.trends(ids, range),
       analytics.categoryBreakdown(ids, range),
       analytics.wardPerformance(ids),
       analytics.statusBreakdown(ids),
-      prisma.fuelLog.findMany({
-        where: {
-          loggedAt: { gte: new Date(Date.now() - range * 86400_000) },
-        },
-        orderBy: { loggedAt: 'desc' },
-        take: 50,
-      }).catch(() => []),
+      analytics.fuelAndExpenditure(ids, range),
     ]);
-
-    const totalFuelLiters = fuelLogs.reduce((sum, f) => sum + (f.liters || 0), 0);
-    const totalFuelCost = fuelLogs.reduce((sum, f) => sum + (f.cost || 0), 0);
 
     res.json({
       trends,
@@ -673,10 +718,17 @@ router.get(
       wards,
       status,
       fuel: {
-        totalLiters: totalFuelLiters,
-        totalCost: totalFuelCost,
-        entriesCount: fuelLogs.length,
-        recentLogs: fuelLogs.slice(0, 10),
+        // Original keys kept so the existing Analytics page keeps working;
+        // the richer breakdown rides alongside rather than replacing them.
+        totalLiters: fuel.totals.litres,
+        totalCost: fuel.totals.cost,
+        entriesCount: fuel.totals.entries,
+        recentLogs: fuel.recent.slice(0, 10),
+        totals: fuel.totals,
+        coverage: fuel.coverage,
+        series: fuel.series,
+        perVehicle: fuel.perVehicle,
+        perWard: fuel.perWard,
       },
     });
   })

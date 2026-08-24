@@ -16,6 +16,9 @@ import { polygonBBox, polygonCentroid } from '../lib/geo.js';
 import { aiHealth } from '../services/ai.service.js';
 import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
 import env from '../config/env.js';
+import { CITY } from '../seed/city.js';
+import { wardRoster } from '../services/roster.service.js';
+import { shiftBoard } from '../services/shift.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -521,7 +524,7 @@ router.get(
       title: 'SWM Rules ward-wise compliance summary',
       generatedAt: new Date(),
       periodDays: days,
-      city: 'Ahmedabad',
+      city: CITY.name,
       rows,
       totals: {
         ...totals,
@@ -634,7 +637,134 @@ router.get(
   asyncHandler(async (req, res) => res.json(await analytics.hotspotForecast(null, req.query.date)))
 );
 
+/**
+ * Every truck's route for today in one response, for the city-wide overlay.
+ *
+ * /fleet/:id/route answers "show me this one truck", which is the wrong shape
+ * for a command centre: with 4-5 trucks per ward the interesting question is
+ * where all of them are working at once, and clicking each in turn to build
+ * that picture in your head is not an answer.
+ *
+ * Polylines are decimated to at most MAX_OVERVIEW_POINTS before being sent.
+ * Road-snapped OSRM geometry runs to several hundred points per route, and
+ * thirty of those is megabytes of JSON to draw lines a few pixels wide at
+ * city zoom. The selected route is still fetched at full fidelity through
+ * /fleet/:id/route, so detail is never lost where it is actually visible.
+ */
+const MAX_OVERVIEW_POINTS = 120;
+
+function decimate(points, max = MAX_OVERVIEW_POINTS) {
+  if (!Array.isArray(points) || points.length <= max) return points ?? [];
+  const step = Math.ceil(points.length / max);
+  const out = [];
+  for (let i = 0; i < points.length; i += step) out.push(points[i]);
+  // Always keep the true endpoint, or the drawn line stops short of the depot.
+  const last = points[points.length - 1];
+  if (out[out.length - 1] !== last) out.push(last);
+  return out;
+}
+
+router.get(
+  ['/live-routes', '/fleet/routes'],
+  asyncHandler(async (req, res) => {
+    const routes = await prisma.route.findMany({
+      where: {
+        date: today(),
+        status: { in: ['PUBLISHED', 'IN_PROGRESS'] },
+        ...(req.query.wardId ? { wardId: String(req.query.wardId) } : {}),
+      },
+      include: {
+        vehicle: { select: { id: true, registrationNumber: true, status: true, lastLat: true, lastLng: true, lastPingAt: true } },
+        driver: { select: { id: true, name: true, phone: true } },
+        ward: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: [{ wardId: 'asc' }, { label: 'asc' }],
+    });
+
+    const now = Date.now();
+    res.json(
+      routes.map((r) => {
+        const stops = Array.isArray(r.orderedStops) ? r.orderedStops : [];
+        const done = stops.filter((st) => st.status === 'DONE').length;
+        const pingAgeSec = r.vehicle?.lastPingAt
+          ? Math.round((now - new Date(r.vehicle.lastPingAt).getTime()) / 1000)
+          : null;
+
+        return {
+          id: r.id,
+          label: r.label,
+          status: r.status,
+          ward: r.ward,
+          driver: r.driver,
+          vehicle: r.vehicle && {
+            id: r.vehicle.id,
+            registrationNumber: r.vehicle.registrationNumber,
+            status: r.vehicle.status,
+            latitude: r.vehicle.lastLat,
+            longitude: r.vehicle.lastLng,
+            isOffline: pingAgeSec == null || pingAgeSec > 120,
+          },
+          distanceKm: r.distanceKm,
+          durationMin: r.durationMin,
+          stopsTotal: stops.length,
+          stopsDone: done,
+          progressPct: stops.length ? Math.round((done / stops.length) * 100) : 0,
+          hasEmergency: stops.some((st) => st.isEmergency && st.status !== 'DONE'),
+          polyline: decimate(r.polylineGeometry),
+          /** Stop coordinates only — the overlay draws dots, not stop detail. */
+          stops: stops.map((st) => ({
+            seq: st.seq,
+            latitude: st.latitude,
+            longitude: st.longitude,
+            status: st.status ?? 'PENDING',
+            isEmergency: Boolean(st.isEmergency),
+          })),
+        };
+      })
+    );
+  })
+);
+
 router.get('/categories', (_req, res) => res.json(WASTE_CATEGORIES));
+
+/**
+ * Ward-wise driver roster — every ward with its crew, each driver's truck,
+ * today's route progress and whether their handset is still reporting.
+ * /fleet answers this per vehicle and /users answers it as a flat directory;
+ * neither one answers "show me ward W's drivers", which is what both the
+ * admin console and the ward officer actually ask.
+ */
+router.get(
+  ['/ward-drivers', '/wards/drivers'],
+  asyncHandler(async (_req, res) => res.json(await wardRoster(null)))
+);
+
+/** Who is clocked on across the city right now, and who has already finished. */
+router.get(
+  ['/shifts', '/driver-shifts'],
+  asyncHandler(async (_req, res) => res.json(await shiftBoard(null)))
+);
+
+/**
+ * Fuel & expenditure — city-wide spend, litres, cost per km and the worst
+ * offenders by vehicle and ward.
+ */
+router.get(
+  ['/fuel', '/analytics/fuel', '/expenditure'],
+  asyncHandler(async (req, res) => {
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json(await analytics.fuelAndExpenditure(null, days));
+  })
+);
+
+/** SLA resolution analytics — compliance trend, per category and per ward. */
+router.get(
+  ['/sla', '/analytics/sla'],
+  asyncHandler(async (req, res) => {
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json(await analytics.slaPerformance(null, days));
+  })
+);
 
 /**
  * Re-seed the demo dataset (plan §8 note: routes are stored per calendar day,
@@ -649,6 +779,35 @@ router.post(
   '/reseed-demo-data',
   writeLimiter,
   asyncHandler(async (req, res) => {
+    /**
+     * The most destructive action the product exposes: it drops and recreates
+     * every table. It was the one privileged action with no audit trail at
+     * all, so afterwards there was no record of who wiped the database or
+     * what was there before.
+     *
+     * Recorded before the work starts, not after: the handler responds
+     * immediately and does the wipe in the background, so an audit written on
+     * completion would never be written at all if the process died mid-wipe --
+     * exactly the case where the record matters most. The counts are captured
+     * first so the entry says what was destroyed, not just that something was.
+     */
+    const [wards, users, complaints, vehicles, routes] = await Promise.all([
+      prisma.ward.count(),
+      prisma.user.count(),
+      prisma.complaint.count(),
+      prisma.vehicle.count(),
+      prisma.route.count(),
+    ]);
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'demo_data_reseed',
+      targetTable: 'database',
+      targetId: null,
+      before: { wards, users, complaints, vehicles, routes },
+      after: { note: 'Full wipe and re-seed started in the background' },
+      req,
+    });
+
     const { runSeed } = await import('../seed/seed.js');
     res.json({ ok: true, message: 'Re-seed started in the background. This can take a few minutes -- check the server Logs for progress and a final summary.' });
 
@@ -674,6 +833,21 @@ router.post(
   '/backfill-photos',
   writeLimiter,
   asyncHandler(async (req, res) => {
+    // Additive rather than destructive, but it still rewrites a column across
+    // potentially thousands of rows, so it belongs in the trail.
+    const [missingPhoto, missingResolution] = await Promise.all([
+      prisma.complaint.count({ where: { photoUrl: null } }),
+      prisma.complaint.count({ where: { status: 'RESOLVED', resolutionPhotoUrl: null } }),
+    ]);
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'complaint_photo_backfill',
+      targetTable: 'complaints',
+      targetId: null,
+      before: { complaintsMissingPhoto: missingPhoto, resolvedMissingProof: missingResolution },
+      req,
+    });
+
     res.json({ ok: true, message: 'Photo backfill started in the background -- check the server Logs for progress and a final summary.' });
 
     (async () => {
@@ -729,6 +903,18 @@ router.post(
       await prisma.complaint.delete({ where: { id: c.id } });
     }
 
+    // Deleting citizen reports is irreversible; the codes are recorded so the
+    // trail names exactly which ones went, not merely how many.
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'complaint_cleanup_broken_photos',
+      targetTable: 'complaints',
+      targetId: null,
+      before: { checked: candidates.length, candidates: candidates.map((c) => c.code) },
+      after: { deleted: toDelete.length, deletedCodes: toDelete.map((c) => c.code) },
+      req,
+    });
+
     res.json({
       ok: true,
       checked: candidates.length,
@@ -752,6 +938,19 @@ router.post(
     for (const { id } of matches) {
       await prisma.complaint.delete({ where: { id } });
     }
+
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'complaint_delete_by_code',
+      targetTable: 'complaints',
+      targetId: null,
+      // Requested and deleted are kept apart on purpose: a code that matched
+      // nothing is a different event from one that was destroyed, and folding
+      // them together hides which is which.
+      before: { requested: codes },
+      after: { deleted: matches.map((c) => c.code) },
+      req,
+    });
 
     res.json({ ok: true, requested: codes, deleted: matches.map((c) => c.code) });
   })

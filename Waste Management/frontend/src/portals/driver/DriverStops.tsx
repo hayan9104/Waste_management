@@ -91,10 +91,19 @@ export default function DriverStops() {
 
   // Real-time task assignment listener over Socket.io
   useSocket('driver', vehicleId ? [`truck:${vehicleId}`] : [], {
-    [SOCKET_EVENTS.ASSIGNMENT_NEW]: () => {
+    [SOCKET_EVENTS.ASSIGNMENT_NEW]: (payload: any) => {
       queryClient.invalidateQueries({ queryKey: ['driver'] });
       playNotificationSound();
-      toast.info('🔔 New collection task assigned by Ward Officer!');
+      if (payload?.isEmergency) {
+        // Auto-dispatched emergencies jump the queue and carry a 30-minute
+        // clock — announcing them as a routine assignment buries the one
+        // thing about them that matters.
+        toast.error(
+          `🚨 EMERGENCY ${payload.code ?? ''} — ${payload.address ?? 'reported location'}. Added as your next stop.`
+        );
+      } else {
+        toast.info('🔔 New collection task assigned by Ward Officer!');
+      }
     },
     new_task_assigned: () => {
       queryClient.invalidateQueries({ queryKey: ['driver'] });
@@ -324,21 +333,42 @@ export default function DriverStops() {
                         )}
                       </div>
 
-                      {/* Photo Thumbnail if available */}
-                      {task.photoUrl && (
-                        <a
-                          href={assetUrl(task.photoUrl) ?? undefined}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="shrink-0 overflow-hidden rounded-xl border border-line"
-                        >
-                          <EvidencePhoto
-                            src={assetUrl(task.photoUrl)}
-                            alt="Waste photo"
-                            className="h-20 w-20 sm:h-24 sm:w-24 object-cover transition hover:scale-105"
-                          />
-                        </a>
-                      )}
+                      {/* Reported photo, and once the stop is done, the proof
+                          the driver submitted beside it. A driver challenged on
+                          whether a site was actually cleared should be able to
+                          see their own evidence without leaving the app. */}
+                      <div className="flex shrink-0 gap-1.5">
+                        {task.photoUrl && (
+                          <a
+                            href={assetUrl(task.photoUrl) ?? undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="overflow-hidden rounded-xl border border-line"
+                            title="Reported issue"
+                          >
+                            <EvidencePhoto
+                              src={assetUrl(task.photoUrl)}
+                              alt="Waste photo"
+                              className="h-20 w-20 sm:h-24 sm:w-24 object-cover transition hover:scale-105"
+                            />
+                          </a>
+                        )}
+                        {task.resolutionPhotoUrl && (
+                          <a
+                            href={assetUrl(task.resolutionPhotoUrl) ?? undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="overflow-hidden rounded-xl border-2 border-ok/60"
+                            title="Your cleared-site proof"
+                          >
+                            <EvidencePhoto
+                              src={assetUrl(task.resolutionPhotoUrl)}
+                              alt="Cleared site proof"
+                              className="h-20 w-20 sm:h-24 sm:w-24 object-cover transition hover:scale-105"
+                            />
+                          </a>
+                        )}
+                      </div>
                     </div>
 
                     {/* Action Bar */}

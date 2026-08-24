@@ -133,6 +133,8 @@ async function wipe() {
   await prisma.complaintEvent.deleteMany();
   await prisma.complaint.deleteMany();
   await prisma.vehicleLocation.deleteMany();
+  await prisma.driverShift.deleteMany();
+  await prisma.fuelLog.deleteMany();
   await prisma.route.deleteMany();
   await prisma.sosAlert.deleteMany();
   await prisma.vehicle.deleteMany();
@@ -196,7 +198,7 @@ async function main() {
       avatarColor: '#0f766e',
     },
   });
-  await prisma.user.create({
+  const admin2 = await prisma.user.create({
     data: {
       name: 'Dy. Commissioner R. Shah',
       email: 'admin2@safaai.gov.in',
@@ -231,50 +233,92 @@ async function main() {
   }
 
   // ---------------------------------------------------- drivers + fleet ----
+  /**
+   * Every ward runs a crew of 4-5 drivers, each with their own truck, rather
+   * than the single driver-per-ward the demo started with. A ward is a whole
+   * shift's worth of work: one handset carrying the entire ward backlog is
+   * not what the officer's fleet view, the ward-wise driver roster or the
+   * route optimiser are actually for, and it made "reassign to another
+   * driver" impossible to demonstrate at all.
+   *
+   * Crew size alternates 4/5 by ward so the roster is not suspiciously
+   * uniform, and `crews[wardIndex]` keeps each ward's trucks addressable --
+   * several seeding steps below need "a truck from ward w", which a flat
+   * array indexed by ward can no longer answer.
+   */
+  const CREW_MIN = 4;
   const vehicles = [];
+  const crews = [];
+  let driverSeq = 0;
+
   for (let i = 0; i < wards.length; i += 1) {
-    const r = rng(`driver-${i}`);
     const { ward, index } = wards[i];
+    const crewSize = CREW_MIN + (i % 2);
+    const crew = [];
 
-    const driver = await prisma.user.create({
-      data: {
-        name: `${pick(r, FIRST_NAMES)} ${pick(r, LAST_NAMES)}`,
-        email: `driver${i + 1}@safaai.gov.in`,
-        phone: `97000000${String(i + 1).padStart(2, '0')}`,
-        role: ROLES.DRIVER,
-        passwordHash,
-        emailVerifiedAt: new Date(),
-        wardId: ward.id,
-        avatarColor: '#0ea5e9',
-      },
-    });
+    for (let k = 0; k < crewSize; k += 1) {
+      driverSeq += 1;
+      const r = rng(`driver-${i}-${k}`);
 
-    const depot = pointNear(wardAnchors, index, 0);
-    // A flagged-for-maintenance truck cannot simultaneously be "on route" --
-    // those two facts contradict each other (the simulator itself already
-    // refuses to drive a flagged vehicle), so the status has to be derived
-    // from the flag rather than rolled independently.
-    const maintenanceFlag = i === 6;
-    const status = maintenanceFlag ? 'MAINTENANCE' : i % 5 === 4 ? 'IDLE' : 'ON_ROUTE';
-    const vehicle = await prisma.vehicle.create({
-      data: {
-        registrationNumber: `GJ 1 ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + ((i + 3) % 26))} ${1000 + i * 137}`,
-        wardId: ward.id,
-        driverId: driver.id,
-        status,
-        model: pick(r, ['Tata Ace', 'Mahindra Jeeto', 'Ashok Leyland Dost', 'Tata 407']),
-        capacityKg: intBetween(r, 900, 3200),
-        maintenanceFlag,
-        lastLat: depot.latitude,
-        lastLng: depot.longitude,
-        lastHeading: intBetween(r, 0, 359),
-        lastSpeed: 0,
-        lastPingAt: new Date(),
-      },
-    });
-    vehicles.push({ vehicle, ward, index, driver });
+      const driver = await prisma.user.create({
+        data: {
+          name: `${pick(r, FIRST_NAMES)} ${pick(r, LAST_NAMES)}`,
+          email: `driver${driverSeq}@safaai.gov.in`,
+          phone: `97000000${String(driverSeq).padStart(2, '0')}`,
+          role: ROLES.DRIVER,
+          passwordHash,
+          emailVerifiedAt: new Date(),
+          wardId: ward.id,
+          avatarColor: '#0ea5e9',
+        },
+      });
+
+      // Each truck parks at its own depot offset so a ward's crew does not
+      // stack into one pin on the fleet map.
+      const depot = pointNear(wardAnchors, index, k);
+      // Exactly one truck in the city is down for maintenance -- enough to
+      // exercise the flagged-vehicle paths without making the fleet look
+      // broken. A flagged truck cannot simultaneously be "on route" (the
+      // simulator itself refuses to drive one), so status is derived from
+      // the flag rather than rolled independently.
+      const maintenanceFlag = i === 6 && k === 2;
+      const status = maintenanceFlag ? 'MAINTENANCE' : k === crewSize - 1 ? 'IDLE' : 'ON_ROUTE';
+      const vehicle = await prisma.vehicle.create({
+        data: {
+          // GJ-18 is Gandhinagar's RTO series.
+          registrationNumber: `GJ 18 ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + k)} ${1000 + i * 137 + k * 13}`,
+          wardId: ward.id,
+          driverId: driver.id,
+          status,
+          model: pick(r, ['Tata Ace', 'Mahindra Jeeto', 'Ashok Leyland Dost', 'Tata 407']),
+          capacityKg: intBetween(r, 900, 3200),
+          maintenanceFlag,
+          lastLat: depot.latitude,
+          lastLng: depot.longitude,
+          lastHeading: intBetween(r, 0, 359),
+          lastSpeed: 0,
+          lastPingAt: new Date(),
+        },
+      });
+
+      const entry = { vehicle, ward, index, driver, slot: k };
+      crew.push(entry);
+      vehicles.push(entry);
+    }
+
+    crews.push(crew);
   }
-  console.log(`[seed] ${officers.length} officers, ${vehicles.length} drivers + vehicles`);
+
+  /** Deterministically picks one of a ward's crew -- same input, same driver. */
+  const crewMember = (wardIdx, n) => {
+    const crew = crews[wardIdx];
+    return crew[Math.abs(n) % crew.length];
+  };
+
+  console.log(
+    `[seed] ${officers.length} officers, ${vehicles.length} drivers + vehicles across ${crews.length} wards ` +
+      `(${crews.map((c) => c.length).join('/')} per ward)`
+  );
 
   // ---------------------------------------------------------- citizens ----
   const citizens = [];
@@ -320,7 +364,16 @@ async function main() {
       // Weekend and market-day uplift, plus a per-ward base rate.
       const base = 2 + (index % 3);
       const weekendBoost = weekday === 0 || weekday === 6 ? 2.2 : 1;
-      const count = Math.max(0, Math.round(base * weekendBoost * (0.6 + r() * 0.9)));
+      /**
+       * The last five days are the ones that stay open, and a ward now fields
+       * a 4-5 truck crew. At the historical baseline that backlog dealt out
+       * to barely one stop per driver, so most of the crew would sign in to
+       * an empty route. Recent days run hotter so every truck gets a real
+       * beat; the 40 days behind them keep the flat baseline the trend and
+       * hotspot charts are read against.
+       */
+      const recentUplift = d <= 5 ? 2.2 : 1;
+      const count = Math.max(0, Math.round(base * weekendBoost * recentUplift * (0.6 + r() * 0.9)));
 
       for (let k = 0; k < count; k += 1) {
         const spec = pick(r, WASTE_CATEGORIES);
@@ -337,7 +390,7 @@ async function main() {
          * the last five days keep a realistic open backlog, which is what the
          * officer queue, emergency panel and route optimiser actually need.
          */
-        const shouldResolve = d > 5 ? true : r() > 0.55;
+        const shouldResolve = d > 5 ? true : r() > 0.45;
         const resolutionMinutes = Math.round(meta.slaMinutes * (0.35 + r() * 0.95));
         const resolvedAt = shouldResolve ? new Date(createdAt.getTime() + resolutionMinutes * 60_000) : null;
         const status = resolvedAt ? 'RESOLVED' : pick(r, ['PENDING', 'VERIFIED', 'VERIFIED', 'ASSIGNED', 'IN_PROGRESS']);
@@ -348,7 +401,10 @@ async function main() {
           ? pick(r, CITIZEN_PHOTO_POOL.filter((p) => p !== photoUrl))
           : null;
 
-        const vehicle = vehicles[w]?.vehicle;
+        // Spread the ward's history across its whole crew so per-driver
+        // performance, fuel and SLA numbers differ from each other.
+        const handler = crewMember(w, created + k);
+        const vehicle = handler.vehicle;
         const complaint = await prisma.complaint.create({
           data: {
             code: `SS-${(created + 1000).toString(36).toUpperCase().padStart(5, '0')}`,
@@ -378,7 +434,7 @@ async function main() {
             createdAt,
             updatedAt: resolvedAt || createdAt,
             resolvedAt,
-            resolvedById: resolvedAt ? vehicles[w]?.driver.id : null,
+            resolvedById: resolvedAt ? handler.driver.id : null,
             assignedVehicleId: ['ASSIGNED', 'IN_PROGRESS'].includes(status) || resolvedAt ? vehicle?.id : null,
             assignedAt: ['ASSIGNED', 'IN_PROGRESS'].includes(status) || resolvedAt ? createdAt : null,
           },
@@ -474,7 +530,7 @@ async function main() {
 
   // Two live emergencies so the officer's countdown panel is never empty.
   for (let i = 0; i < 2; i += 1) {
-    const home = vehicles[i * 3];
+    const home = crews[i * 3][0];
     const r = rng(`demo-emergency-${i}`);
     const spec = i === 0 ? CATEGORY_MAP.DEAD_ANIMAL : CATEGORY_MAP.MEDICAL_WASTE;
     const point = pointNear(wardAnchors, home.index, 500 + i);
@@ -508,63 +564,317 @@ async function main() {
   }
 
   // ------------------------------------------------ today's live routes ----
+  /**
+   * One published route per active truck, not one per ward. The ward's open
+   * backlog is dealt round-robin across its crew, so every driver signs in to
+   * their own beat instead of the whole ward's list landing on one handset --
+   * and the officer's fleet map shows several trucks working a ward at once,
+   * which is the thing that was impossible to demonstrate before.
+   */
   let routes = 0;
-  for (const { vehicle, ward, index } of vehicles) {
-    if (vehicle.maintenanceFlag) continue;
+  for (let w = 0; w < wards.length; w += 1) {
+    const { ward, index } = wards[w];
+    /**
+     * Only trucks that are actually rostered on today get a route. The ward's
+     * spare (IDLE) and its maintenance truck are deliberately left without
+     * one: the simulator drives any vehicle that has a published route and
+     * only refuses maintenance-flagged ones, so handing the spare a route
+     * would put a truck labelled "idle" visibly in motion on the fleet map.
+     */
+    const crew = crews[w].filter((c) => !c.vehicle.maintenanceFlag && c.vehicle.status !== 'IDLE');
+    if (!crew.length) continue;
 
     const open = await prisma.complaint.findMany({
       where: { wardId: ward.id, status: { in: ['VERIFIED', 'ASSIGNED', 'IN_PROGRESS'] } },
       orderBy: { createdAt: 'asc' },
-      take: 8,
+      take: crew.length * 6,
     });
     if (open.length < 2) continue;
 
-    const depot = pointNear(wardAnchors, index, 0);
-    const solved = solveLocal({
-      depot: { coordinates: [depot.longitude, depot.latitude] },
-      stops: open.map((c) => ({
-        complaintId: c.id,
-        code: c.code,
-        label: c.address,
-        category: c.category,
-        severity: c.severity,
-        isEmergency: c.isEmergency,
-        latitude: c.latitude,
-        longitude: c.longitude,
-        reportedAt: c.createdAt,
-      })),
-    });
+    // Deal round-robin rather than slicing in blocks: slicing would hand one
+    // driver every oldest complaint in the ward and leave the last driver the
+    // newest, which is not how a supervisor splits a shift.
+    const buckets = crew.map(() => []);
+    open.forEach((c, i) => buckets[i % crew.length].push(c));
 
-    const { polyline, breakpoints } = await roadSnappedRoute(solved.polyline);
-    const stops = solved.stops.map((s, i) => ({ ...s, polylineIndex: breakpoints[i] ?? null }));
+    for (let k = 0; k < crew.length; k += 1) {
+      const { vehicle } = crew[k];
+      const mine = buckets[k];
+      // A one-stop "route" is not a route -- leave that truck idle instead.
+      if (mine.length < 2) continue;
 
-    await prisma.route.create({
+      const depot = pointNear(wardAnchors, index, k);
+      const solved = solveLocal({
+        depot: { coordinates: [depot.longitude, depot.latitude] },
+        stops: mine.map((c) => ({
+          complaintId: c.id,
+          code: c.code,
+          label: c.address,
+          category: c.category,
+          severity: c.severity,
+          isEmergency: c.isEmergency,
+          latitude: c.latitude,
+          longitude: c.longitude,
+          reportedAt: c.createdAt,
+        })),
+      });
+
+      const { polyline, breakpoints } = await roadSnappedRoute(solved.polyline);
+      const stops = solved.stops.map((st, i) => ({ ...st, polylineIndex: breakpoints[i] ?? null }));
+
+      await prisma.route.create({
+        data: {
+          vehicleId: vehicle.id,
+          driverId: vehicle.driverId,
+          wardId: ward.id,
+          date: new Date().toISOString().slice(0, 10),
+          status: 'PUBLISHED',
+          label: `${ward.name} beat ${k + 1}`,
+          orderedStops: stops,
+          polylineGeometry: polyline,
+          distanceKm: solved.distanceKm,
+          baselineKm: solved.baselineKm,
+          savedKm: solved.savedKm,
+          durationMin: solved.durationMin,
+          fuelSaved: solved.fuelSaved,
+          co2SavedKg: solved.co2SavedKg,
+          solver: solved.solver,
+        },
+      });
+
+      await prisma.complaint.updateMany({
+        where: { id: { in: mine.map((c) => c.id) }, status: 'VERIFIED' },
+        data: { assignedVehicleId: vehicle.id, status: 'ASSIGNED', assignedAt: new Date() },
+      });
+      routes += 1;
+    }
+  }
+  console.log(`[seed] ${routes} optimised routes published for today across ${wards.length} wards`);
+
+  // ------------------------------------------------------ driver shifts ----
+  /**
+   * A week of clock-in/clock-out history per driver, plus today's state.
+   *
+   * Without seeded shifts the whole feature reads as broken rather than
+   * empty: the officer's shift board shows nobody on duty in a city where
+   * every truck is visibly driving, and the driver summary has no history to
+   * compare today against.
+   *
+   * Today deliberately splits three ways so all three states are visible on
+   * one screen: trucks on route are clocked in, the ward spare worked a
+   * morning and clocked off, and the maintenance truck never turned up.
+   */
+  const SHIFT_HISTORY_DAYS = 7;
+  // Same key shape the routes above use, so a shift and its route join on it.
+  const todayKey = new Date().toISOString().slice(0, 10);
+  let shiftsCreated = 0;
+
+  for (const { vehicle, ward, driver } of vehicles) {
+    const r = rng(`shift-${vehicle.id}`);
+
+    for (let d = SHIFT_HISTORY_DAYS; d >= 1; d -= 1) {
+      // Sunday is the weekly off, so the board is not suspiciously uniform.
+      const day = new Date();
+      day.setDate(day.getDate() - d);
+      if (day.getDay() === 0) continue;
+
+      const startedAt = new Date(day);
+      startedAt.setHours(intBetween(r, 6, 8), intBetween(r, 0, 59), 0, 0);
+      const endedAt = new Date(startedAt.getTime() + intBetween(r, 7 * 60, 9 * 60) * 60_000);
+
+      await prisma.driverShift.create({
+        data: {
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          wardId: ward.id,
+          date: startedAt.toISOString().slice(0, 10),
+          startedAt,
+          endedAt,
+          startOdometerKm: null,
+          endOdometerKm: null,
+          distanceKm: Number((18 + r() * 42).toFixed(1)),
+          stopsDone: intBetween(r, 3, 9),
+          status: 'ENDED',
+        },
+      });
+      shiftsCreated += 1;
+    }
+
+    if (vehicle.maintenanceFlag) continue; // off the road, nobody clocked in
+
+    const startedAt = new Date();
+    startedAt.setHours(intBetween(r, 6, 8), intBetween(r, 0, 59), 0, 0);
+    const isSpare = vehicle.status === 'IDLE';
+
+    await prisma.driverShift.create({
       data: {
+        driverId: driver.id,
         vehicleId: vehicle.id,
-        driverId: vehicle.driverId,
         wardId: ward.id,
-        date: new Date().toISOString().slice(0, 10),
-        status: 'PUBLISHED',
-        label: `${ward.name} morning beat`,
-        orderedStops: stops,
-        polylineGeometry: polyline,
-        distanceKm: solved.distanceKm,
-        baselineKm: solved.baselineKm,
-        savedKm: solved.savedKm,
-        durationMin: solved.durationMin,
-        fuelSaved: solved.fuelSaved,
-        co2SavedKg: solved.co2SavedKg,
-        solver: solved.solver,
+        date: todayKey,
+        startedAt,
+        // The spare crew worked a morning and went home; everyone else is
+        // still out, which is what makes the trucks on the map moving.
+        endedAt: isSpare ? new Date(startedAt.getTime() + intBetween(r, 4 * 60, 6 * 60) * 60_000) : null,
+        distanceKm: isSpare ? Number((10 + r() * 20).toFixed(1)) : null,
+        stopsDone: isSpare ? intBetween(r, 2, 5) : 0,
+        status: isSpare ? 'ENDED' : 'ACTIVE',
       },
     });
-
-    await prisma.complaint.updateMany({
-      where: { id: { in: open.map((c) => c.id) }, status: 'VERIFIED' },
-      data: { assignedVehicleId: vehicle.id, status: 'ASSIGNED', assignedAt: new Date() },
-    });
-    routes += 1;
+    shiftsCreated += 1;
   }
-  console.log(`[seed] ${routes} optimised routes published for today`);
+  console.log(`[seed] ${shiftsCreated} driver shifts (${SHIFT_HISTORY_DAYS}-day history + today)`);
+
+  // -------------------------------------------------------- fuel logs ----
+  /**
+   * Diesel fill-ups per truck across the same window as the shifts.
+   *
+   * Nothing seeded fuel logs before, so every fuel and expenditure panel in
+   * the product read zero -- the analytics were never broken, they had no
+   * rows to read. A reviewer opening "Fuel & Expenditure" saw an empty page
+   * and could only conclude the feature did not work.
+   *
+   * A deliberate minority of entries have litres but no cost. That is what
+   * real driver-entered logs look like (the pump receipt goes missing), and
+   * it exercises the coverage counters that keep a cheap-looking month
+   * distinguishable from a badly-logged one.
+   */
+  const DIESEL_PER_LITRE = 94.5; // Gujarat pump price, near enough for a demo
+  const FUEL_HISTORY_DAYS = 30;
+  let fuelEntries = 0;
+
+  for (const { vehicle, driver } of vehicles) {
+    if (vehicle.maintenanceFlag) continue; // off the road, not burning diesel
+    const r = rng(`fuel-${vehicle.id}`);
+
+    // Roughly every third day, which is what a 900-3200 kg truck on a ward
+    // beat actually needs rather than a tidy daily entry.
+    let odometer = intBetween(r, 18_000, 96_000);
+    for (let d = FUEL_HISTORY_DAYS; d >= 1; d -= 3) {
+      const loggedAt = new Date();
+      loggedAt.setDate(loggedAt.getDate() - d);
+      loggedAt.setHours(intBetween(r, 7, 18), intBetween(r, 0, 59), 0, 0);
+
+      const liters = Number((22 + r() * 26).toFixed(1));
+      odometer += intBetween(r, 90, 190);
+
+      // ~1 in 6 fill-ups is logged without a cost.
+      const hasCost = r() > 0.17;
+
+      await prisma.fuelLog.create({
+        data: {
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          liters,
+          odometerKm: odometer,
+          cost: hasCost ? Number((liters * DIESEL_PER_LITRE * (0.97 + r() * 0.06)).toFixed(0)) : null,
+          notes: hasCost ? null : 'Receipt not collected',
+          loggedAt,
+        },
+      });
+      fuelEntries += 1;
+    }
+
+    await prisma.vehicle.update({ where: { id: vehicle.id }, data: { odometerKm: odometer } });
+  }
+  console.log(`[seed] ${fuelEntries} fuel log entries across ${FUEL_HISTORY_DAYS} days`);
+
+  // -------------------------------------------------------- audit trail ----
+  /**
+   * Audit entries for the privileged actions the seeded history implies.
+   *
+   * The wipe clears audit_logs, so a freshly seeded database showed an empty
+   * audit page -- which reads as "this feature does not work" rather than
+   * "nothing has happened yet". These mirror decisions the seeded data already
+   * asserts were made: an officer verified this complaint, assigned that
+   * vehicle, escalated the overdue one. Nothing is invented that the rest of
+   * the dataset does not already claim happened.
+   *
+   * Deliberately NOT seeded: destructive actions (reseed, delete-by-code,
+   * user blocks). A fabricated record of someone deleting citizen reports is
+   * not demo colour, it is a false accusation sitting in an immutable log.
+   */
+  const auditSamples = [];
+  const auditables = await prisma.complaint.findMany({
+    where: { status: { in: ['VERIFIED', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'] } },
+    select: { id: true, code: true, wardId: true, status: true, createdAt: true, assignedVehicleId: true },
+    orderBy: { createdAt: 'desc' },
+    take: 90,
+  });
+
+  const officerForWard = new Map();
+  for (let i = 0; i < officers.length; i += 1) {
+    for (const w of [wards[i * 2], wards[i * 2 + 1]].filter(Boolean)) {
+      officerForWard.set(w.ward.id, officers[i]);
+    }
+  }
+
+  for (let i = 0; i < auditables.length; i += 1) {
+    const c = auditables[i];
+    const actor = officerForWard.get(c.wardId) ?? officers[i % officers.length];
+    const r = rng(`audit-${c.id}`);
+    const at = new Date(c.createdAt.getTime() + intBetween(r, 5, 90) * 60_000);
+
+    auditSamples.push({
+      actorId: actor.id,
+      action: 'complaint_verify',
+      targetTable: 'complaints',
+      targetId: c.id,
+      before: { status: 'PENDING', reviewNeeded: true },
+      after: { status: 'VERIFIED', code: c.code },
+      ip: `10.${intBetween(r, 10, 40)}.${intBetween(r, 0, 255)}.${intBetween(r, 2, 254)}`,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SafaaiSarathi/Officer',
+      createdAt: at,
+    });
+
+    if (c.assignedVehicleId) {
+      auditSamples.push({
+        actorId: actor.id,
+        action: 'complaint_assign',
+        targetTable: 'complaints',
+        targetId: c.id,
+        before: { status: 'VERIFIED', assignedVehicleId: null },
+        after: { status: 'ASSIGNED', assignedVehicleId: c.assignedVehicleId, code: c.code },
+        ip: `10.${intBetween(r, 10, 40)}.${intBetween(r, 0, 255)}.${intBetween(r, 2, 254)}`,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SafaaiSarathi/Officer',
+        createdAt: new Date(at.getTime() + intBetween(r, 2, 30) * 60_000),
+      });
+    }
+  }
+
+  // Ward and fleet administration by the two admin accounts.
+  for (let i = 0; i < wards.length; i += 1) {
+    const r = rng(`audit-ward-${i}`);
+    const at = new Date(Date.now() - intBetween(r, 2, 40) * 86_400_000);
+    auditSamples.push({
+      actorId: (i % 2 === 0 ? admin : admin2).id,
+      action: 'ward_update',
+      targetTable: 'wards',
+      targetId: wards[i].ward.id,
+      before: { slaMinutes: 1440 },
+      after: { slaMinutes: 1440, name: wards[i].ward.name },
+      ip: `10.8.${intBetween(r, 0, 255)}.${intBetween(r, 2, 254)}`,
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) SafaaiSarathi/Admin',
+      createdAt: at,
+    });
+  }
+
+  for (const { vehicle, driver } of vehicles.slice(0, 12)) {
+    const r = rng(`audit-veh-${vehicle.id}`);
+    auditSamples.push({
+      actorId: admin.id,
+      action: 'vehicle_create',
+      targetTable: 'vehicles',
+      targetId: vehicle.id,
+      after: { registrationNumber: vehicle.registrationNumber, driverId: driver.id },
+      ip: `10.8.${intBetween(r, 0, 255)}.${intBetween(r, 2, 254)}`,
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) SafaaiSarathi/Admin',
+      createdAt: new Date(Date.now() - intBetween(r, 20, 60) * 86_400_000),
+    });
+  }
+
+  await prisma.auditLog.createMany({ data: auditSamples });
+  console.log(`[seed] ${auditSamples.length} audit log entries`);
 
   // ------------------------------------------ scheduled pickup requests ----
   /**
@@ -600,7 +910,7 @@ async function main() {
     const citizenIdx = (i * 5 + 2) % citizens.length;
     const citizen = citizens[citizenIdx];
     const { ward, index } = wards[citizenIdx % wards.length];
-    const home = vehicles[index];
+    const home = crews[index][0];
     const point = pointNear(wardAnchors, index, 5000 + i * 11);
 
     const scheduledDate = new Date();
@@ -689,17 +999,22 @@ async function main() {
     Portal    Login page          Account
     -------   -----------------   ----------------------------
     Citizen   /login              citizen1@safaai.gov.in
-    Driver    /driver/login       driver1@safaai.gov.in  (or OTP on 9700000001)
+    Driver    /driver/login       driver1 .. driver${vehicles.length} @safaai.gov.in
+                                  (or OTP on 9700000001 .. 97000000${String(vehicles.length).padStart(2, "0")})
     Officer   /officer/login      officer1@safaai.gov.in
     Admin     /admin/login        admin@safaai.gov.in
 
-  ${CITY.name}, ${CITY.state} — ${wards.length} wards, ${vehicles.length} vehicles, ${created} complaints.
+  ${CITY.name}, ${CITY.state} — ${wards.length} wards, ${vehicles.length} drivers + vehicles
+  (${crews.map((c) => c.length).join("/")} per ward), ${created} complaints, ${routes} live routes,
+  ${shiftsCreated} shifts, ${fuelEntries} fuel entries.
 `);
 
   return {
     city: `${CITY.name}, ${CITY.state}`,
     wards: wards.length,
     vehicles: vehicles.length,
+    drivers: vehicles.length,
+    crewPerWard: crews.map((c) => c.length),
     complaints: created,
     routes,
     scheduledPickups: scheduledCount,

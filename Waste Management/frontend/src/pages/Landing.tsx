@@ -566,7 +566,7 @@ export default function Landing() {
           </div>
 
           <p className="mt-3 max-w-2xl text-fluid-xs text-white/75 leading-relaxed">
-            {t('landing.footer.body', { city: stats?.city ?? 'Ahmedabad' })}
+            {t('landing.footer.body', { city: stats?.city ?? 'Gandhinagar' })}
           </p>
 
           <div className="mt-3 space-y-0.5 text-fluid-xs text-white/60">

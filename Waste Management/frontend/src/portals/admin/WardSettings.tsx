@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, MapPinned, Plus, RotateCcw, Trash2, TriangleAlert, Upload } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Card, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
-import { BaseMap, WardLayer, FitBounds, Polygon, Polyline, Marker, useMap, WARD_OUTLINE, LINE_CASING } from '../../components/map/Map';
+import { BaseMap, WardLayer, FitBounds, Polygon, Polyline, Marker, useMap, WARD_OUTLINE, LINE_CASING, CITY_CENTER } from '../../components/map/Map';
 
 /**
  * Ward boundary editor (plan §2.4).
@@ -48,7 +48,7 @@ const makeVertex = (lat: number, lng: number): Vertex => ({
 });
 
 /** Starting shape for a brand-new ward — a square the officer then reshapes. */
-function defaultRing(center: [number, number] = [23.0225, 72.5714], delta = 0.01): Vertex[] {
+function defaultRing(center: [number, number] = CITY_CENTER, delta = 0.01): Vertex[] {
   const [lat, lng] = center;
   return [
     makeVertex(lat + delta, lng - delta),
@@ -191,7 +191,7 @@ export default function WardSettings() {
   const areaKm2 = useMemo(() => (ringValid ? ringAreaKm2(numeric) : 0), [numeric, ringValid]);
   /** Where "Reset" drops its starter square — over the ward, not off-screen. */
   const centre = useMemo<[number, number]>(() => {
-    if (!numeric.length) return [23.0225, 72.5714];
+    if (!numeric.length) return CITY_CENTER;
     const lat = numeric.reduce((s, p) => s + p.lat, 0) / numeric.length;
     const lng = numeric.reduce((s, p) => s + p.lng, 0) / numeric.length;
     return [lat, lng];
@@ -250,7 +250,7 @@ export default function WardSettings() {
       const pts = prev
         .map((p, i) => ({ lat: parseFloat(p.lat), lng: parseFloat(p.lng), i }))
         .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-      if (pts.length < 2) return [...prev, makeVertex(23.0225, 72.5714)];
+      if (pts.length < 2) return [...prev, makeVertex(CITY_CENTER[0], CITY_CENTER[1])];
 
       const kx = kmPerLng(pts[0].lat);
       let bestAfter = pts[pts.length - 1].i;
@@ -327,7 +327,7 @@ export default function WardSettings() {
 
       <Card className="overflow-hidden p-0">
         <div className="relative isolate h-[46dvh] min-h-[300px] w-full">
-          <BaseMap center={[23.0225, 72.5714]} zoom={12}>
+          <BaseMap center={CITY_CENTER} zoom={12}>
             <FitBounds points={wards.data.map((w: any) => [w.center.latitude, w.center.longitude])} />
             <WardLayer wards={wards.data} />
           </BaseMap>
@@ -442,7 +442,7 @@ export default function WardSettings() {
             </p>
 
             <div className="relative isolate h-[300px] w-full overflow-hidden rounded-xl border border-line">
-              <BaseMap center={[23.0225, 72.5714]} zoom={12}>
+              <BaseMap center={CITY_CENTER} zoom={12}>
                 <FitToPoints positions={positions} />
                 <AddOnClick onAdd={handleMapAdd} />
                 {/* Three points make a fillable polygon; below that only a line

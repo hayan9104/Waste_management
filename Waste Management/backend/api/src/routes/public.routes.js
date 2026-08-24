@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { WASTE_CATEGORIES } from '../config/constants.js';
 import { getChatReply } from '../services/chatbot.service.js';
 import { chatLimiter } from '../middleware/rateLimit.js';
+import { CITY } from '../seed/city.js';
 
 const router = Router();
 
@@ -56,7 +57,7 @@ router.get(
       : 0;
 
     res.json({
-      city: 'Ahmedabad',
+      city: CITY.name,
       complaintsTotal: total,
       complaintsResolved: resolved,
       resolutionRatePct: total ? Math.round((resolved / total) * 100) : 0,

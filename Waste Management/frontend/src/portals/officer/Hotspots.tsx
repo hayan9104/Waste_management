@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { AlertTriangle, Info, TrendingUp, Sparkles, Lightbulb, Play, Clock, ArrowRight, ShieldAlert, CheckCircle2, Loader2 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, DegradedNotice, EmptyState, ErrorState, Loading, Meter, SectionTitle, toast } from '../../components/ui';
-import { BaseMap, WardLayer, FitBounds, ComplaintLayer } from '../../components/map/Map';
+import { BaseMap, WardLayer, FitBounds, ComplaintLayer, CITY_CENTER } from '../../components/map/Map';
 import { formatDate } from '../../lib/format';
 
 export default function Hotspots() {
@@ -98,7 +98,7 @@ export default function Hotspots() {
       <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
         <Card className="overflow-hidden p-0">
           <div className="relative isolate h-[46dvh] min-h-[320px] w-full xl:h-[500px]">
-            <BaseMap center={[23.0225, 72.5714]} zoom={12}>
+            <BaseMap center={CITY_CENTER} zoom={12}>
               <FitBounds points={(wards.data ?? []).map((w: any) => [w.center.latitude, w.center.longitude])} />
               {wards.data && (
                 <WardLayer

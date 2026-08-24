@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
   Clock,
@@ -8,18 +9,64 @@ import {
   Truck,
   Calendar,
   AlertTriangle,
+  LogIn,
+  LogOut,
+  Loader2,
 } from 'lucide-react';
-import { api } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading, SectionTitle, Stat } from '../../components/ui';
+import { api, errorMessage } from '../../lib/api';
+import { Badge, Card, EmptyState, ErrorState, Loading, SectionTitle, Stat, toast } from '../../components/ui';
 import { BaseMap, RouteLine } from '../../components/map/Map';
 import { CATEGORY_LABELS, formatDateTime, formatDuration } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
 export default function DriverSummary() {
   const t = useT();
+  const queryClient = useQueryClient();
+  const [endNotes, setEndNotes] = useState('');
+
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['driver', 'summary'],
     queryFn: async () => (await api('driver').get('/driver/summary')).data,
+  });
+
+  const current = useQuery({
+    queryKey: ['driver', 'shift', 'current'],
+    queryFn: async () => (await api('driver').get('/driver/shift/current')).data,
+    // The elapsed clock is rendered from startedAt, so this only needs to
+    // catch a shift started or ended on another device.
+    refetchInterval: 60_000,
+  });
+
+  /** One GPS fix for the clock-in/out, best effort — never blocks the action. */
+  function fix(): Promise<{ latitude?: number; longitude?: number }> {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve({});
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        () => resolve({}),
+        { enableHighAccuracy: true, timeout: 6000 }
+      );
+    });
+  }
+
+  const startShift = useMutation({
+    mutationFn: async () => (await api('driver').post('/driver/shift/start', await fix())).data,
+    onSuccess: async (res) => {
+      await queryClient.invalidateQueries({ queryKey: ['driver'] });
+      toast.success(res.alreadyOpen ? 'You were already clocked in' : 'Shift started — you are on duty');
+    },
+    onError: (err) => toast.error(errorMessage(err, 'Could not start your shift')),
+  });
+
+  const endShift = useMutation({
+    mutationFn: async () =>
+      (await api('driver').post('/driver/shift/end', { ...(await fix()), notes: endNotes || undefined })).data,
+    onSuccess: async (res) => {
+      await queryClient.invalidateQueries({ queryKey: ['driver'] });
+      setEndNotes('');
+      toast.success(`Shift ended — ${formatDuration(res.minutes ?? 0)} on duty, ${res.distanceKm ?? 0} km driven`);
+    },
+    onError: (err) => toast.error(errorMessage(err, 'Could not end your shift')),
   });
 
   if (isLoading) return <Loading label="Loading shift summary…" />;
@@ -43,10 +90,78 @@ export default function DriverSummary() {
           </div>
         </div>
 
-        <Badge tone="ok" className="text-fluid-xs font-bold py-1 px-3">
-          Shift Active
+        <Badge
+          tone={current.data?.onShift ? 'ok' : data.shift?.status === 'ENDED' ? 'neutral' : 'warn'}
+          className="text-fluid-xs font-bold py-1 px-3"
+        >
+          {current.data?.onShift
+            ? 'On duty'
+            : data.shift?.status === 'ENDED'
+              ? 'Shift ended'
+              : 'Not clocked in'}
         </Badge>
       </div>
+
+      {/* Shift clock. The start/end times are the driver's own record of the
+          day, which is why they are stated plainly rather than inferred from
+          GPS activity the way the route timings below are. */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="flex items-center gap-2 text-fluid-sm font-bold">
+              <Clock className="h-4 w-4 text-brand" /> Shift clock
+            </h2>
+            {current.data?.onShift ? (
+              <p className="mt-1 text-fluid-xs text-muted">
+                Clocked in at <strong className="text-ink">{formatDateTime(current.data.shift.startedAt)}</strong> ·{' '}
+                {formatDuration(current.data.shift.minutes ?? 0)} on duty
+              </p>
+            ) : data.shift?.status === 'ENDED' ? (
+              <p className="mt-1 text-fluid-xs text-muted">
+                {formatDateTime(data.shift.startedAt)} → {formatDateTime(data.shift.endedAt)} ·{' '}
+                {formatDuration(data.shift.minutes ?? 0)} · {data.shift.distanceKm ?? 0} km ·{' '}
+                {data.shift.stopsDone ?? 0} stops
+              </p>
+            ) : (
+              <p className="mt-1 text-fluid-xs text-muted">
+                You have not clocked in today. Your ward officer sees on-duty crew from this.
+              </p>
+            )}
+          </div>
+
+          {current.data?.onShift ? (
+            <button
+              type="button"
+              className="btn-danger btn-sm shrink-0"
+              disabled={endShift.isPending}
+              onClick={() => endShift.mutate()}
+            >
+              {endShift.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+              End shift
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-primary btn-sm shrink-0"
+              disabled={startShift.isPending}
+              onClick={() => startShift.mutate()}
+            >
+              {startShift.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogIn className="h-3.5 w-3.5" />}
+              Start shift
+            </button>
+          )}
+        </div>
+
+        {current.data?.onShift && (
+          <input
+            className="field mt-3 text-fluid-xs"
+            placeholder="End-of-shift note (optional) — breakdown, handover, anything the officer should know"
+            value={endNotes}
+            onChange={(e) => setEndNotes(e.target.value)}
+            maxLength={300}
+          />
+        )}
+      </Card>
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

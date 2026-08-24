@@ -84,6 +84,11 @@ enum NotificationType {
   SYSTEM
 }
 
+enum ShiftStatus {
+  ACTIVE
+  ENDED
+}
+
 enum SosStatus {
   OPEN
   ACKNOWLEDGED
@@ -140,6 +145,7 @@ model User {
   sosAlerts           SosAlert[]       @relation("SosDriver")
   sosAcknowledged     SosAlert[]       @relation("SosResponder")
   fuelLogs            FuelLog[]
+  shifts              DriverShift[]
   scheduledPickups         ScheduledPickupRequest[] @relation("CitizenScheduledPickups")
   assignedScheduledPickups ScheduledPickupRequest[] @relation("DriverScheduledPickups")
 
@@ -246,6 +252,7 @@ model Ward {
   routes      Route[]
   predictions HotspotPrediction[]
   contacts    EmergencyContact[]
+  shifts      DriverShift[]
   scheduledPickups ScheduledPickupRequest[]
 
   @@index([minLat, maxLat, minLng, maxLng])
@@ -396,6 +403,7 @@ model Vehicle {
   complaints Complaint[]
   sosAlerts  SosAlert[]
   fuelLogs   FuelLog[]
+  shifts     DriverShift[]
   scheduledPickups ScheduledPickupRequest[]
 
   @@index([wardId, status])
@@ -567,6 +575,55 @@ model FuelLog {
   @@index([driverId, loggedAt])
   @@index([vehicleId, loggedAt])
   @@map("fuel_logs")
+}
+
+/// Explicit driver shift clock.
+///
+/// The end-of-shift summary used to infer "on shift since" from the first GPS
+/// ping of the day, which is not the same fact: a handset that lost signal at
+/// the depot, or a driver who opened the app on the bus in, both produce a
+/// start time nobody actually worked from. Supervisors also cannot see who is
+/// currently clocked on at all from ping data -- a truck silent for ten
+/// minutes is indistinguishable from one whose shift ended an hour ago.
+model DriverShift {
+  id        String @id @default(cuid())
+  driverId  String
+  vehicleId String?
+  wardId    String?
+
+  /// YYYY-MM-DD, same key shape as Route.date so a shift and its route join.
+  date String
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  startLat Float?
+  startLng Float?
+  endLat   Float?
+  endLng   Float?
+
+  startOdometerKm Float?
+  endOdometerKm   Float?
+
+  /// Filled on clock-out from the day's GPS track, not from the odometer
+  /// fields above -- those are driver-entered and frequently left blank.
+  distanceKm Float?
+  stopsDone  Int    @default(0)
+
+  notes  String?
+  status ShiftStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver  User     @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  ward    Ward?    @relation(fields: [wardId], references: [id], onDelete: SetNull)
+
+  @@index([driverId, date])
+  @@index([date, status])
+  @@index([status, startedAt])
+  @@map("driver_shifts")
 }
 
 /// "Tomorrow this zone likely overflows" (plan §2.3, §7).

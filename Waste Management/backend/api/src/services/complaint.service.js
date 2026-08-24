@@ -7,6 +7,7 @@ import { notify, notifyWardOfficers, awardCredits } from './notification.service
 import { classifyWaste, scoreFraud } from './ai.service.js';
 import { distanceMeters, pointInPolygon, boundsAround } from '../lib/geo.js';
 import { nearestRoadDistance } from './routing.service.js';
+import { dispatchEmergency } from './dispatch.service.js';
 import { HttpError } from '../middleware/error.js';
 
 /**
@@ -159,6 +160,7 @@ export async function createComplaint({
 
   emitTo(rooms, emergency ? SOCKET_EVENTS.EMERGENCY_NEW : SOCKET_EVENTS.COMPLAINT_NEW, payload);
 
+  let dispatched = null;
   if (emergency) {
     // Bypass the queue: page every officer for the ward immediately.
     await notifyWardOfficers(ward?.id, {
@@ -167,6 +169,23 @@ export async function createComplaint({
       body: `${complaint.code} at ${address || 'reported location'} — acknowledge within ${slaMinutes} minutes.`,
       payload: { complaintId: complaint.id, code: complaint.code },
     });
+
+    /**
+     * Paging the officer is not the same as sending someone. On a 30-minute
+     * SLA, waiting for an officer to read the page and hand-assign a truck
+     * spends the clock on a human hop -- so the emergency also goes straight
+     * to the nearest live truck, which the officer can still reassign.
+     *
+     * Guarded: the complaint exists and the citizen's credits are already
+     * awarded by this point, so a dispatch failure must not fail the report.
+     * A failed dispatch degrades to exactly the old behaviour (officers
+     * paged, nobody sent) and says so instead of pretending it worked.
+     */
+    try {
+      dispatched = await dispatchEmergency(complaint, ward);
+    } catch (err) {
+      console.error(`[dispatch] ${complaint.code} auto-dispatch failed:`, err.message);
+    }
   }
 
   await notify({
@@ -183,6 +202,16 @@ export async function createComplaint({
 
   return {
     complaint: payload,
+    dispatch: emergency
+      ? {
+          dispatched: Boolean(dispatched),
+          vehicle: dispatched?.vehicle ?? null,
+          driver: dispatched?.driver ?? null,
+          // Said out loud rather than left implied: an emergency nobody could
+          // be sent to is a fact the citizen and the officer both need.
+          reason: dispatched ? null : 'No available truck — ward officers paged for manual assignment',
+        }
+      : null,
     ai: {
       category: aiCategory,
       confidence,

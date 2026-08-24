@@ -188,7 +188,7 @@ export default function CitizenHome() {
                           <span className="text-[11px] text-muted">{timeAgo(c.createdAt)}</span>
                         </div>
                         <p className="text-fluid-sm font-bold text-ink truncate">{t(`category.${c.category}`)}</p>
-                        <p className="text-fluid-xs text-muted truncate">{c.address || 'Ahmedabad'}</p>
+                        <p className="text-fluid-xs text-muted truncate">{c.address || 'Gandhinagar'}</p>
                       </div>
                       <ArrowRight className="h-4 w-4 shrink-0 text-muted" />
                     </Card>
