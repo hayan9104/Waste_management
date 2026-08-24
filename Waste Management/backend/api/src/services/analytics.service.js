@@ -171,6 +171,300 @@ export async function wardPerformance(wardIds) {
   return results;
 }
 
+/**
+ * Fuel and expenditure.
+ *
+ * Fuel logs carry a driver and a vehicle but no ward of their own, so ward
+ * scoping has to go through the vehicle. The officer analytics endpoint used
+ * to query fuelLog with no scope at all, which quietly showed a ward officer
+ * the whole city's spend.
+ *
+ * Cost is only ever summed from what was actually logged. Where a driver
+ * recorded litres but left the cost blank we report the litres and say how
+ * many entries had no cost, rather than multiplying by an assumed price and
+ * presenting the guess as spend.
+ */
+export async function fuelAndExpenditure(wardIds, days = 30) {
+  const since = startOfDay(days - 1);
+
+  const vehicles = await prisma.vehicle.findMany({
+    where: wardIds === null ? {} : { wardId: { in: wardIds } },
+    select: {
+      id: true,
+      registrationNumber: true,
+      model: true,
+      wardId: true,
+      ward: { select: { id: true, name: true, code: true } },
+      driver: { select: { id: true, name: true } },
+    },
+  });
+  const vehicleIds = vehicles.map((v) => v.id);
+  const vehicleById = new Map(vehicles.map((v) => [v.id, v]));
+
+  const [logs, routes] = await Promise.all([
+    prisma.fuelLog.findMany({
+      where: { vehicleId: { in: vehicleIds }, loggedAt: { gte: since } },
+      orderBy: { loggedAt: 'desc' },
+      select: {
+        id: true, vehicleId: true, driverId: true, liters: true, cost: true,
+        odometerKm: true, notes: true, receiptUrl: true, loggedAt: true,
+      },
+    }),
+    // Distance actually driven, so cost-per-km is a real ratio rather than
+    // fuel volume divided by a planned figure nobody drove.
+    prisma.route.findMany({
+      where: { vehicleId: { in: vehicleIds }, date: { gte: dayKey(since) } },
+      select: { vehicleId: true, distanceKm: true, actualKm: true, date: true },
+    }),
+  ]);
+
+  const litres = logs.reduce((n, l) => n + (l.liters ?? 0), 0);
+  const cost = logs.reduce((n, l) => n + (l.cost ?? 0), 0);
+  const missingCost = logs.filter((l) => l.liters != null && l.cost == null).length;
+  const km = routes.reduce((n, r) => n + (r.actualKm || r.distanceKm || 0), 0);
+
+  // Per-day series for the trend chart.
+  const byDay = new Map();
+  for (const l of logs) {
+    const key = dayKey(l.loggedAt);
+    const row = byDay.get(key) ?? { date: key, litres: 0, cost: 0, entries: 0 };
+    row.litres += l.liters ?? 0;
+    row.cost += l.cost ?? 0;
+    row.entries += 1;
+    byDay.set(key, row);
+  }
+  const series = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const key = dayKey(startOfDay(i));
+    const row = byDay.get(key);
+    series.push({
+      date: key,
+      litres: Number((row?.litres ?? 0).toFixed(1)),
+      cost: Number((row?.cost ?? 0).toFixed(0)),
+      entries: row?.entries ?? 0,
+    });
+  }
+
+  // Per-vehicle and per-ward rollups.
+  const kmByVehicle = new Map();
+  for (const r of routes) {
+    kmByVehicle.set(r.vehicleId, (kmByVehicle.get(r.vehicleId) ?? 0) + (r.actualKm || r.distanceKm || 0));
+  }
+
+  const perVehicle = [];
+  const wardAgg = new Map();
+  for (const v of vehicles) {
+    const mine = logs.filter((l) => l.vehicleId === v.id);
+    if (!mine.length && !kmByVehicle.get(v.id)) continue;
+
+    const vLitres = mine.reduce((n, l) => n + (l.liters ?? 0), 0);
+    const vCost = mine.reduce((n, l) => n + (l.cost ?? 0), 0);
+    const vKm = kmByVehicle.get(v.id) ?? 0;
+
+    perVehicle.push({
+      vehicleId: v.id,
+      registrationNumber: v.registrationNumber,
+      model: v.model,
+      ward: v.ward,
+      driver: v.driver,
+      litres: Number(vLitres.toFixed(1)),
+      cost: Number(vCost.toFixed(0)),
+      km: Number(vKm.toFixed(1)),
+      entries: mine.length,
+      // Null rather than 0 when there is nothing to divide by: "0 km/l" reads
+      // as a catastrophically thirsty truck, not as "no data yet".
+      kmPerLitre: vLitres > 0 && vKm > 0 ? Number((vKm / vLitres).toFixed(2)) : null,
+      costPerKm: vKm > 0 && vCost > 0 ? Number((vCost / vKm).toFixed(2)) : null,
+    });
+
+    if (v.ward) {
+      const w = wardAgg.get(v.ward.id) ?? { ward: v.ward, litres: 0, cost: 0, km: 0, vehicles: 0 };
+      w.litres += vLitres;
+      w.cost += vCost;
+      w.km += vKm;
+      w.vehicles += 1;
+      wardAgg.set(v.ward.id, w);
+    }
+  }
+
+  perVehicle.sort((a, b) => b.cost - a.cost || b.litres - a.litres);
+
+  const perWard = [...wardAgg.values()]
+    .map((w) => ({
+      ward: w.ward,
+      vehicles: w.vehicles,
+      litres: Number(w.litres.toFixed(1)),
+      cost: Number(w.cost.toFixed(0)),
+      km: Number(w.km.toFixed(1)),
+      kmPerLitre: w.litres > 0 && w.km > 0 ? Number((w.km / w.litres).toFixed(2)) : null,
+      costPerKm: w.km > 0 && w.cost > 0 ? Number((w.cost / w.km).toFixed(2)) : null,
+    }))
+    .sort((a, b) => b.cost - a.cost);
+
+  const reporting = new Set(logs.map((l) => l.vehicleId)).size;
+
+  return {
+    days,
+    since,
+    totals: {
+      litres: Number(litres.toFixed(1)),
+      cost: Number(cost.toFixed(0)),
+      km: Number(km.toFixed(1)),
+      entries: logs.length,
+      vehiclesReporting: reporting,
+      fleetSize: vehicles.length,
+      kmPerLitre: litres > 0 && km > 0 ? Number((km / litres).toFixed(2)) : null,
+      costPerKm: km > 0 && cost > 0 ? Number((cost / km).toFixed(2)) : null,
+      avgCostPerDay: Number((cost / days).toFixed(0)),
+    },
+    /** Stated so a reader can tell "cheap month" from "half the crew forgot to log". */
+    coverage: {
+      entriesMissingCost: missingCost,
+      vehiclesWithNoEntries: vehicles.length - reporting,
+    },
+    series,
+    perVehicle,
+    perWard,
+    recent: logs.slice(0, 20).map((l) => ({
+      ...l,
+      vehicle: vehicleById.get(l.vehicleId)
+        ? {
+            id: l.vehicleId,
+            registrationNumber: vehicleById.get(l.vehicleId).registrationNumber,
+            ward: vehicleById.get(l.vehicleId).ward,
+          }
+        : null,
+    })),
+  };
+}
+
+/**
+ * SLA resolution analytics.
+ *
+ * Compliance is measured only over complaints that have actually been
+ * resolved *and* carried a due date. Counting still-open work as compliant
+ * would make a ward that never closes anything look perfect, so open breaches
+ * are reported as their own number instead of being folded into the rate.
+ */
+export async function slaPerformance(wardIds, days = 30) {
+  const since = startOfDay(days - 1);
+  const scope = wardScope(wardIds);
+
+  const [resolved, openOverdue, wards] = await Promise.all([
+    prisma.complaint.findMany({
+      where: { ...scope, resolvedAt: { gte: since } },
+      select: {
+        id: true, code: true, wardId: true, category: true, severity: true,
+        isEmergency: true, createdAt: true, resolvedAt: true, dueAt: true, slaMinutes: true,
+      },
+    }),
+    prisma.complaint.findMany({
+      where: { ...scope, status: { notIn: ['RESOLVED', 'REJECTED'] }, dueAt: { lt: new Date() } },
+      select: { id: true, code: true, wardId: true, category: true, isEmergency: true, dueAt: true, createdAt: true },
+    }),
+    prisma.ward.findMany({
+      where: wardIds === null ? {} : { id: { in: wardIds } },
+      select: { id: true, name: true, code: true },
+      orderBy: { code: 'asc' },
+    }),
+  ]);
+
+  const measurable = resolved.filter((c) => c.dueAt);
+  const onTime = (c) => c.resolvedAt <= c.dueAt;
+  const minutes = (c) => (c.resolvedAt - c.createdAt) / 60_000;
+  const rate = (rows) => (rows.length ? Math.round((rows.filter(onTime).length / rows.length) * 100) : null);
+
+  // Daily compliance trend.
+  const byDay = new Map();
+  for (const c of measurable) {
+    const key = dayKey(c.resolvedAt);
+    const row = byDay.get(key) ?? { date: key, resolved: 0, onTime: 0 };
+    row.resolved += 1;
+    if (onTime(c)) row.onTime += 1;
+    byDay.set(key, row);
+  }
+  const series = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const key = dayKey(startOfDay(i));
+    const row = byDay.get(key);
+    series.push({
+      date: key,
+      resolved: row?.resolved ?? 0,
+      onTime: row?.onTime ?? 0,
+      // null, not 0: a day with nothing resolved has no compliance rate, and
+      // plotting it as 0% draws a cliff that never happened.
+      compliancePct: row?.resolved ? Math.round((row.onTime / row.resolved) * 100) : null,
+    });
+  }
+
+  const byCategory = [...new Set(measurable.map((c) => c.category))]
+    .map((category) => {
+      const rows = measurable.filter((c) => c.category === category);
+      const target = CATEGORY_MAP[category]?.slaMinutes ?? null;
+      return {
+        category,
+        label: CATEGORY_MAP[category]?.label ?? category,
+        resolved: rows.length,
+        breached: rows.filter((c) => !onTime(c)).length,
+        compliancePct: rate(rows),
+        targetMinutes: target,
+        avgResolutionMinutes: Math.round(avg(rows.map(minutes))),
+      };
+    })
+    .sort((a, b) => (a.compliancePct ?? 101) - (b.compliancePct ?? 101));
+
+  const byWard = wards.map((ward) => {
+    const rows = measurable.filter((c) => c.wardId === ward.id);
+    return {
+      ward,
+      resolved: rows.length,
+      breached: rows.filter((c) => !onTime(c)).length,
+      compliancePct: rate(rows),
+      avgResolutionMinutes: Math.round(avg(rows.map(minutes))),
+      openBreaches: openOverdue.filter((c) => c.wardId === ward.id).length,
+    };
+  });
+
+  const emergencyRows = measurable.filter((c) => c.isEmergency);
+  const routineRows = measurable.filter((c) => !c.isEmergency);
+
+  return {
+    days,
+    since,
+    totals: {
+      resolved: resolved.length,
+      measurable: measurable.length,
+      /** Resolved without a due date - excluded from the rate, and said so. */
+      unmeasurable: resolved.length - measurable.length,
+      breached: measurable.filter((c) => !onTime(c)).length,
+      compliancePct: rate(measurable),
+      avgResolutionMinutes: Math.round(avg(measurable.map(minutes))),
+      medianResolutionMinutes: median(measurable.map(minutes)),
+      openBreaches: openOverdue.length,
+      emergencyCompliancePct: rate(emergencyRows),
+      routineCompliancePct: rate(routineRows),
+    },
+    series,
+    byCategory,
+    byWard,
+    worstOpen: openOverdue
+      .sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt))
+      .slice(0, 15)
+      .map((c) => ({
+        ...c,
+        minutesOverdue: Math.round((Date.now() - new Date(c.dueAt).getTime()) / 60_000),
+      })),
+  };
+}
+
+/** Median resists the long tail a handful of week-old tickets puts on the mean. */
+function median(nums) {
+  if (!nums.length) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return Math.round(sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2);
+}
+
 /** Complaint points for the officer heatmap, already filtered to their scope. */
 export async function heatmapPoints(wardIds, { days = 14, status } = {}) {
   const complaints = await prisma.complaint.findMany({
@@ -430,7 +724,7 @@ export async function perModelHealth(days = 14, visionReachable = false) {
   };
 }
 
-export { startOfDay, dayKey };
+export { startOfDay, dayKey, median };
 export default {
   overview,
   statusBreakdown,
@@ -441,4 +735,6 @@ export default {
   hotspotForecast,
   modelHealth,
   perModelHealth,
+  fuelAndExpenditure,
+  slaPerformance,
 };

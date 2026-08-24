@@ -58,6 +58,26 @@ router.get(
   })
 );
 
+/** Fuel & expenditure for this officer's wards. */
+router.get(
+  ['/fuel', '/expenditure'],
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json(await analytics.fuelAndExpenditure(ids, days));
+  })
+);
+
+/** SLA resolution analytics for this officer's wards. */
+router.get(
+  '/sla',
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json(await analytics.slaPerformance(ids, days));
+  })
+);
+
 /**
  * FEATURE 1: Main Ward Dashboard
  * GET /api/officer/dashboard & GET /api/officer/overview
@@ -674,22 +694,13 @@ router.get(
     const { ids } = await scope(req);
     const range = req.query.range === 'month' ? 30 : 7;
 
-    const [trends, categories, wards, status, fuelLogs] = await Promise.all([
+    const [trends, categories, wards, status, fuel] = await Promise.all([
       analytics.trends(ids, range),
       analytics.categoryBreakdown(ids, range),
       analytics.wardPerformance(ids),
       analytics.statusBreakdown(ids),
-      prisma.fuelLog.findMany({
-        where: {
-          loggedAt: { gte: new Date(Date.now() - range * 86400_000) },
-        },
-        orderBy: { loggedAt: 'desc' },
-        take: 50,
-      }).catch(() => []),
+      analytics.fuelAndExpenditure(ids, range),
     ]);
-
-    const totalFuelLiters = fuelLogs.reduce((sum, f) => sum + (f.liters || 0), 0);
-    const totalFuelCost = fuelLogs.reduce((sum, f) => sum + (f.cost || 0), 0);
 
     res.json({
       trends,
@@ -697,10 +708,17 @@ router.get(
       wards,
       status,
       fuel: {
-        totalLiters: totalFuelLiters,
-        totalCost: totalFuelCost,
-        entriesCount: fuelLogs.length,
-        recentLogs: fuelLogs.slice(0, 10),
+        // Original keys kept so the existing Analytics page keeps working;
+        // the richer breakdown rides alongside rather than replacing them.
+        totalLiters: fuel.totals.litres,
+        totalCost: fuel.totals.cost,
+        entriesCount: fuel.totals.entries,
+        recentLogs: fuel.recent.slice(0, 10),
+        totals: fuel.totals,
+        coverage: fuel.coverage,
+        series: fuel.series,
+        perVehicle: fuel.perVehicle,
+        perWard: fuel.perWard,
       },
     });
   })

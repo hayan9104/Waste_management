@@ -658,6 +658,27 @@ router.get(
 );
 
 /**
+ * Fuel & expenditure — city-wide spend, litres, cost per km and the worst
+ * offenders by vehicle and ward.
+ */
+router.get(
+  ['/fuel', '/analytics/fuel', '/expenditure'],
+  asyncHandler(async (req, res) => {
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json(await analytics.fuelAndExpenditure(null, days));
+  })
+);
+
+/** SLA resolution analytics — compliance trend, per category and per ward. */
+router.get(
+  ['/sla', '/analytics/sla'],
+  asyncHandler(async (req, res) => {
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    res.json(await analytics.slaPerformance(null, days));
+  })
+);
+
+/**
  * Re-seed the demo dataset (plan §8 note: routes are stored per calendar day,
  * so a fresh morning has none until this runs). Wipes and recreates
  * everything deterministically -- same shape the CLI `npm run seed` produces.

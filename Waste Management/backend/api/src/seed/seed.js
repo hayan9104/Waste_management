@@ -725,6 +725,60 @@ async function main() {
   }
   console.log(`[seed] ${shiftsCreated} driver shifts (${SHIFT_HISTORY_DAYS}-day history + today)`);
 
+  // -------------------------------------------------------- fuel logs ----
+  /**
+   * Diesel fill-ups per truck across the same window as the shifts.
+   *
+   * Nothing seeded fuel logs before, so every fuel and expenditure panel in
+   * the product read zero -- the analytics were never broken, they had no
+   * rows to read. A reviewer opening "Fuel & Expenditure" saw an empty page
+   * and could only conclude the feature did not work.
+   *
+   * A deliberate minority of entries have litres but no cost. That is what
+   * real driver-entered logs look like (the pump receipt goes missing), and
+   * it exercises the coverage counters that keep a cheap-looking month
+   * distinguishable from a badly-logged one.
+   */
+  const DIESEL_PER_LITRE = 94.5; // Gujarat pump price, near enough for a demo
+  const FUEL_HISTORY_DAYS = 30;
+  let fuelEntries = 0;
+
+  for (const { vehicle, driver } of vehicles) {
+    if (vehicle.maintenanceFlag) continue; // off the road, not burning diesel
+    const r = rng(`fuel-${vehicle.id}`);
+
+    // Roughly every third day, which is what a 900-3200 kg truck on a ward
+    // beat actually needs rather than a tidy daily entry.
+    let odometer = intBetween(r, 18_000, 96_000);
+    for (let d = FUEL_HISTORY_DAYS; d >= 1; d -= 3) {
+      const loggedAt = new Date();
+      loggedAt.setDate(loggedAt.getDate() - d);
+      loggedAt.setHours(intBetween(r, 7, 18), intBetween(r, 0, 59), 0, 0);
+
+      const liters = Number((22 + r() * 26).toFixed(1));
+      odometer += intBetween(r, 90, 190);
+
+      // ~1 in 6 fill-ups is logged without a cost.
+      const hasCost = r() > 0.17;
+
+      await prisma.fuelLog.create({
+        data: {
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          liters,
+          odometerKm: odometer,
+          cost: hasCost ? Number((liters * DIESEL_PER_LITRE * (0.97 + r() * 0.06)).toFixed(0)) : null,
+          notes: hasCost ? null : 'Receipt not collected',
+          loggedAt,
+        },
+      });
+      fuelEntries += 1;
+    }
+
+    await prisma.vehicle.update({ where: { id: vehicle.id }, data: { odometerKm: odometer } });
+  }
+  console.log(`[seed] ${fuelEntries} fuel log entries across ${FUEL_HISTORY_DAYS} days`);
+
   // ------------------------------------------ scheduled pickup requests ----
   /**
    * Advance event-pickup bookings (the "Schedule Event" feature) across the
@@ -854,7 +908,8 @@ async function main() {
     Admin     /admin/login        admin@safaai.gov.in
 
   ${CITY.name}, ${CITY.state} — ${wards.length} wards, ${vehicles.length} drivers + vehicles
-  (${crews.map((c) => c.length).join("/")} per ward), ${created} complaints, ${routes} live routes.
+  (${crews.map((c) => c.length).join("/")} per ward), ${created} complaints, ${routes} live routes,
+  ${shiftsCreated} shifts, ${fuelEntries} fuel entries.
 `);
 
   return {

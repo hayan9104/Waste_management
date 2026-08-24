@@ -19,10 +19,48 @@ import { Fuel, TrendingUp, DollarSign, Calendar } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card, ErrorState, Loading, SectionTitle, Stat } from '../../components/ui';
 import { pct, formatDuration } from '../../lib/format';
+import FuelExpenditure from '../admin/FuelExpenditure';
+import SlaAnalytics from '../admin/SlaAnalytics';
 
 const PALETTE = ['#16a34a', '#0ea5e9', '#f59e0b', '#a855f7', '#ef4444', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
 
-export default function Analytics() {
+type Tab = 'overview' | 'fuel' | 'sla';
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'fuel', label: 'Fuel & expenditure' },
+  { id: 'sla', label: 'SLA resolution' },
+];
+
+/** Ward-scoped analytics. Fuel and SLA reuse the admin panels with scope="officer". */
+export default function OfficerAnalytics() {
+  const [tab, setTab] = useState<Tab>('overview');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Analytics views">
+        {TABS.map((x) => (
+          <button
+            key={x.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === x.id}
+            onClick={() => setTab(x.id)}
+            className={`chip transition ${tab === x.id ? 'border-brand bg-brand/10 text-brand' : 'text-muted hover:bg-sunken'}`}
+          >
+            {x.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' && <WardAnalytics />}
+      {tab === 'fuel' && <FuelExpenditure scope="officer" />}
+      {tab === 'sla' && <SlaAnalytics scope="officer" />}
+    </div>
+  );
+}
+
+function WardAnalytics() {
   const [range, setRange] = useState<'week' | 'month'>('week');
 
   const { data, isLoading, error, refetch } = useQuery({
