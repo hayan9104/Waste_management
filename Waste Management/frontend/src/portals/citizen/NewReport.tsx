@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ArrowRight,
   MapPin,
+  Lock,
   X,
   Trash2,
   Biohazard,
@@ -27,7 +28,7 @@ import {
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, Meter, toast } from '../../components/ui';
 import { CameraCapture } from '../../components/CameraCapture';
-import { BaseMap, LocationPicker, CITY_CENTER, snapToCity } from '../../components/map/Map';
+import { BaseMap, PinMarker, FollowTarget, CITY_CENTER, snapToCity } from '../../components/map/Map';
 import { CATEGORY_LABELS, confidenceLabel, formatDistance } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
@@ -603,20 +604,27 @@ export default function NewReport() {
       {/* ================= STEP 3: LOCATION & SUBMIT ================= */}
       {step === 'location' && (
         <div className="grid gap-6 lg:grid-cols-12">
-          {/* Left Column: Interactive Map (7 cols) */}
+          {/* Left Column: Fixed Location Map (7 cols) */}
           <div className="lg:col-span-7">
             <Card className="p-4 border border-line shadow-xs space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-fluid-sm font-bold text-ink flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-brand" /> Drag Pin to Adjust Position
-                  </h3>
-                  <p className="text-[11px] text-muted">Ensure the pin directly matches the garbage site.</p>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-fluid-sm font-bold text-ink flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-brand" /> Auto-Detected GPS Location
+                    </h3>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-ok/30 bg-ok/10 px-2 py-0.5 text-[10px] font-bold text-ok">
+                      <Lock className="h-3 w-3" /> Locked
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted">
+                    Coordinates auto-detected from your device GPS for accurate truck dispatch.
+                  </p>
                 </div>
                 <button
                   type="button"
                   onClick={locate}
-                  className="inline-flex items-center gap-1 rounded-xl border border-line bg-elevated px-3 py-1.5 text-fluid-xs font-semibold text-ink hover:bg-sunken shadow-xs cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-elevated px-3 py-1.5 text-fluid-xs font-semibold text-ink hover:bg-sunken shadow-xs cursor-pointer"
                 >
                   <Crosshair className="h-3.5 w-3.5 text-brand" /> Recenter GPS
                 </button>
@@ -624,16 +632,26 @@ export default function NewReport() {
 
               <div className="h-[360px] w-full overflow-hidden rounded-2xl border border-line">
                 <BaseMap center={position ? [position.lat, position.lng] : CITY_CENTER} zoom={16}>
-                  <LocationPicker
-                    latitude={(position ?? { lat: CITY_CENTER[0], lng: CITY_CENTER[1] }).lat}
-                    longitude={(position ?? { lat: CITY_CENTER[0], lng: CITY_CENTER[1] }).lng}
-                    onChange={(lat, lng) => {
-                      const next = { lat, lng };
-                      setPosition(next);
-                      void checkForDuplicates(next);
-                    }}
-                  />
+                  {position && (
+                    <>
+                      <PinMarker
+                        latitude={position.lat}
+                        longitude={position.lng}
+                        label="Auto-Detected GPS Location (Locked)"
+                      />
+                      <FollowTarget latitude={position.lat} longitude={position.lng} />
+                    </>
+                  )}
                 </BaseMap>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-line bg-sunken/60 px-3 py-2 text-fluid-xs text-muted">
+                <span className="flex items-center gap-1.5 font-semibold text-ink">
+                  <Lock className="h-3.5 w-3.5 text-brand" /> GPS Coordinates Locked
+                </span>
+                <span className="font-mono text-[11px]">
+                  {position ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}` : 'Acquiring GPS…'}
+                </span>
               </div>
             </Card>
           </div>

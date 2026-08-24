@@ -34,6 +34,15 @@ export function CameraCapture({
     let cancelled = false;
 
     async function start() {
+      // Simultaneously prompt for high-accuracy GPS location when camera starts
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          () => {},
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+      }
+
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus('unavailable');
         return;
