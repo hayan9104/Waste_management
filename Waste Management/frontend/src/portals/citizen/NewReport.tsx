@@ -29,7 +29,7 @@ import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, Meter, toast } from '../../components/ui';
 import { CameraCapture } from '../../components/CameraCapture';
 import { BaseMap, PinMarker, FollowTarget, CITY_CENTER, snapToCity } from '../../components/map/Map';
-import { CATEGORY_LABELS, confidenceLabel, formatDistance } from '../../lib/format';
+import { CATEGORY_LABELS, confidenceLabel, formatDistance, validateWastePhoto } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
 type Step = 'capture' | 'review' | 'location';
@@ -75,6 +75,7 @@ export default function NewReport() {
   const [duplicate, setDuplicate] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [invalidPhotoWarning, setInvalidPhotoWarning] = useState<string | null>(null);
 
   useEffect(() => {
     locate();
@@ -189,6 +190,16 @@ export default function NewReport() {
   }
 
   async function onPhoto(selected: File) {
+    const quality = await validateWastePhoto(selected);
+    if (!quality.valid) {
+      setInvalidPhotoWarning(
+        quality.reason ||
+          'Please take a clear photo of the actual garbage site. Blank, black, or unrelated photos cannot be processed.'
+      );
+      if (fileInput.current) fileInput.current.value = '';
+      return;
+    }
+
     setFile(selected);
     const objectUrl = URL.createObjectURL(selected);
     setPreview(objectUrl);
@@ -623,9 +634,11 @@ export default function NewReport() {
                 <button
                   type="button"
                   onClick={locate}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-elevated px-3 py-1.5 text-fluid-xs font-semibold text-ink hover:bg-sunken shadow-xs cursor-pointer"
+                  disabled={locating}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-elevated px-3 py-1.5 text-fluid-xs font-semibold text-ink hover:bg-sunken shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  <Crosshair className="h-3.5 w-3.5 text-brand" /> Recenter GPS
+                  {locating ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" /> : <Crosshair className="h-3.5 w-3.5 text-brand" />}
+                  <span>{locating ? 'Acquiring GPS…' : 'Recenter GPS'}</span>
                 </button>
               </div>
 
@@ -722,6 +735,46 @@ export default function NewReport() {
                 )}
               </button>
             </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Invalid Photo / Blank Screen Warning Modal */}
+      {invalidPhotoWarning && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl border border-line bg-surface p-6 shadow-2xl text-center space-y-4">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-amber-500/15 text-amber-600">
+              <AlertTriangle className="h-8 w-8" />
+            </div>
+            <div>
+              <h3 className="text-fluid-base font-bold text-ink">Action Required: Genuine Photo Needed</h3>
+              <p className="mt-2 text-fluid-xs text-muted leading-relaxed">
+                {invalidPhotoWarning}
+              </p>
+              <p className="mt-2 text-[11px] text-faint">
+                Please upload only relevant photos of the actual garbage site. Blank, dark, or unrelated test images cannot be accepted for municipal collection dispatch.
+              </p>
+            </div>
+            <div className="pt-2 flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setInvalidPhotoWarning(null);
+                  setCameraOpen(true);
+                }}
+                className="btn-primary w-full py-2.5 text-fluid-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Camera className="h-4 w-4" />
+                <span>Retake Clear Photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInvalidPhotoWarning(null)}
+                className="btn-ghost w-full py-2.5 text-fluid-xs font-semibold cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         </div>
       )}
