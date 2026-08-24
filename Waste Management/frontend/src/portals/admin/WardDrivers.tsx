@@ -1,10 +1,27 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Search, Truck, Users, Radio, TriangleAlert, Phone, MapPin } from 'lucide-react';
+import { Search, Truck, Users, Radio, TriangleAlert, Phone, MapPin, SatelliteDish, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Meter, SectionTitle, Stat } from '../../components/ui';
+import { BaseMap, TruckMarker, RouteLine, StopDot, FitBounds, CITY_CENTER } from '../../components/map/Map';
 import { timeAgo } from '../../lib/format';
+
+/** Signal quality as reported by the handset, not merely whether it is on. */
+type GpsHealth = {
+  status: 'GOOD' | 'FAIR' | 'PATCHY' | 'POOR' | 'OFFLINE' | 'NO_SIGNAL';
+  label: string;
+  tone: 'ok' | 'warn' | 'danger' | 'neutral';
+  lastPingAgeSec: number | null;
+  fixes: number;
+  expectedFixes: number;
+  dropouts: number;
+  medianGapSec: number | null;
+  accuracyM: number | null;
+  accuracyReported: boolean;
+  windowMinutes: number;
+  speedKmph: number | null;
+};
 
 type RosterDriver = {
   id: string;
@@ -33,7 +50,10 @@ type RosterDriver = {
     stopsTotal: number;
     stopsDone: number;
     progressPct: number;
+    polyline: [number, number][];
+    stops: { seq: number; code: string | null; label: string | null; latitude: number; longitude: number; status: string; isEmergency: boolean }[];
   } | null;
+  gps: GpsHealth | null;
   sos: { id: string; createdAt: string; message: string | null } | null;
   shift: {
     id: string;
@@ -68,6 +88,8 @@ type RosterWard = {
  */
 export default function WardDrivers() {
   const [q, setQ] = useState('');
+  /** The driver whose beat is drawn on the map; null closes it. */
+  const [tracking, setTracking] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery<RosterWard[]>({
     queryKey: ['admin', 'ward-drivers'],
@@ -102,8 +124,17 @@ export default function WardDrivers() {
       onDuty: all.reduce((n, w) => n + w.onDutyCount, 0),
       onRoute: all.reduce((n, w) => n + w.onRouteCount, 0),
       sos: all.reduce((n, w) => n + w.drivers.filter((d) => d.sos).length, 0),
+      weakGps: all.reduce(
+        (n, w) => n + w.drivers.filter((d) => d.gps && ['FAIR', 'PATCHY', 'POOR'].includes(d.gps.status)).length,
+        0
+      ),
     };
   }, [data]);
+
+  const tracked = useMemo(
+    () => (data ?? []).flatMap((w) => w.drivers).find((d) => d.id === tracking) ?? null,
+    [data, tracking]
+  );
 
   if (isLoading) return <Loading label="Loading ward rosters…" />;
   if (error) return <ErrorState message="Could not load the ward driver roster" onRetry={() => refetch()} />;
@@ -126,7 +157,7 @@ export default function WardDrivers() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label="Wards" value={totals.wards} icon={<MapPin className="h-4 w-4" />} tone="info" />
         <Stat
           label="Drivers"
@@ -143,12 +174,124 @@ export default function WardDrivers() {
           tone={totals.onDuty ? 'ok' : 'warn'}
         />
         <Stat
+          label="Weak GPS"
+          value={totals.weakGps}
+          hint="Reporting, but not reliably"
+          icon={<SatelliteDish className="h-4 w-4" />}
+          tone={totals.weakGps ? 'warn' : 'ok'}
+        />
+        <Stat
           label="Open SOS"
           value={totals.sos}
           icon={<TriangleAlert className="h-4 w-4" />}
           tone={totals.sos ? 'danger' : 'neutral'}
         />
       </div>
+
+
+      {/* Live beat for one driver.
+          Drawn only on request rather than for everyone at once: forty-four
+          polylines on one canvas is unreadable, and the question a supervisor
+          actually asks is about a particular driver. */}
+      {tracked && (
+        <Card className="overflow-hidden p-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-sunken/60 px-4 py-3">
+            <span
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-fluid-xs font-bold text-white"
+              style={{ backgroundColor: tracked.avatarColor }}
+            >
+              {tracked.name.slice(0, 1)}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-fluid-sm font-bold">{tracked.name}</p>
+              <p className="truncate font-mono text-fluid-xs text-muted">
+                {tracked.vehicle?.registrationNumber ?? 'No vehicle'}
+                {tracked.route ? ` · ${tracked.route.label}` : ' · no route today'}
+              </p>
+            </div>
+            {tracked.gps && <Badge tone={tracked.gps.tone}>{tracked.gps.label}</Badge>}
+            <button
+              type="button"
+              onClick={() => setTracking(null)}
+              className="btn-ghost btn-sm ml-auto"
+              aria-label="Close live route"
+            >
+              <X className="h-3.5 w-3.5" /> Close
+            </button>
+          </div>
+
+          <div className="h-[42dvh] min-h-[280px] w-full">
+            <BaseMap
+              center={
+                tracked.vehicle?.latitude != null && tracked.vehicle?.longitude != null
+                  ? [tracked.vehicle.latitude, tracked.vehicle.longitude]
+                  : CITY_CENTER
+              }
+              zoom={14}
+              satellite
+            >
+              <FitBounds
+                points={[
+                  ...(tracked.route?.stops ?? []).map((st) => [st.latitude, st.longitude] as [number, number]),
+                  ...(tracked.vehicle?.latitude != null && tracked.vehicle?.longitude != null
+                    ? [[tracked.vehicle.latitude, tracked.vehicle.longitude] as [number, number]]
+                    : []),
+                ]}
+              />
+
+              {(tracked.route?.polyline?.length ?? 0) > 1 && (
+                <RouteLine polyline={tracked.route!.polyline} progressIndex={tracked.route!.stopsDone} />
+              )}
+
+              {(tracked.route?.stops ?? []).map((st, i, arr) => {
+                const done = st.status === 'DONE';
+                const firstOpen = arr.findIndex((x) => x.status !== 'DONE');
+                return (
+                  <StopDot
+                    key={st.seq}
+                    latitude={st.latitude}
+                    longitude={st.longitude}
+                    seq={st.seq}
+                    status={done ? 'done' : i === firstOpen ? 'next' : 'queued'}
+                    label={`${st.seq}. ${st.label ?? st.code ?? 'Stop'} — ${done ? 'Collected' : i === firstOpen ? 'Next stop' : 'Queued'}`}
+                  />
+                );
+              })}
+
+              {tracked.vehicle?.latitude != null && tracked.vehicle?.longitude != null && (
+                <TruckMarker
+                  latitude={tracked.vehicle.latitude}
+                  longitude={tracked.vehicle.longitude}
+                  active={!tracked.isOffline}
+                  variant="tracker"
+                >
+                  <div className="space-y-0.5">
+                    <p className="font-semibold">{tracked.vehicle.registrationNumber}</p>
+                    <p className="text-xs text-muted">{tracked.name}</p>
+                    <p className="text-xs">{tracked.gps?.label ?? 'No signal data'}</p>
+                  </div>
+                </TruckMarker>
+              )}
+            </BaseMap>
+          </div>
+
+          {/* The numbers behind the grade, so it can be argued with. */}
+          {tracked.gps && (
+            <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-4">
+              <GpsFact label="Accuracy" value={tracked.gps.accuracyReported ? `±${tracked.gps.accuracyM} m` : 'Not reported'} />
+              <GpsFact
+                label={`Fixes / ${tracked.gps.windowMinutes} min`}
+                value={tracked.gps.expectedFixes ? `${tracked.gps.fixes} of ~${tracked.gps.expectedFixes}` : String(tracked.gps.fixes)}
+              />
+              <GpsFact label="Dropouts" value={String(tracked.gps.dropouts)} />
+              <GpsFact
+                label="Last fix"
+                value={tracked.gps.lastPingAgeSec == null ? 'never' : `${tracked.gps.lastPingAgeSec}s ago`}
+              />
+            </div>
+          )}
+        </Card>
+      )}
 
       {wards.length === 0 ? (
         <EmptyState
@@ -241,17 +384,30 @@ export default function WardDrivers() {
                               : 'Not clocked in'}
                       </Badge>
                       {d.vehicle?.maintenanceFlag && <Badge tone="warn">Maintenance</Badge>}
-                      <Badge tone={d.isOffline ? 'neutral' : 'ok'}>
-                        {d.isOffline
-                          ? d.lastPingAgeSec == null
-                            ? 'Never pinged'
-                            : `Offline · ${timeAgo(new Date(Date.now() - d.lastPingAgeSec * 1000).toISOString())}`
-                          : 'Live'}
-                      </Badge>
+                      {/* The GPS badge below states this same fact with the
+                          measurement behind it, so the old Live/Offline chip
+                          only added a second wording of the same thing — and
+                          the two could read differently for one truck, which
+                          is worse than either alone. Kept only for a truck
+                          with no telemetry at all. */}
+                      {!d.gps && (
+                        <Badge tone={d.isOffline ? 'neutral' : 'ok'}>{d.isOffline ? 'Offline' : 'Live'}</Badge>
+                      )}
+                      {d.gps && (
+                        <Badge tone={d.gps.tone}>
+                          <SatelliteDish className="h-3 w-3" /> {d.gps.label}
+                        </Badge>
+                      )}
                       {d.vehicle && (
-                        <Link to={`/admin/fleet?vehicle=${d.vehicle.id}`} className="btn-ghost btn-sm">
-                          Track
-                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setTracking(tracking === d.id ? null : d.id)}
+                          aria-pressed={tracking === d.id}
+                          className={`btn-ghost btn-sm ${tracking === d.id ? 'border-brand text-brand' : ''}`}
+                        >
+                          <MapPin className="h-3.5 w-3.5" />
+                          {tracking === d.id ? 'Hide route' : 'Live route'}
+                        </button>
                       )}
                     </div>
                   </li>
@@ -261,6 +417,16 @@ export default function WardDrivers() {
           </Card>
         ))
       )}
+    </div>
+  );
+}
+
+/** One measured GPS figure, shown so the grade above it can be argued with. */
+function GpsFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-elevated px-3 py-2">
+      <p className="text-[11px] uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-0.5 text-fluid-xs font-semibold tabular-nums">{value}</p>
     </div>
   );
 }

@@ -526,7 +526,8 @@ async function main() {
             aiCategory: !autoApproved && r() > 0.6 ? pick(r, WASTE_CATEGORIES).id : spec.id,
             aiConfidence: confidence,
             aiVerified: autoApproved,
-            reviewNeeded: meta.emergency ? false : !autoApproved,
+            // Closed work is not awaiting review, and an emergency never was.
+            reviewNeeded: meta.emergency || shouldResolve ? false : !autoApproved,
             fraudScore: Number((r() * 0.35).toFixed(3)),
             status,
             severity: meta.severity,
@@ -722,6 +723,9 @@ async function main() {
    * and the officer's fleet map shows several trucks working a ward at once,
    * which is the thing that was impossible to demonstrate before.
    */
+  const startOfSeedDay = new Date();
+  startOfSeedDay.setHours(0, 0, 0, 0);
+
   let routes = 0;
   for (let w = 0; w < wards.length; w += 1) {
     const { ward, index } = wards[w];
@@ -735,8 +739,28 @@ async function main() {
     const crew = crews[w].filter((c) => !c.vehicle.maintenanceFlag && c.vehicle.status !== 'IDLE');
     if (!crew.length) continue;
 
+    /**
+     * A day's beat is the work planned for today, not only what is still open.
+     *
+     * Selecting open complaints alone starved the router once the backlog was
+     * cut to a realistic size: a ward holding five open reports split across
+     * five trucks gives one stop each, every truck falls under the two-stop
+     * minimum, and the whole city ended up with a single published route — so
+     * no driver had a route, the simulator drove one truck, and every GPS
+     * health reading said OFFLINE.
+     *
+     * Including work already cleared today is also just more honest: those
+     * stops were on the driver's list this morning and they finished them,
+     * which is what makes route progress mean anything.
+     */
     const open = await prisma.complaint.findMany({
-      where: { wardId: ward.id, status: { in: ['VERIFIED', 'ASSIGNED', 'IN_PROGRESS'] } },
+      where: {
+        wardId: ward.id,
+        OR: [
+          { status: { in: ['VERIFIED', 'ASSIGNED', 'IN_PROGRESS'] } },
+          { status: 'RESOLVED', resolvedAt: { gte: startOfSeedDay } },
+        ],
+      },
       orderBy: { createdAt: 'asc' },
       take: crew.length * 6,
     });
@@ -771,7 +795,14 @@ async function main() {
       });
 
       const { polyline, breakpoints } = await roadSnappedRoute(solved.polyline);
-      const stops = solved.stops.map((st, i) => ({ ...st, polylineIndex: breakpoints[i] ?? null }));
+      const doneIds = new Set(mine.filter((c) => c.status === 'RESOLVED').map((c) => c.id));
+      const stops = solved.stops.map((st, i) => ({
+        ...st,
+        polylineIndex: breakpoints[i] ?? null,
+        // A stop whose complaint is already closed is a stop the driver has
+        // done; leaving it PENDING would show finished work as outstanding.
+        status: doneIds.has(st.complaintId) ? 'DONE' : st.status,
+      }));
 
       await prisma.route.create({
         data: {

@@ -14,12 +14,22 @@ export interface SpotlightNavProps {
   accent?: 'brand' | 'orange';
   className?: string;
   /**
-   * Hide labels below 2xl and show icons only.
+   * Only the active tab carries its label; the rest are icons.
    *
-   * A console with eight tabs cannot fit full pills on a 1280-1440px laptop,
-   * which is most of them. The alternative was hiding the whole bar until
-   * 1536px and leaving a hamburger alone in the header — a desktop console
-   * with no visible navigation, which reads as broken rather than compact.
+   * Eight tabs with labels like "Compliance export" need roughly 1290px, and
+   * with the logo and account controls either side that wants ~1820px before
+   * anything can breathe. On a 1912px screen it still overflowed in both
+   * directions at once — the logo clipped to "Safaa… SUPER" on the left while
+   * "Ward settings" slid under the language button on the right.
+   *
+   * Labelling only the active tab keeps the one thing a label is actually for
+   * — knowing where you are — and costs about 150px instead of 1290.
+   *
+   * There is deliberately no wider breakpoint that brings the rest back: the
+   * console header is capped at max-w-[1440px], so a bigger monitor adds
+   * margin, not usable width. A "show every label above 1900px" rule looked
+   * reasonable and could never once fire. Full labels live in the drawer,
+   * which has no width limit to run into.
    */
   compactUntil2xl?: boolean;
 }
@@ -188,7 +198,7 @@ export function SpotlightNav({ items, accent = 'brand', className = '', compactU
                 title={compactUntil2xl ? item.label : undefined}
                 className={({ isActive: matchActive }) =>
                   `relative flex items-center gap-2 rounded-full py-1.5 text-fluid-xs font-semibold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-brand/50 ${
-                    compactUntil2xl ? 'px-2.5 2xl:px-4' : 'px-3.5 sm:px-4'
+                    compactUntil2xl && !isActive ? 'px-2.5' : 'px-3.5 sm:px-4'
                   } ${
                     matchActive || isActive
                       ? isOrange
@@ -199,10 +209,10 @@ export function SpotlightNav({ items, accent = 'brand', className = '', compactU
                 }
               >
                 {Icon && <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />}
-                {/* The label is still in the DOM when collapsed, so the tab
-                    keeps its accessible name for screen readers and the
-                    native tooltip; only its box is removed. */}
-                <span className={compactUntil2xl ? 'whitespace-nowrap sr-only 2xl:not-sr-only' : 'whitespace-nowrap'}>
+                {/* Collapsed labels stay in the DOM behind sr-only, so every
+                    tab keeps its accessible name and its tooltip; only the box
+                    is removed. */}
+                <span className={!compactUntil2xl || isActive ? 'whitespace-nowrap' : 'sr-only'}>
                   {item.label}
                 </span>
                 {item.badge ? (

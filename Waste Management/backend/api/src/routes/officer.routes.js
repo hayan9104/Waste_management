@@ -7,7 +7,7 @@ import { audited } from '../middleware/audit.js';
 import { prisma } from '../lib/prisma.js';
 import { PORTALS, SOCKET_EVENTS } from '../config/constants.js';
 import analytics from '../services/analytics.service.js';
-import { transition, serializeComplaint } from '../services/complaint.service.js';
+import { transition, serializeComplaint, addEvent } from '../services/complaint.service.js';
 import { escalate, slaCountdown } from '../services/escalation.service.js';
 import { optimizeRoute, roadSnappedRoute } from '../services/routing.service.js';
 import { simulateWardOverflow } from '../services/whatif.service.js';
@@ -326,6 +326,79 @@ router.all(
     });
 
     res.json({ success: true, complaint: result });
+  })
+);
+
+/**
+ * Defer a complaint instead of throwing it away.
+ *
+ * Reject was the only alternative to Verify, which made "I cannot get to this
+ * today" and "this is not a real report" the same button. Rejecting a genuine
+ * complaint to buy time loses the citizen's report, their credits and the
+ * evidence; the honest action is to move the deadline and say why.
+ *
+ * The deadline is extended, never reset: the original createdAt stands, so the
+ * SLA history still shows the report took longer than its target. A delay is
+ * an admission, not an eraser.
+ */
+router.post(
+  '/complaints/:id/delay',
+  writeLimiter,
+  audited('complaint_delay', 'complaints'),
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        hours: z.coerce.number().min(1).max(24).default(4),
+        reason: z.string().min(1).max(300),
+      })
+      .parse(req.body);
+
+    const { where } = await scope(req);
+    const complaint = await prisma.complaint.findFirst({ where: { id: req.params.id, ...where } });
+    if (!complaint) throw new HttpError(404, 'Complaint not found in your wards');
+    if (['RESOLVED', 'REJECTED'].includes(complaint.status)) {
+      throw new HttpError(409, 'That complaint is already closed');
+    }
+    if (complaint.isEmergency) {
+      // A 30-minute health-hazard clock is not a thing an officer may push
+      // back; the escalation path exists for exactly that case instead.
+      throw new HttpError(409, 'An emergency cannot be delayed — escalate it instead');
+    }
+
+    const base = complaint.dueAt ? new Date(complaint.dueAt) : new Date();
+    // Extend from now when the deadline has already passed, so a delay always
+    // buys the stated time rather than landing in the past.
+    const from = base.getTime() > Date.now() ? base : new Date();
+    const dueAt = new Date(from.getTime() + body.hours * 60 * 60_000);
+
+    const updated = await prisma.complaint.update({
+      where: { id: complaint.id },
+      data: {
+        dueAt,
+        slaMinutes: complaint.slaMinutes + body.hours * 60,
+        reviewNeeded: false,
+      },
+      include: { ward: true, citizen: { select: { id: true, name: true } }, assignedVehicle: true },
+    });
+
+    await addEvent(complaint.id, complaint.status, `Deferred ${body.hours}h — ${body.reason}`, req.user.id);
+
+    await notify({
+      userId: complaint.citizenId,
+      type: 'COMPLAINT_UPDATE',
+      title: `${complaint.code} rescheduled`,
+      body: `Your report has been deferred by ${body.hours} hour${body.hours > 1 ? 's' : ''}: ${body.reason}`,
+      payload: { complaintId: complaint.id, code: complaint.code, dueAt },
+    });
+
+    const payload = serializeComplaint(updated);
+    emitTo(
+      [updated.wardId ? `ward:${updated.wardId}` : null, 'city', `complaint:${updated.id}`],
+      SOCKET_EVENTS.COMPLAINT_UPDATE,
+      payload
+    );
+
+    res.json({ success: true, hours: body.hours, dueAt, complaint: payload });
   })
 );
 

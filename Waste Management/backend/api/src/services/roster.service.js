@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { today } from './tracking.service.js';
 import { ROLES } from '../config/constants.js';
+import { gpsHealthFor } from './gps.service.js';
 
 /**
  * Ward-wise driver roster.
@@ -66,7 +67,12 @@ export async function wardRoster(wardIds) {
     }),
     prisma.route.findMany({
       where: { driverId: { in: driverIds }, date: today() },
-      select: { id: true, driverId: true, status: true, label: true, orderedStops: true, distanceKm: true },
+      // polylineGeometry rides along so the roster can draw the beat on a map
+      // without a second round trip per driver.
+      select: {
+        id: true, driverId: true, status: true, label: true, orderedStops: true,
+        distanceKm: true, polylineGeometry: true,
+      },
     }),
     prisma.sosAlert.findMany({
       where: { driverId: { in: driverIds }, status: 'OPEN' },
@@ -86,6 +92,9 @@ export async function wardRoster(wardIds) {
     }),
   ]);
 
+  // Signal quality per truck, so the roster can say whether a driver's live
+  // position is worth trusting rather than only whether one exists.
+  const health = await gpsHealthFor(vehicles.map((v) => v.id));
   const vehicleByDriver = new Map(vehicles.map((v) => [v.driverId, v]));
   const routeByDriver = new Map(routes.map((r) => [r.driverId, r]));
   const sosByDriver = new Map(openSos.map((s) => [s.driverId, s]));
@@ -141,7 +150,18 @@ export async function wardRoster(wardIds) {
             stopsTotal: stops.length,
             stopsDone: done,
             progressPct: stops.length ? Math.round((done / stops.length) * 100) : 0,
+            polyline: Array.isArray(route.polylineGeometry) ? route.polylineGeometry : [],
+            stops: stops.map((st) => ({
+              seq: st.seq,
+              code: st.code ?? null,
+              label: st.label ?? null,
+              latitude: st.latitude,
+              longitude: st.longitude,
+              status: st.status ?? 'PENDING',
+              isEmergency: Boolean(st.isEmergency),
+            })),
           },
+          gps: vehicle ? health.get(vehicle.id) ?? null : null,
           sos: sosByDriver.get(d.id) ?? null,
           shift: shiftByDriver.get(d.id) ?? null,
           // A driver on a rest break is still on duty — they have not gone

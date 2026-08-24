@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Camera, Check, ChevronLeft, ChevronRight, Eye, Search, Truck, X } from 'lucide-react';
+import { Camera, Check, ChevronLeft, ChevronRight, Clock, Eye, Search, Truck, X } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, Modal, toast } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, SEVERITY_TONE, timeAgo, formatDuration } from '../../lib/format';
@@ -76,6 +76,34 @@ export default function ComplaintQueue() {
     queryKey: ['officer', 'complaint', detailId],
     queryFn: async () => (await api('officer').get(`/officer/complaints/${detailId}`)).data,
     enabled: Boolean(detailId),
+  });
+
+  /**
+   * Defer rather than discard.
+   *
+   * Reject was the only alternative to Verify, which made "I cannot get to
+   * this today" and "this is not a real report" the same button — and
+   * rejecting a genuine complaint to buy time destroys the citizen's report,
+   * their credits and the evidence. Delay moves the deadline and records why.
+   */
+  const [delaying, setDelaying] = useState<{ id: string; code: string } | null>(null);
+  const [delayHours, setDelayHours] = useState(4);
+  const [delayReason, setDelayReason] = useState('');
+
+  const delay = useMutation({
+    mutationFn: async () =>
+      (await api('officer').post(`/officer/complaints/${delaying!.id}/delay`, {
+        hours: delayHours,
+        reason: delayReason.trim(),
+      })).data,
+    onSuccess: async (res) => {
+      await queryClient.invalidateQueries({ queryKey: ['officer'] });
+      toast.success(`${delaying?.code} deferred by ${res.hours}h`);
+      setDelaying(null);
+      setDelayReason('');
+      setDelayHours(4);
+    },
+    onError: (err) => toast.error(errorMessage(err, 'Could not defer that complaint')),
   });
 
   const decide = useMutation({
@@ -465,11 +493,16 @@ export default function ComplaintQueue() {
                 <div className="grid grid-cols-2 gap-2 border-t border-line pt-3">
                   <button
                     type="button"
-                    className="btn-danger"
-                    disabled={decide.isPending}
-                    onClick={() => decide.mutate({ id: detail.data.id, decision: 'REJECTED' })}
+                    className="btn-ghost"
+                    disabled={decide.isPending || detail.data.isEmergency}
+                    title={
+                      detail.data.isEmergency
+                        ? 'An emergency runs a 30-minute clock and cannot be deferred — escalate it instead'
+                        : undefined
+                    }
+                    onClick={() => setDelaying({ id: detail.data.id, code: detail.data.code })}
                   >
-                    <X className="h-4 w-4" /> Reject
+                    <Clock className="h-4 w-4" /> Delay
                   </button>
                   <button
                     type="button"
@@ -511,6 +544,53 @@ export default function ComplaintQueue() {
             </li>
           ))}
         </ul>
+      </Modal>
+
+      {/* Deferring asks for a reason, because the citizen is told it and the
+          audit log keeps it. A delay with no stated cause is indistinguishable
+          from neglect when someone reads the trail later. */}
+      <Modal open={Boolean(delaying)} onClose={() => setDelaying(null)} title={`Delay ${delaying?.code ?? ''}`}>
+        <div className="space-y-3">
+          <p className="text-fluid-xs text-muted">
+            The deadline moves forward; the report stays open and keeps its original reported time, so the SLA history
+            still shows it took longer than target.
+          </p>
+          <div>
+            <span className="label">Defer by</span>
+            <div className="flex flex-wrap gap-1.5">
+              {[2, 4, 8, 12, 24].map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setDelayHours(h)}
+                  aria-pressed={delayHours === h}
+                  className={`chip transition ${delayHours === h ? 'border-brand bg-brand/10 text-brand' : 'text-muted hover:bg-sunken'}`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label" htmlFor="delay-reason">Reason <span className="text-danger">*</span></label>
+            <textarea
+              id="delay-reason"
+              className="field min-h-[4rem] resize-y"
+              placeholder="e.g. Ward crew diverted to a sewage emergency in Sector 21"
+              value={delayReason}
+              maxLength={300}
+              onChange={(e) => setDelayReason(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-primary w-full"
+            disabled={!delayReason.trim() || delay.isPending}
+            onClick={() => delay.mutate()}
+          >
+            <Clock className="h-4 w-4" /> Defer by {delayHours}h
+          </button>
+        </div>
       </Modal>
     </div>
   );

@@ -140,12 +140,26 @@ async function tick() {
       continue;
     }
 
+    /**
+     * A real handset reports its own accuracy with every fix, and the fleet's
+     * GPS health is read from exactly that. Emitting fixes without it left
+     * the column empty for every simulated truck, so the health grade could
+     * only ever say "not reported".
+     *
+     * Most fixes are good; a minority degrade the way they genuinely do in a
+     * built-up sector, which is what makes the weak-signal state visible at
+     * all rather than theoretical.
+     */
+    const rough = Math.random() < 0.12;
+    const accuracy = rough ? 45 + Math.random() * 45 : 4 + Math.random() * 14;
+
     await ingestLocation({
       vehicleId: truck.vehicleId,
       latitude: moved.position[1],
       longitude: moved.position[0],
       heading: moved.heading,
       speed: SPEED_KMPH,
+      accuracy: Number(accuracy.toFixed(1)),
     });
   }
 }

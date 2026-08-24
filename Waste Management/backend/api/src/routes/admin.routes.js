@@ -19,6 +19,7 @@ import env from '../config/env.js';
 import { CITY } from '../seed/city.js';
 import { wardRoster } from '../services/roster.service.js';
 import { shiftBoard } from '../services/shift.service.js';
+import { gpsHealthFor } from '../services/gps.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -63,6 +64,10 @@ router.get(
     });
 
     const now = Date.now();
+    // Signal quality, not just presence: a handset can be reporting and still
+    // be useless to follow.
+    const health = await gpsHealthFor(vehicles.map((v) => v.id));
+
     res.json(
       vehicles.map((v) => {
         const isStale = v.lastPingAt ? (now - new Date(v.lastPingAt).getTime() > 120_000) : true;
@@ -72,6 +77,7 @@ router.get(
           maintenanceFlag: v.maintenanceFlag,
           isOffline: v.status === 'OFFLINE' || isStale,
           lastPingAgeSec: v.lastPingAt ? Math.round((now - new Date(v.lastPingAt).getTime()) / 1000) : null,
+          gps: health.get(v.id) ?? null,
         };
       })
     );
