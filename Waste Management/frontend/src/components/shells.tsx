@@ -196,8 +196,8 @@ export function ConsoleShell({
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-line lg:hidden text-ink cursor-pointer"
-              aria-label="Open Navigation"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-line 2xl:hidden text-ink hover:bg-sunken shadow-xs cursor-pointer"
+              aria-label="Open Navigation Drawer"
             >
               <Menu className="h-5 w-5" />
             </button>

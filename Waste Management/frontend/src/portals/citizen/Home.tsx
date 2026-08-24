@@ -70,13 +70,13 @@ export default function CitizenHome() {
         {/* Left Column: Primary Actions, Truck & Active Reports (7 of 12 cols) */}
         <div className="lg:col-span-7 xl:col-span-8 space-y-5">
           {/* Primary Action Buttons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <Link
               to="/app/report"
-              className="flex items-center gap-3.5 rounded-2xl bg-brand p-5 text-brand-ink shadow-glow transition hover:scale-[1.01] active:scale-[0.99]"
+              className="flex items-center gap-3.5 rounded-2xl bg-brand p-4 sm:p-5 text-brand-ink shadow-glow transition hover:scale-[1.01] active:scale-[0.99] sm:col-span-2 lg:col-span-1 min-h-[72px]"
             >
-              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white/20">
-                <Camera className="h-6 w-6" />
+              <span className="grid h-11 w-11 sm:h-12 sm:w-12 shrink-0 place-items-center rounded-xl bg-white/20">
+                <Camera className="h-5 w-5 sm:h-6 sm:w-6" />
               </span>
               <div className="min-w-0 flex-1">
                 <span className="block text-fluid-base font-extrabold">{t('citizen.home.reportCta')}</span>
@@ -87,9 +87,9 @@ export default function CitizenHome() {
 
             <Link
               to="/app/emergency"
-              className="flex items-center gap-3 rounded-2xl border border-danger/40 bg-danger/10 p-4 text-danger transition hover:bg-danger/15 active:scale-[0.99]"
+              className="flex items-center gap-3 rounded-2xl border border-danger/40 bg-danger/10 p-3.5 sm:p-4 text-danger transition hover:bg-danger/15 active:scale-[0.99] min-h-[72px]"
             >
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-danger text-white shadow-xs">
+              <span className="grid h-10 w-10 sm:h-11 sm:w-11 shrink-0 place-items-center rounded-xl bg-danger text-white shadow-xs">
                 <Siren className="h-5 w-5" />
               </span>
               <div className="min-w-0 flex-1">
@@ -100,14 +100,14 @@ export default function CitizenHome() {
 
             <Link
               to="/app/schedule-pickup"
-              className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-4 text-ink transition hover:bg-sunken hover:border-brand/30 active:scale-[0.99] shadow-xs"
+              className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3.5 sm:p-4 text-ink transition hover:bg-sunken hover:border-brand/30 active:scale-[0.99] shadow-xs min-h-[72px]"
             >
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand shadow-xs">
+              <span className="grid h-10 w-10 sm:h-11 sm:w-11 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand shadow-xs">
                 <Sparkles className="h-5 w-5" />
               </span>
               <div className="min-w-0 flex-1">
                 <span className="block text-fluid-sm font-extrabold leading-tight">Schedule Event Pickup</span>
-                <span className="block text-[11px] text-muted">Wedding, Festival & Renovation (+25 Credits)</span>
+                <span className="block text-[11px] text-muted">Wedding & Festival (+25 Credits)</span>
               </div>
               <ArrowRight className="h-4 w-4 shrink-0 text-muted" />
             </Link>
@@ -118,8 +118,8 @@ export default function CitizenHome() {
             <Link to={`/app/track/${activeComplaints.find((c: any) => c.assignedVehicleId)?.id}`} className="block">
               <Card className="overflow-hidden border-brand/40 bg-gradient-to-r from-brand/10 via-surface to-brand/5 p-0 shadow-sm transition hover:shadow-md">
                 <div className="flex items-center gap-3.5 p-4 sm:p-5">
-                  <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand text-brand-ink shadow-md">
-                    <Truck className="h-6 w-6" />
+                  <span className="relative grid h-11 w-11 sm:h-12 sm:w-12 shrink-0 place-items-center rounded-2xl bg-brand text-brand-ink shadow-md">
+                    <Truck className="h-5 w-5 sm:h-6 sm:w-6" />
                     <span className="absolute inset-0 animate-pulse-ring rounded-2xl bg-brand/40" />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -141,7 +141,7 @@ export default function CitizenHome() {
           )}
 
           {/* Quick Stats bar */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <Stat label={t('citizen.home.statActive')} value={stats?.active ?? 0} />
             <Stat
               label={t('citizen.home.statResolved')}

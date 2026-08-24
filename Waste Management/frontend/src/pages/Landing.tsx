@@ -22,6 +22,9 @@ import {
   Award,
   ListChecks,
   Bot,
+  Menu,
+  X,
+  LogIn,
 } from 'lucide-react';
 import { publicApi } from '../lib/api';
 import { LanguageSwitcher, ThemeToggle, Reveal } from '../components/ui';
@@ -95,6 +98,7 @@ export default function Landing() {
   const t = useT();
   const [stats, setStats] = useState<Stats | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     publicApi
@@ -121,16 +125,16 @@ export default function Landing() {
 
         {scrolled ? (
           /* Scrolled: centered floating pill */
-          <div className="px-4 pt-2.5 sm:px-6">
-            <div className="mx-auto flex h-16 max-w-5xl items-center justify-between rounded-full bg-surface/95 px-4 shadow-2xl backdrop-blur-xl ring-1 ring-line/60 sm:px-6">
+          <div className="px-3 pt-2 sm:px-6">
+            <div className="mx-auto flex h-14 sm:h-16 max-w-5xl items-center justify-between rounded-full bg-surface/95 px-3 shadow-2xl backdrop-blur-xl ring-1 ring-line/60 sm:px-6">
               {/* Left Brand */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <img src="/icon.svg" alt="" className="h-9 w-9 shrink-0 animate-logo-pop" />
+                <img src="/icon.svg" alt="" className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 animate-logo-pop" />
                 <div className="flex flex-col">
-                  <span className="text-fluid-sm font-extrabold tracking-tight text-ink whitespace-nowrap">
+                  <span className="text-xs sm:text-fluid-sm font-extrabold tracking-tight text-ink whitespace-nowrap">
                     Safaai <span className="text-brand">Sarathi</span>
                   </span>
-                  <span className="text-[9px] font-semibold text-muted tracking-wider uppercase leading-none">
+                  <span className="text-[8px] sm:text-[9px] font-semibold text-muted tracking-wider uppercase leading-none">
                     Civic AI Platform
                   </span>
                 </div>
@@ -180,40 +184,49 @@ export default function Landing() {
               </nav>
 
               {/* Right: Actions */}
-              <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <LanguageSwitcher compact />
                 <ThemeToggle />
                 <Link
                   to="/login"
-                  className="btn-primary whitespace-nowrap px-3.5 sm:px-5"
+                  className="btn-primary min-h-[38px] sm:min-h-[44px] whitespace-nowrap px-3 sm:px-5 text-fluid-xs font-bold"
                 >
                   {t('common.signIn')}
                 </Link>
+                {/* Mobile hamburger button */}
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="grid h-9 w-9 xl:hidden place-items-center rounded-xl border border-line bg-elevated text-ink hover:bg-sunken shadow-xs cursor-pointer"
+                  aria-label="Open Mobile Menu"
+                >
+                  <Menu className="h-4 w-4" />
+                </button>
               </div>
             </div>
           </div>
         ) : (
           /* Not scrolled: full-width white frosted bar with corner-to-corner layout */
           <div className="w-full border-b border-line/30 bg-surface/90 backdrop-blur-md transition-all duration-300">
-            <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-8 xl:px-12">
+            <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between px-3 sm:px-6 lg:px-8 xl:px-12">
               {/* Left: Brand Logo & Title at Left Corner */}
-              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <img
                   src="/icon.svg"
                   alt=""
-                  className="h-9 w-9 shrink-0 animate-logo-pop transition-transform duration-300 hover:scale-105"
+                  className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 animate-logo-pop transition-transform duration-300 hover:scale-105"
                 />
                 <div className="flex flex-col">
-                  <span className="text-sm sm:text-fluid-base font-extrabold tracking-tight text-ink whitespace-nowrap leading-none">
+                  <span className="text-xs sm:text-fluid-base font-extrabold tracking-tight text-ink whitespace-nowrap leading-none">
                     Safaai <span className="text-brand">Sarathi</span>
                   </span>
-                  <span className="text-[9px] sm:text-[10px] font-semibold text-muted tracking-wider uppercase leading-tight mt-0.5">
+                  <span className="text-[8px] sm:text-[10px] font-semibold text-muted tracking-wider uppercase leading-tight mt-0.5">
                     Civic AI Platform
                   </span>
                 </div>
               </div>
 
-              {/* Center: Nav links with unique custom symbols in a sleek pill & strictly single line */}
+              {/* Center: Nav links with unique custom symbols in a sleek pill */}
               <nav className="hidden xl:flex items-center gap-1 rounded-full bg-surface/80 px-2 py-1 ring-1 ring-line/50 backdrop-blur-md shadow-sm">
                 <a
                   href="#how"
@@ -257,14 +270,104 @@ export default function Landing() {
               </nav>
 
               {/* Right: Actions at Right Corner */}
-              <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <LanguageSwitcher compact />
                 <ThemeToggle />
                 <Link
                   to="/login"
-                  className="btn-primary whitespace-nowrap px-3.5 sm:px-5"
+                  className="btn-primary min-h-[38px] sm:min-h-[44px] whitespace-nowrap px-3 sm:px-5 text-fluid-xs font-bold"
                 >
                   {t('common.signIn')}
+                </Link>
+                {/* Mobile hamburger button */}
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="grid h-9 w-9 xl:hidden place-items-center rounded-xl border border-line bg-elevated text-ink hover:bg-sunken shadow-xs cursor-pointer"
+                  aria-label="Open Mobile Menu"
+                >
+                  <Menu className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Slide-Over Drawer Navigation */}
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-50 xl:hidden">
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            <div className="relative ml-auto h-full w-72 max-w-[85vw] bg-surface p-5 shadow-2xl border-l border-line flex flex-col justify-between animate-slide-in">
+              <div className="space-y-5">
+                <div className="flex items-center justify-between border-b border-line pb-3">
+                  <div className="flex items-center gap-2">
+                    <img src="/icon.svg" alt="" className="h-7 w-7 animate-logo-pop" />
+                    <span className="font-extrabold text-fluid-sm text-ink">
+                      Safaai <span className="text-brand">Sarathi</span>
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="grid h-8 w-8 place-items-center rounded-lg border border-line text-muted hover:bg-sunken"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <nav className="space-y-1">
+                  <a
+                    href="#how"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-fluid-sm font-semibold text-ink hover:bg-sunken"
+                  >
+                    <Zap className="h-4 w-4 text-brand" />
+                    <span>{t('landing.nav.how')}</span>
+                  </a>
+                  <a
+                    href="#why"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-fluid-sm font-semibold text-ink hover:bg-sunken"
+                  >
+                    <Sparkles className="h-4 w-4 text-brand" />
+                    <span>{t('landing.nav.why')}</span>
+                  </a>
+                  <a
+                    href="#faq"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-fluid-sm font-semibold text-ink hover:bg-sunken"
+                  >
+                    <HelpCircle className="h-4 w-4 text-brand" />
+                    <span>{t('landing.nav.faq')}</span>
+                  </a>
+                  <Link
+                    to="/driver/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-fluid-sm font-semibold text-ink hover:bg-sunken"
+                  >
+                    <Building2 className="h-4 w-4 text-orange-600" />
+                    <span>{t('landing.nav.staff')}</span>
+                  </Link>
+                </nav>
+              </div>
+
+              <div className="space-y-3 pt-4 border-t border-line">
+                <Link
+                  to="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="btn-primary w-full py-3 text-fluid-sm font-bold flex items-center justify-center gap-2"
+                >
+                  <LogIn className="h-4 w-4" />
+                  <span>{t('common.signIn')}</span>
+                </Link>
+                <Link
+                  to="/register"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="btn-secondary w-full py-2.5 text-fluid-xs font-semibold text-center block"
+                >
+                  Create Citizen Account
                 </Link>
               </div>
             </div>
