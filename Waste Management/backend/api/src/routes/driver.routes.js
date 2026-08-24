@@ -374,6 +374,21 @@ router.post(
       resolutionPhotoUrl = await persist(file.buffer, file.mimetype, 'resolution');
     }
 
+    /**
+     * Proof of work means proof. The driver UI already refuses to submit
+     * without a photo, but the API accepted a resolve with none — so a
+     * complaint could reach RESOLVED with no evidence at all, and the
+     * citizen and officer would both be shown a closed report with an empty
+     * proof slot and no way to tell whether the site was actually cleared.
+     *
+     * Enforced here rather than only in the client because the client-side
+     * rule is a convenience, not a guarantee: it does not survive a retry
+     * against a stale build, a queued offline submission, or any direct call.
+     */
+    if (!resolutionPhotoUrl) {
+      throw new HttpError(400, 'A photo of the cleared site is required to close this task.');
+    }
+
     const note = req.body?.note?.slice(0, 500) || 'Waste collected and area cleared by driver';
 
     const payload = await transition({
@@ -813,6 +828,12 @@ router.post(
     const file = fileFromRequest(req, 'photo');
     if (file) {
       completionPhotoUrl = await persist(file.buffer, file.mimetype, 'proofs');
+    }
+
+    // Same rule as a complaint resolve: this awards the citizen credits and
+    // closes their booking, so it cannot be done on an unevidenced say-so.
+    if (!completionPhotoUrl) {
+      throw new HttpError(400, 'A photo of the completed pickup is required to close this task.');
     }
 
     const updated = await prisma.scheduledPickupRequest.update({

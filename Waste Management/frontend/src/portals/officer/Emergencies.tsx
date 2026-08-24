@@ -93,7 +93,16 @@ export default function Emergencies() {
         <Card className={`p-4 ${overdue ? 'border-danger/60' : 'border-warn/40'}`}>
           <div className="flex items-start gap-3">
             {c.photoUrl ? (
-              <EvidencePhoto src={assetUrl(c.photoUrl)} alt="" className="h-20 w-20 shrink-0 rounded-xl object-cover" />
+              <div className="flex shrink-0 gap-1.5">
+                <EvidencePhoto src={assetUrl(c.photoUrl)} alt="Reported issue" className="h-20 w-20 rounded-xl object-cover" />
+                {c.resolutionPhotoUrl && (
+                  <EvidencePhoto
+                    src={assetUrl(c.resolutionPhotoUrl)}
+                    alt="Driver's cleared-site proof"
+                    className="h-20 w-20 rounded-xl border-2 border-ok/60 object-cover"
+                  />
+                )}
+              </div>
             ) : (
               <span className="grid h-20 w-20 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger">
                 <Siren className="h-7 w-7" />

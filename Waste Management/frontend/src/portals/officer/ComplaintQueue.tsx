@@ -304,12 +304,38 @@ export default function ComplaintQueue() {
             {/* Left: photo, pinned — this column's own height never forces the
                 right column (the actually-variable-length content) to grow past it. */}
             <div className="space-y-2.5 sm:sticky sm:top-0">
-              {detail.data.photoUrl ? (
-                <EvidencePhoto src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-square w-full rounded-xl object-cover" />
-              ) : (
-                <div className="grid aspect-square w-full place-items-center gap-1.5 rounded-xl border border-dashed border-line bg-sunken text-faint">
-                  <Camera className="h-6 w-6" />
-                  <span className="text-center text-fluid-xs">No photo attached</span>
+              <div>
+                <p className="mb-1 text-fluid-xs font-semibold uppercase tracking-wide text-muted">Reported</p>
+                {detail.data.photoUrl ? (
+                  <EvidencePhoto src={assetUrl(detail.data.photoUrl)} alt="Citizen's reported issue" className="aspect-square w-full rounded-xl object-cover" />
+                ) : (
+                  <div className="grid aspect-square w-full place-items-center gap-1.5 rounded-xl border border-dashed border-line bg-sunken text-faint">
+                    <Camera className="h-6 w-6" />
+                    <span className="text-center text-fluid-xs">No photo attached</span>
+                  </div>
+                )}
+              </div>
+
+              {/* The driver's after-work proof, next to the original. Closing a
+                  report is accepting that the site was actually cleared, and
+                  the officer was being asked to accept it without ever being
+                  shown the evidence. A RESOLVED report with no proof photo is
+                  called out rather than rendered as an empty gap. */}
+              {(detail.data.resolutionPhotoUrl || detail.data.status === 'RESOLVED') && (
+                <div>
+                  <p className="mb-1 text-fluid-xs font-semibold uppercase tracking-wide text-ok">After work</p>
+                  {detail.data.resolutionPhotoUrl ? (
+                    <EvidencePhoto
+                      src={assetUrl(detail.data.resolutionPhotoUrl)}
+                      alt="Driver's proof the site was cleared"
+                      className="aspect-square w-full rounded-xl border-2 border-ok/50 object-cover"
+                    />
+                  ) : (
+                    <div className="grid aspect-square w-full place-items-center gap-1.5 rounded-xl border border-dashed border-warn/50 bg-warn/5 p-2 text-warn">
+                      <Camera className="h-6 w-6" />
+                      <span className="text-center text-fluid-xs">Closed without proof photo</span>
+                    </div>
+                  )}
                 </div>
               )}
               {detail.data.fraudSignals?.length > 0 && (
