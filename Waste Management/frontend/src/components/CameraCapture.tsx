@@ -86,7 +86,7 @@ export function CameraCapture({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label="Camera">
+    <div className="fixed inset-0 z-[120] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label="Camera">
       <div className="flex shrink-0 items-center justify-between px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] text-white">
         <span className="text-fluid-sm font-semibold">Take Live Photo</span>
         <button
