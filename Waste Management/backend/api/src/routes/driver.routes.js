@@ -12,6 +12,7 @@ import { emitTo } from '../sockets/realtime.js';
 import { notify, notifyWardOfficers, awardCredits } from '../services/notification.service.js';
 import { distanceKm } from '../lib/geo.js';
 import { ensureRoadSnappedPolyline, navigationRoute, solveLocal } from '../services/routing.service.js';
+import { startShift, endShift, activeShift, serializeShift, shiftHistory } from '../services/shift.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.DRIVER), loadUser);
@@ -66,7 +67,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const vehicle = await myVehicle(req.user.id);
 
-    const [route, assigned, resolvedToday, history] = await Promise.all([
+    const [route, assigned, resolvedToday, history, shift] = await Promise.all([
       prisma.route.findFirst({ where: { vehicleId: vehicle.id, date: today() } }),
       prisma.complaint.findMany({
         where: { assignedVehicleId: vehicle.id, status: { in: ['ASSIGNED', 'IN_PROGRESS'] } },
@@ -77,6 +78,7 @@ router.get(
         where: { assignedVehicleId: vehicle.id, status: 'RESOLVED', resolvedAt: { gte: startOfToday() } },
       }),
       locationHistory(vehicle.id, {}),
+      activeShift(req.user.id),
     ]);
 
     const stops = route?.orderedStops ?? [];
@@ -113,12 +115,21 @@ router.get(
         isEmergency: s.isEmergency || false,
         reportedAt: s.reportedAt || null,
       })),
+      shift: serializeShift(shift),
+      onShift: Boolean(shift),
       summary: {
         stopsDone: stops.filter((s) => s.status === 'DONE').length,
         stopsTotal: stops.length,
         resolvedToday,
         distanceKm: history.distanceKm,
-        onShiftSince: history.firstAt,
+        /**
+         * The clocked-in time when there is one, falling back to the first GPS
+         * ping only when the driver never clocked in. The ping is a proxy that
+         * can be minutes early (app opened on the way in) or late (no signal in
+         * the depot), so it is the fallback, not the source of truth.
+         */
+        onShiftSince: shift?.startedAt ?? history.firstAt,
+        onShiftSource: shift ? 'clock' : history.firstAt ? 'first-gps-ping' : null,
       },
     });
   })
@@ -572,8 +583,17 @@ router.get(
       ? Math.round((new Date(history.lastAt) - new Date(history.firstAt)) / 60_000)
       : 0;
 
+    // The day's shift record, if the driver clocked in — the summary page
+    // shows the real start/end alongside the GPS-derived route time.
+    const shiftToday = await prisma.driverShift.findFirst({
+      where: { driverId: req.user.id, date: dateQuery },
+      orderBy: { startedAt: 'desc' },
+      include: { vehicle: { select: { id: true, registrationNumber: true } }, ward: { select: { id: true, name: true } } },
+    });
+
     res.json({
       date: dateQuery,
+      shift: serializeShift(shiftToday),
       vehicle: { id: vehicle.id, registrationNumber: vehicle.registrationNumber },
       stopsDone: stops.filter((s) => s.status === 'DONE').length,
       stopsTotal: stops.length,
@@ -586,6 +606,70 @@ router.get(
       resolvedList: resolved,
       trail: history.points,
     });
+  })
+);
+
+/**
+ * Shift clock — POST /api/driver/shift/start, POST /api/driver/shift/end,
+ * GET /api/driver/shift/current, GET /api/driver/shift/history
+ *
+ * The summary below reports "on shift since" from the day's first GPS ping,
+ * which is not the same fact as when the driver actually started. These make
+ * it explicit, and make "who is on duty right now" answerable at all.
+ */
+router.post(
+  '/shift/start',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
+        odometerKm: z.number().min(0).max(2_000_000).optional(),
+      })
+      .parse(req.body ?? {});
+
+    // A driver with no vehicle can still clock in — the shift is the person's,
+    // not the truck's, and refusing would strand a driver waiting on a
+    // reassignment with no way to record that they turned up.
+    const vehicle = await myVehicle(req.user.id).catch(() => null);
+    const { shift, alreadyOpen } = await startShift({ driver: req.user, vehicle, ...body });
+    res.status(alreadyOpen ? 200 : 201).json({ ...serializeShift(shift), alreadyOpen });
+  })
+);
+
+router.post(
+  '/shift/end',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
+        odometerKm: z.number().min(0).max(2_000_000).optional(),
+        notes: z.string().max(300).optional(),
+      })
+      .parse(req.body ?? {});
+
+    const vehicle = await myVehicle(req.user.id).catch(() => null);
+    const shift = await endShift({ driver: req.user, vehicle, ...body });
+    res.json(serializeShift(shift));
+  })
+);
+
+router.get(
+  '/shift/current',
+  asyncHandler(async (req, res) => {
+    const shift = await activeShift(req.user.id);
+    res.json({ onShift: Boolean(shift), shift: serializeShift(shift) });
+  })
+);
+
+router.get(
+  '/shift/history',
+  asyncHandler(async (req, res) => {
+    const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
+    res.json({ days, items: await shiftHistory(req.user.id, days) });
   })
 );
 

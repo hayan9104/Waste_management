@@ -18,6 +18,7 @@ import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
 import env from '../config/env.js';
 import { CITY } from '../seed/city.js';
 import { wardRoster } from '../services/roster.service.js';
+import { shiftBoard } from '../services/shift.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -648,6 +649,12 @@ router.get('/categories', (_req, res) => res.json(WASTE_CATEGORIES));
 router.get(
   ['/ward-drivers', '/wards/drivers'],
   asyncHandler(async (_req, res) => res.json(await wardRoster(null)))
+);
+
+/** Who is clocked on across the city right now, and who has already finished. */
+router.get(
+  ['/shifts', '/driver-shifts'],
+  asyncHandler(async (_req, res) => res.json(await shiftBoard(null)))
 );
 
 /**

@@ -133,6 +133,8 @@ async function wipe() {
   await prisma.complaintEvent.deleteMany();
   await prisma.complaint.deleteMany();
   await prisma.vehicleLocation.deleteMany();
+  await prisma.driverShift.deleteMany();
+  await prisma.fuelLog.deleteMany();
   await prisma.route.deleteMany();
   await prisma.sosAlert.deleteMany();
   await prisma.vehicle.deleteMany();
@@ -648,6 +650,80 @@ async function main() {
     }
   }
   console.log(`[seed] ${routes} optimised routes published for today across ${wards.length} wards`);
+
+  // ------------------------------------------------------ driver shifts ----
+  /**
+   * A week of clock-in/clock-out history per driver, plus today's state.
+   *
+   * Without seeded shifts the whole feature reads as broken rather than
+   * empty: the officer's shift board shows nobody on duty in a city where
+   * every truck is visibly driving, and the driver summary has no history to
+   * compare today against.
+   *
+   * Today deliberately splits three ways so all three states are visible on
+   * one screen: trucks on route are clocked in, the ward spare worked a
+   * morning and clocked off, and the maintenance truck never turned up.
+   */
+  const SHIFT_HISTORY_DAYS = 7;
+  // Same key shape the routes above use, so a shift and its route join on it.
+  const todayKey = new Date().toISOString().slice(0, 10);
+  let shiftsCreated = 0;
+
+  for (const { vehicle, ward, driver } of vehicles) {
+    const r = rng(`shift-${vehicle.id}`);
+
+    for (let d = SHIFT_HISTORY_DAYS; d >= 1; d -= 1) {
+      // Sunday is the weekly off, so the board is not suspiciously uniform.
+      const day = new Date();
+      day.setDate(day.getDate() - d);
+      if (day.getDay() === 0) continue;
+
+      const startedAt = new Date(day);
+      startedAt.setHours(intBetween(r, 6, 8), intBetween(r, 0, 59), 0, 0);
+      const endedAt = new Date(startedAt.getTime() + intBetween(r, 7 * 60, 9 * 60) * 60_000);
+
+      await prisma.driverShift.create({
+        data: {
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          wardId: ward.id,
+          date: startedAt.toISOString().slice(0, 10),
+          startedAt,
+          endedAt,
+          startOdometerKm: null,
+          endOdometerKm: null,
+          distanceKm: Number((18 + r() * 42).toFixed(1)),
+          stopsDone: intBetween(r, 3, 9),
+          status: 'ENDED',
+        },
+      });
+      shiftsCreated += 1;
+    }
+
+    if (vehicle.maintenanceFlag) continue; // off the road, nobody clocked in
+
+    const startedAt = new Date();
+    startedAt.setHours(intBetween(r, 6, 8), intBetween(r, 0, 59), 0, 0);
+    const isSpare = vehicle.status === 'IDLE';
+
+    await prisma.driverShift.create({
+      data: {
+        driverId: driver.id,
+        vehicleId: vehicle.id,
+        wardId: ward.id,
+        date: todayKey,
+        startedAt,
+        // The spare crew worked a morning and went home; everyone else is
+        // still out, which is what makes the trucks on the map moving.
+        endedAt: isSpare ? new Date(startedAt.getTime() + intBetween(r, 4 * 60, 6 * 60) * 60_000) : null,
+        distanceKm: isSpare ? Number((10 + r() * 20).toFixed(1)) : null,
+        stopsDone: isSpare ? intBetween(r, 2, 5) : 0,
+        status: isSpare ? 'ENDED' : 'ACTIVE',
+      },
+    });
+    shiftsCreated += 1;
+  }
+  console.log(`[seed] ${shiftsCreated} driver shifts (${SHIFT_HISTORY_DAYS}-day history + today)`);
 
   // ------------------------------------------ scheduled pickup requests ----
   /**

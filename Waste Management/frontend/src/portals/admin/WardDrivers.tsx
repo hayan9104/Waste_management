@@ -35,12 +35,22 @@ type RosterDriver = {
     progressPct: number;
   } | null;
   sos: { id: string; createdAt: string; message: string | null } | null;
+  shift: {
+    id: string;
+    status: 'ACTIVE' | 'ENDED';
+    startedAt: string;
+    endedAt: string | null;
+    distanceKm: number | null;
+    stopsDone: number;
+  } | null;
+  onDuty: boolean;
 };
 
 type RosterWard = {
   ward: { id: string; name: string; code: string; zone: string | null };
   driverCount: number;
   activeCount: number;
+  onDutyCount: number;
   onRouteCount: number;
   drivers: RosterDriver[];
 };
@@ -86,6 +96,7 @@ export default function WardDrivers() {
       wards: all.length,
       drivers: all.reduce((n, w) => n + w.driverCount, 0),
       active: all.reduce((n, w) => n + w.activeCount, 0),
+      onDuty: all.reduce((n, w) => n + w.onDutyCount, 0),
       onRoute: all.reduce((n, w) => n + w.onRouteCount, 0),
       sos: all.reduce((n, w) => n + w.drivers.filter((d) => d.sos).length, 0),
     };
@@ -121,7 +132,13 @@ export default function WardDrivers() {
           icon={<Users className="h-4 w-4" />}
           tone="brand"
         />
-        <Stat label="Reporting now" value={totals.active} hint="Handset pinging" icon={<Radio className="h-4 w-4" />} tone="ok" />
+        <Stat
+          label="On duty"
+          value={totals.onDuty}
+          hint={`${totals.active} handsets pinging`}
+          icon={<Radio className="h-4 w-4" />}
+          tone={totals.onDuty ? 'ok' : 'warn'}
+        />
         <Stat
           label="Open SOS"
           value={totals.sos}
@@ -137,7 +154,7 @@ export default function WardDrivers() {
           icon={<Users className="h-8 w-8" />}
         />
       ) : (
-        wards.map(({ ward, driverCount, activeCount, onRouteCount, drivers }) => (
+        wards.map(({ ward, driverCount, onDutyCount, onRouteCount, drivers }) => (
           <Card key={ward.id} className="overflow-hidden p-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-sunken/60 px-4 py-3">
               <span className="font-mono text-fluid-xs text-muted">{ward.code}</span>
@@ -145,7 +162,7 @@ export default function WardDrivers() {
               {ward.zone && <span className="text-fluid-xs text-faint">{ward.zone}</span>}
               <div className="ml-auto flex flex-wrap items-center gap-1.5">
                 <Badge tone="brand">{driverCount} drivers</Badge>
-                <Badge tone={activeCount ? 'ok' : 'neutral'}>{activeCount} reporting</Badge>
+                <Badge tone={onDutyCount ? 'ok' : 'neutral'}>{onDutyCount} on duty</Badge>
                 <Badge tone={onRouteCount ? 'info' : 'neutral'}>{onRouteCount} on beat</Badge>
               </div>
             </div>
@@ -210,6 +227,13 @@ export default function WardDrivers() {
                     <div className="flex flex-wrap items-center gap-1.5 sm:col-span-2 sm:justify-end">
                       {d.sos && <Badge tone="danger">SOS</Badge>}
                       {!d.isActive && <Badge tone="neutral">Blocked</Badge>}
+                      <Badge tone={d.onDuty ? 'brand' : d.shift?.status === 'ENDED' ? 'neutral' : 'warn'}>
+                        {d.onDuty
+                          ? `On duty · ${timeAgo(d.shift!.startedAt)}`
+                          : d.shift?.status === 'ENDED'
+                            ? 'Clocked off'
+                            : 'Not clocked in'}
+                      </Badge>
                       {d.vehicle?.maintenanceFlag && <Badge tone="warn">Maintenance</Badge>}
                       <Badge tone={d.isOffline ? 'neutral' : 'ok'}>
                         {d.isOffline

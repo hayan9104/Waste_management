@@ -47,7 +47,7 @@ export async function wardRoster(wardIds) {
   });
   const driverIds = drivers.map((d) => d.id);
 
-  const [vehicles, routes, openSos] = await Promise.all([
+  const [vehicles, routes, openSos, shifts] = await Promise.all([
     prisma.vehicle.findMany({
       where: { driverId: { in: driverIds } },
       select: {
@@ -72,11 +72,23 @@ export async function wardRoster(wardIds) {
       where: { driverId: { in: driverIds }, status: 'OPEN' },
       select: { id: true, driverId: true, createdAt: true, message: true },
     }),
+    // Today's shift row per driver — an ACTIVE one means clocked in now, an
+    // ENDED one means they worked and went home, and no row at all means they
+    // never turned up. Those are three different answers and the roster needs
+    // to tell them apart.
+    prisma.driverShift.findMany({
+      where: { driverId: { in: driverIds }, date: today() },
+      orderBy: { startedAt: 'desc' },
+      select: { id: true, driverId: true, status: true, startedAt: true, endedAt: true, distanceKm: true, stopsDone: true },
+    }),
   ]);
 
   const vehicleByDriver = new Map(vehicles.map((v) => [v.driverId, v]));
   const routeByDriver = new Map(routes.map((r) => [r.driverId, r]));
   const sosByDriver = new Map(openSos.map((s) => [s.driverId, s]));
+  // Ordered newest-first, so the first row seen per driver is the current one.
+  const shiftByDriver = new Map();
+  for (const sh of shifts) if (!shiftByDriver.has(sh.driverId)) shiftByDriver.set(sh.driverId, sh);
   const now = Date.now();
 
   return wards.map((ward) => {
@@ -128,6 +140,8 @@ export async function wardRoster(wardIds) {
             progressPct: stops.length ? Math.round((done / stops.length) * 100) : 0,
           },
           sos: sosByDriver.get(d.id) ?? null,
+          shift: shiftByDriver.get(d.id) ?? null,
+          onDuty: shiftByDriver.get(d.id)?.status === 'ACTIVE',
         };
       });
 
@@ -135,6 +149,7 @@ export async function wardRoster(wardIds) {
       ward,
       driverCount: roster.length,
       activeCount: roster.filter((d) => d.isActive && !d.isOffline).length,
+      onDutyCount: roster.filter((d) => d.onDuty).length,
       onRouteCount: roster.filter((d) => d.route && d.route.status !== 'COMPLETED').length,
       drivers: roster,
     };

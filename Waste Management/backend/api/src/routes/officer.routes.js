@@ -16,6 +16,7 @@ import { emitTo } from '../sockets/realtime.js';
 import { notify } from '../services/notification.service.js';
 import { hashPassword } from '../lib/password.js';
 import { wardRoster } from '../services/roster.service.js';
+import { shiftBoard } from '../services/shift.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.OFFICER), loadUser);
@@ -45,6 +46,15 @@ router.get(
   asyncHandler(async (req, res) => {
     const { ids } = await scope(req);
     res.json(await wardRoster(ids));
+  })
+);
+
+/** Shift board for this officer's wards — who is on duty, who has clocked off. */
+router.get(
+  ['/shifts', '/driver-shifts'],
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    res.json(await shiftBoard(ids));
   })
 );
 
