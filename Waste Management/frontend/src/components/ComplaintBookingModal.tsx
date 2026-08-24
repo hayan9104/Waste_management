@@ -94,7 +94,7 @@ export function ComplaintBookingModal({
 
   const locate = useCallback(() => {
     if (!navigator.geolocation) {
-      toast.warn('Geolocation is not supported by your browser.');
+      toast.error('Geolocation is not supported by your browser or device.');
       return;
     }
     setLocating(true);
@@ -105,35 +105,25 @@ export function ComplaintBookingModal({
       const acc = pos.coords.accuracy;
       setPosition({ lat, lng });
       setLocating(false);
-      toast.success(`📍 Live Device GPS Locked (±${Math.round(acc || 5)}m): ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      toast.success(`📍 Live Device GPS Locked (±${Math.round(acc || 5)}m): ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
     };
 
-    // Tier 1: Hardware High-Accuracy GPS
+    const onGpsError = (err: GeolocationPositionError) => {
+      setLocating(false);
+      if (err.code === 1) {
+        toast.warn('⚠️ Location Permission Blocked. Please allow location access in your browser address bar.');
+      } else {
+        toast.warn('⚠️ Device GPS unavailable. Please ensure device Location is ON and retry.');
+      }
+    };
+
+    // Pure Hardware GPS query — zero IP fake coordinates
     navigator.geolocation.getCurrentPosition(
       onGpsSuccess,
-      (err) => {
-        // Tier 2: Standard fast device location (Wi-Fi/Cellular)
+      () => {
         navigator.geolocation.getCurrentPosition(
           onGpsSuccess,
-          async (err2) => {
-            setLocating(false);
-            if (err.code === 1 || err2.code === 1) {
-              toast.warn('⚠️ Location Permission Blocked. Please allow location access in your browser address bar.');
-            } else {
-              toast.warn('Could not acquire fast GPS satellite lock. Trying network location…');
-            }
-            try {
-              const res = await fetch('https://ipapi.co/json/');
-              if (res.ok) {
-                const data = await res.json();
-                if (data.latitude && data.longitude) {
-                  setPosition({ lat: Number(data.latitude), lng: Number(data.longitude) });
-                }
-              }
-            } catch {
-              // ignore
-            }
-          },
+          onGpsError,
           { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
         );
       },
