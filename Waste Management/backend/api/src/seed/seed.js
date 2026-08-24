@@ -19,7 +19,46 @@ import { solveLocal, roadSnappedRoute, snapToRoad } from '../services/routing.se
 import { persist } from '../middleware/upload.js';
 
 const PASSWORD = 'safaai@2026';
-const HISTORY_DAYS = 45;
+/**
+ * How much history the demo carries.
+ *
+ * This used to be 45 days at full rate, which built ~1,760 complaints and
+ * ~6,100 events. Nobody scrolls that: it exists only so the trend, SLA and
+ * hotspot charts have a real series to read, and it makes a laptop
+ * walkthrough sluggish.
+ *
+ * Two things set the floor and stop this going lower. The analytics windows
+ * are 30 days, so fewer than that leaves the right-hand end of every chart
+ * empty; and 44 drivers each need a real beat today, which is ~130 open
+ * reports before anyone signs in to an empty route. So the recent days keep
+ * their full rate — they are what the live queue, routes, SOS and shift board
+ * are built from — and only the historical baseline behind them is thinned.
+ */
+const HISTORY_DAYS = 32;
+/** Applied to the baseline days only; the recent window keeps its full rate. */
+const HISTORY_RATE = 0.22;
+/**
+ * Days back from today that count as "recent" — the live, walkable window.
+ *
+ * Only today and yesterday carry an open backlog (see the openness rule
+ * below), so only they need the uplift. Running it out to five days built
+ * ~370 extra complaints that were all closed on arrival and fed nothing but
+ * the chart totals.
+ */
+const RECENT_DAYS = 1;
+/**
+ * Stops each truck should find on its list today.
+ *
+ * The route builder deals a ward's work round-robin across its crew and skips
+ * any truck left holding fewer than two stops, so the volume of today's work
+ * is what decides whether a driver has a beat at all. A flat per-ward rate
+ * ignored crew size and dealt it out very unevenly — Sector 1-4 ran at 8.0
+ * items per truck while Sector 14-17 sat at 0.8, which left 13 of the 35
+ * working trucks with no route and half the driver logins showing an empty
+ * screen. Today's volume is therefore sized from the crew that has to clear
+ * it, which is also how a real ward is staffed.
+ */
+const STOPS_PER_TRUCK_TODAY = 3.5;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -324,7 +363,7 @@ async function main() {
         },
       });
 
-      const entry = { vehicle, ward, index, driver, slot: k };
+      const entry = { vehicle, ward, index, driver, slot: k, seq: driverSeq };
       crew.push(entry);
       vehicles.push(entry);
     }
@@ -375,6 +414,21 @@ async function main() {
   const creditTally = new Map();
 
   /**
+   * Local midnight, and how far into the day we are.
+   *
+   * Today's reports are dated backwards from now, which quietly broke when
+   * the seed was run in the small hours: a lookback of up to 400 minutes from
+   * 00:30 puts the whole of today's work on *yesterday*, and the route builder
+   * — which asks for work open now or resolved today — then found almost
+   * nothing. A seed run at midnight published 14 routes where the same seed at
+   * midday published 35, and half the drivers signed in to an empty screen for
+   * no reason other than the hour it was run.
+   */
+  const historyDayStart = new Date();
+  historyDayStart.setHours(0, 0, 0, 0);
+  const minutesIntoToday = Math.max(1, Math.round((Date.now() - historyDayStart.getTime()) / 60_000));
+
+  /**
    * Down to d = 0, i.e. including today.
    *
    * The loop used to stop at yesterday, so the newest report in the system was
@@ -395,6 +449,10 @@ async function main() {
 
       // Weekend and market-day uplift, plus a per-ward base rate.
       const base = 2 + (index % 3);
+      /** Trucks that will actually be dealt a route in this ward today. */
+      const workingTrucks = (crews[w] ?? []).filter(
+        (c) => !c.vehicle.maintenanceFlag && c.vehicle.status !== 'IDLE'
+      ).length;
       const weekendBoost = weekday === 0 || weekday === 6 ? 2.2 : 1;
       /**
        * The last five days are the ones that stay open, and a ward now fields
@@ -404,8 +462,16 @@ async function main() {
        * beat; the 40 days behind them keep the flat baseline the trend and
        * hotspot charts are read against.
        */
-      const recentUplift = d <= 5 ? 2.2 : 1;
-      const count = Math.max(0, Math.round(base * weekendBoost * recentUplift * (0.6 + r() * 0.9)));
+      const recentUplift = d <= RECENT_DAYS ? 2.2 : 1;
+      const thinning = d > RECENT_DAYS ? HISTORY_RATE : 1;
+      const count =
+        d === 0 && workingTrucks
+          ? // Today is sized from the crew, so nobody signs in to an empty list.
+            Math.round(workingTrucks * STOPS_PER_TRUCK_TODAY * (0.9 + r() * 0.25))
+          : Math.max(
+              0,
+              Math.round(base * weekendBoost * recentUplift * thinning * (0.6 + r() * 0.9))
+            );
 
       for (let k = 0; k < count; k += 1) {
         const spec = pick(r, WASTE_CATEGORIES);
@@ -418,9 +484,16 @@ async function main() {
          * start, so the live backlog is genuinely a few hours old instead of
          * being back-dated to this morning the moment the seed runs.
          */
+        // Never reach back past midnight for something dated today.
+        const lookback = Math.max(5, Math.min(400, minutesIntoToday));
         const createdAt =
           d === 0
-            ? new Date(Date.now() - intBetween(r, 5, 400) * 60_000)
+            ? new Date(
+                Math.max(
+                  historyDayStart.getTime() + 60_000,
+                  Date.now() - intBetween(r, Math.min(5, lookback), lookback) * 60_000
+                )
+              )
             : new Date(day.getTime() + intBetween(r, 0, 11 * 60) * 60_000);
         const confidence = Number((0.45 + r() * 0.52).toFixed(3));
         const autoApproved = confidence >= 0.7;
@@ -490,7 +563,15 @@ async function main() {
         const resolutionMinutes = Math.round(
           overruns ? base : Math.min(base, RESOLUTION_CAP_MIN * (0.35 + r() * 0.65))
         );
-        const resolvedAt = shouldResolve ? new Date(createdAt.getTime() + resolutionMinutes * 60_000) : null;
+        /**
+         * Clamped to now: the computed duration is a target, and on a report
+         * filed twenty minutes ago it lands in the future — which showed up as
+         * complaints "resolved" at a time that has not arrived, and a negative
+         * age in the SLA countdown.
+         */
+        const resolvedAt = shouldResolve
+          ? new Date(Math.min(Date.now(), createdAt.getTime() + resolutionMinutes * 60_000))
+          : null;
         const status = resolvedAt ? 'RESOLVED' : pick(r, ['PENDING', 'VERIFIED', 'VERIFIED', 'ASSIGNED', 'IN_PROGRESS']);
 
         // A real photo is mandatory on the actual citizen /report flow -- match that here too.
@@ -1120,11 +1201,28 @@ async function main() {
    * morning and clocked off, and the maintenance truck never turned up.
    */
   const SHIFT_HISTORY_DAYS = 7;
+  /**
+   * Rest breaks.
+   *
+   * Start -> break -> end is a feature of the driver app and a column on the
+   * officer and admin shift boards, and none of it had a single row behind
+   * it: every seeded shift went start straight to end, so the boards showed
+   * "0 min stood down" for the whole fleet and the break column looked
+   * broken rather than empty. Crews take a mid-morning tea and a lunch, so
+   * the history carries one or two per shift and today carries a handful of
+   * drivers who are on break right now — which is the state the board is
+   * actually there to show.
+   */
+  const BREAK_REASONS = ['Tea break', 'Lunch', 'Rest — heat', 'Vehicle check', 'Refuelling stop'];
   // Same key shape the routes above use, so a shift and its route join on it.
   const todayKey = new Date().toISOString().slice(0, 10);
   let shiftsCreated = 0;
+  let breaksCreated = 0;
+  let onDutySoFar = 0;
+  /** Break locations reuse the crew's depot anchor, so they land on the ward. */
+  const depotOf = (index, slot) => pointNear(wardAnchors, index, slot);
 
-  for (const { vehicle, ward, driver } of vehicles) {
+  for (const { vehicle, ward, driver, index, slot } of vehicles) {
     const r = rng(`shift-${vehicle.id}`);
 
     for (let d = SHIFT_HISTORY_DAYS; d >= 1; d -= 1) {
@@ -1136,6 +1234,28 @@ async function main() {
       const startedAt = new Date(day);
       startedAt.setHours(intBetween(r, 6, 8), intBetween(r, 0, 59), 0, 0);
       const endedAt = new Date(startedAt.getTime() + intBetween(r, 7 * 60, 9 * 60) * 60_000);
+
+      // One break on a short day, two on a long one — taken from the middle
+      // of the shift, never overlapping the clock-in or clock-out.
+      const spanMin = Math.round((endedAt - startedAt) / 60_000);
+      const breakCount = spanMin > 8 * 60 ? 2 : 1;
+      const historyBreaks = [];
+      for (let b = 0; b < breakCount; b += 1) {
+        const offsetMin = Math.round((spanMin * (b + 1)) / (breakCount + 1)) + intBetween(r, -25, 25);
+        const lenMin = intBetween(r, 12, 35);
+        const bStart = new Date(startedAt.getTime() + offsetMin * 60_000);
+        historyBreaks.push({
+          reason: pick(r, BREAK_REASONS),
+          startedAt: bStart,
+          endedAt: new Date(bStart.getTime() + lenMin * 60_000),
+          latitude: depotOf(index, slot).latitude,
+          longitude: depotOf(index, slot).longitude,
+        });
+      }
+      const breakMinutes = historyBreaks.reduce(
+        (t, b) => t + Math.round((b.endedAt - b.startedAt) / 60_000),
+        0
+      );
 
       await prisma.driverShift.create({
         data: {
@@ -1149,17 +1269,69 @@ async function main() {
           endOdometerKm: null,
           distanceKm: Number((18 + r() * 42).toFixed(1)),
           stopsDone: intBetween(r, 3, 9),
+          breakMinutes,
           status: 'ENDED',
+          breaks: { create: historyBreaks },
         },
       });
       shiftsCreated += 1;
+      breaksCreated += historyBreaks.length;
     }
 
     if (vehicle.maintenanceFlag) continue; // off the road, nobody clocked in
 
-    const startedAt = new Date();
-    startedAt.setHours(intBetween(r, 6, 8), intBetween(r, 0, 59), 0, 0);
+    /**
+     * Today's clock-in, which has to be in the past.
+     *
+     * A 06:00-08:00 start is right for a seed run during the working day and
+     * wrong for one run at 00:30 — it put every driver on a shift beginning
+     * six hours in the future, so "minutes into the shift" was zero, nobody
+     * had taken a break yet, and the driver app showed a shift that had not
+     * started as ACTIVE. When the morning start has not come round yet the
+     * crew is treated as a night shift that began a few hours ago, which is
+     * both true of waste collection and true of the clock.
+     */
+    const morningStart = new Date();
+    morningStart.setHours(intBetween(r, 6, 8), intBetween(r, 0, 59), 0, 0);
+    const startedAt =
+      morningStart.getTime() <= Date.now() - 45 * 60_000
+        ? morningStart
+        : new Date(Date.now() - intBetween(r, 100, 300) * 60_000);
     const isSpare = vehicle.status === 'IDLE';
+
+    /**
+     * Roughly one crew in six is stood down at any moment, which is what the
+     * officer's board is for — knowing who is unavailable right now, and for
+     * how long. The rest have a finished break behind them so the "stood
+     * down" minutes on the board are a real number rather than a zero.
+     */
+    const onBreakNow = !isSpare && onDutySoFar % 6 === 3;
+    const todayBreaks = [];
+    const minsIn = Math.max(0, Math.round((Date.now() - startedAt.getTime()) / 60_000));
+
+    if (minsIn > 45) {
+      const doneStart = new Date(startedAt.getTime() + Math.round(minsIn * 0.35) * 60_000);
+      todayBreaks.push({
+        reason: pick(r, BREAK_REASONS),
+        startedAt: doneStart,
+        endedAt: new Date(doneStart.getTime() + intBetween(r, 12, 28) * 60_000),
+        latitude: depotOf(index, slot).latitude,
+        longitude: depotOf(index, slot).longitude,
+      });
+    }
+    if (onBreakNow) {
+      // Open-ended: this is the row that makes the shift read ON_BREAK.
+      todayBreaks.push({
+        reason: pick(r, BREAK_REASONS),
+        startedAt: new Date(Date.now() - intBetween(r, 4, 22) * 60_000),
+        endedAt: null,
+        latitude: depotOf(index, slot).latitude,
+        longitude: depotOf(index, slot).longitude,
+      });
+    }
+    const todayBreakMinutes = todayBreaks
+      .filter((b) => b.endedAt)
+      .reduce((t, b) => t + Math.round((b.endedAt - b.startedAt) / 60_000), 0);
 
     await prisma.driverShift.create({
       data: {
@@ -1173,12 +1345,116 @@ async function main() {
         endedAt: isSpare ? new Date(startedAt.getTime() + intBetween(r, 4 * 60, 6 * 60) * 60_000) : null,
         distanceKm: isSpare ? Number((10 + r() * 20).toFixed(1)) : null,
         stopsDone: isSpare ? intBetween(r, 2, 5) : 0,
-        status: isSpare ? 'ENDED' : 'ACTIVE',
+        breakMinutes: todayBreakMinutes,
+        status: isSpare ? 'ENDED' : onBreakNow ? 'ON_BREAK' : 'ACTIVE',
+        breaks: { create: todayBreaks },
       },
     });
     shiftsCreated += 1;
+    breaksCreated += todayBreaks.length;
+    if (!isSpare) onDutySoFar += 1;
   }
-  console.log(`[seed] ${shiftsCreated} driver shifts (${SHIFT_HISTORY_DAYS}-day history + today)`);
+  console.log(
+    `[seed] ${shiftsCreated} driver shifts (${SHIFT_HISTORY_DAYS}-day history + today), ` +
+      `${breaksCreated} rest breaks`
+  );
+
+  // ------------------------------------------------------- GPS trails ----
+  /**
+   * A real ping history per truck, so GPS health is measured rather than
+   * assumed.
+   *
+   * vehicle_locations was wiped at the start of the seed and never refilled,
+   * which did not read as "no data" — gpsHealthFor grades on the pings it
+   * finds, and finding none it fell through every degraded branch and
+   * reported "Strong signal" for all 44 trucks. That is worse than an empty
+   * panel: it is a confident answer with nothing behind it, and it made the
+   * health column on Master Fleet and Ward Drivers meaningless.
+   *
+   * Each truck gets ten minutes of fixes at its own cadence, and the fleet
+   * carries a deliberate spread of quality so every branch of the grader is
+   * represented on screen: a couple of handsets in an urban canyon, one
+   * dropping fixes, one that went quiet, and the maintenance truck that has
+   * never reported at all.
+   */
+  const GPS_WINDOW_MIN = 10;
+  let pingRows = 0;
+  const gpsTally = {};
+
+  for (let v = 0; v < vehicles.length; v += 1) {
+    const { vehicle } = vehicles[v];
+    const r = rng(`gps-${vehicle.id}`);
+
+    // Off the road and unplugged — the honest answer is "never reported".
+    if (vehicle.maintenanceFlag) {
+      await prisma.vehicle.update({ where: { id: vehicle.id }, data: { lastPingAt: null, lastSpeed: null } });
+      gpsTally.NO_SIGNAL = (gpsTally.NO_SIGNAL ?? 0) + 1;
+      continue;
+    }
+
+    // Deterministic spread, keyed on position so it is stable across reseeds.
+    const tier =
+      v % 11 === 4 ? 'OFFLINE'
+      : v % 11 === 7 ? 'POOR'
+      : v % 5 === 2 ? 'PATCHY'
+      : v % 4 === 1 ? 'FAIR'
+      : 'GOOD';
+    gpsTally[tier] = (gpsTally[tier] ?? 0) + 1;
+
+    // A quiet handset's last fix sits outside the two-minute live threshold.
+    const endsAgoSec = tier === 'OFFLINE' ? intBetween(r, 200, 520) : intBetween(r, 2, 20);
+    const cadenceSec = intBetween(r, 8, 22);
+    const accuracyFor = () => {
+      if (tier === 'POOR') return 68 + r() * 30;
+      if (tier === 'FAIR') return 30 + r() * 22;
+      return 5 + r() * 14;
+    };
+
+    const rows = [];
+    let t = Date.now() - endsAgoSec * 1000;
+    let lat = vehicle.lastLat;
+    let lng = vehicle.lastLng;
+    const stop = Date.now() - GPS_WINDOW_MIN * 60_000;
+
+    for (let i = 0; t > stop; i += 1) {
+      rows.push({
+        vehicleId: vehicle.id,
+        latitude: round6(lat),
+        longitude: round6(lng),
+        heading: intBetween(r, 0, 359),
+        speed: Number((6 + r() * 22).toFixed(1)),
+        accuracy: Number(accuracyFor().toFixed(1)),
+        recordedAt: new Date(t),
+      });
+      // Walking backwards along the beat, so the trail is a line not a blob.
+      lat -= (r() - 0.45) * 0.00035;
+      lng -= (r() - 0.45) * 0.00045;
+      // A dropout is a gap the handset never filled, not slower reporting.
+      const gap = tier === 'PATCHY' && i % 6 === 5 ? intBetween(r, 55, 110) : cadenceSec;
+      t -= gap * 1000;
+    }
+
+    if (rows.length) {
+      await prisma.vehicleLocation.createMany({ data: rows });
+      pingRows += rows.length;
+      const newest = rows[0];
+      await prisma.vehicle.update({
+        where: { id: vehicle.id },
+        data: {
+          lastLat: newest.latitude,
+          lastLng: newest.longitude,
+          lastHeading: newest.heading,
+          lastSpeed: newest.speed,
+          lastPingAt: newest.recordedAt,
+        },
+      });
+    }
+  }
+  console.log(
+    `[seed] ${pingRows} GPS fixes over ${GPS_WINDOW_MIN} min — ` +
+      Object.entries(gpsTally).map(([k, n]) => `${n} ${k}`).join(', ')
+  );
+
 
   // -------------------------------------------------------- fuel logs ----
   /**
@@ -1775,6 +2051,22 @@ async function main() {
     })),
   });
 
+  /**
+   * Which driver logins are worth opening in front of an audience.
+   *
+   * Each ward keeps one spare truck that worked a morning and clocked out,
+   * plus one off the road for maintenance. That is deliberate — a fleet where
+   * every single truck is mid-route is not a real fleet — but it means those
+   * logins show a finished day rather than a live beat, and picking one at
+   * random for a walkthrough looks like the route screen is broken.
+   */
+  const spareDrivers = vehicles
+    .filter((v) => v.vehicle.maintenanceFlag || v.vehicle.status === 'IDLE')
+    .map((v) => `driver${v.seq}`);
+  const liveDrivers = vehicles
+    .filter((v) => !v.vehicle.maintenanceFlag && v.vehicle.status !== 'IDLE')
+    .map((v) => `driver${v.seq}`);
+
   console.log(`
   Safaai Sarathi demo data ready.
 
@@ -1784,6 +2076,8 @@ async function main() {
     -------   -----------------   ----------------------------
     Citizen   /login              citizen1@safaai.gov.in
     Driver    /driver/login       driver1 .. driver${vehicles.length} @safaai.gov.in
+                                  on shift now: ${liveDrivers.slice(0, 8).join(", ")} ...
+                                  spare/off road (no live route): ${spareDrivers.join(", ")}
                                   (or OTP on 9700000001 .. 97000000${String(vehicles.length).padStart(2, "0")})
     Officer   /officer/login      officer1@safaai.gov.in
     Admin     /admin/login        admin@safaai.gov.in

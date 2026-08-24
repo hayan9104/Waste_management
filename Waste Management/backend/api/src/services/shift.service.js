@@ -40,7 +40,7 @@ export async function activeShift(driverId) {
 }
 
 /** Minutes stood down so far, counting an open break up to now. */
-function breakMinutesOf(shift, until = new Date()) {
+export function breakMinutesOf(shift, until = new Date()) {
   const rows = Array.isArray(shift?.breaks) ? shift.breaks : [];
   return rows.reduce((n, b) => {
     const end = b.endedAt ? new Date(b.endedAt) : until;
