@@ -14,7 +14,8 @@
     "db:studio": "prisma studio",
     "db:sql": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
     "seed": "node src/seed/seed.js",
-    "verify:showcase": "node src/seed/verify_showcase.js"
+    "verify:showcase": "node src/seed/verify_showcase.js",
+    "verify:demo": "node src/seed/verify_demo.js"
   },
   "prisma": {
     "seed": "node src/seed/seed.js"

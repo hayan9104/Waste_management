@@ -603,7 +603,13 @@ router.get(
     const shiftToday = await prisma.driverShift.findFirst({
       where: { driverId: req.user.id, date: dateQuery },
       orderBy: { startedAt: 'desc' },
-      include: { vehicle: { select: { id: true, registrationNumber: true } }, ward: { select: { id: true, name: true } } },
+      include: {
+        vehicle: { select: { id: true, registrationNumber: true } },
+        ward: { select: { id: true, name: true } },
+        // serializeShift derives break minutes from these rows; without the
+        // include it reports a shift with breaks as having taken none.
+        breaks: { orderBy: { startedAt: 'asc' } },
+      },
     });
 
     res.json({

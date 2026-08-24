@@ -2,6 +2,19 @@ import { prisma } from '../lib/prisma.js';
 import { today } from './tracking.service.js';
 import { ROLES } from '../config/constants.js';
 import { gpsHealthFor } from './gps.service.js';
+import { breakMinutesOf } from './shift.service.js';
+
+/**
+ * Rest minutes that are true right now.
+ *
+ * DriverShift.breakMinutes is only written on clock-out, so a driver standing
+ * down at this moment carried whatever total they had before — the roster
+ * said "0 min" beside an ON_BREAK badge while the shift board next to it
+ * counted up. Recomputed from the break rows while the shift is open, taken
+ * from the stored total once it is closed.
+ */
+const liveShift = (shift) =>
+  shift ? { ...shift, breakMinutes: shift.endedAt ? shift.breakMinutes ?? 0 : breakMinutesOf(shift) } : null;
 
 /**
  * Ward-wise driver roster.
@@ -88,6 +101,7 @@ export async function wardRoster(wardIds) {
       select: {
         id: true, driverId: true, status: true, startedAt: true, endedAt: true,
         distanceKm: true, stopsDone: true, breakMinutes: true,
+        breaks: { select: { startedAt: true, endedAt: true }, orderBy: { startedAt: 'asc' } },
       },
     }),
   ]);
@@ -163,7 +177,7 @@ export async function wardRoster(wardIds) {
           },
           gps: vehicle ? health.get(vehicle.id) ?? null : null,
           sos: sosByDriver.get(d.id) ?? null,
-          shift: shiftByDriver.get(d.id) ?? null,
+          shift: liveShift(shiftByDriver.get(d.id)),
           // A driver on a rest break is still on duty — they have not gone
           // home — but they are not working, and a supervisor needs both facts
           // rather than one standing in for the other.
