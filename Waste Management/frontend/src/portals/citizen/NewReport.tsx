@@ -76,6 +76,8 @@ export default function NewReport() {
   const [submitting, setSubmitting] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [invalidPhotoWarning, setInvalidPhotoWarning] = useState<string | null>(null);
+  const [gpsRequiredModalOpen, setGpsRequiredModalOpen] = useState(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
 
   useEffect(() => {
     locate();
@@ -86,26 +88,9 @@ export default function NewReport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function fetchIpLocation() {
-    try {
-      const res = await fetch('https://ipapi.co/json/');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.latitude && data.longitude) {
-          return { lat: Number(data.latitude), lng: Number(data.longitude) };
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return null;
-  }
-
   async function locate() {
     if (!navigator.geolocation) {
-      toast.warn('Browser GPS not supported. Fetching approximate network location.');
-      const ipPos = await fetchIpLocation();
-      if (ipPos) setPosition({ lat: ipPos.lat, lng: ipPos.lng });
+      toast.error('Geolocation is not supported by your browser or device.');
       return;
     }
     setLocating(true);
@@ -115,32 +100,32 @@ export default function NewReport() {
       const lng = pos.coords.longitude;
       const acc = pos.coords.accuracy;
       setPosition({ lat, lng });
+      setGpsAccuracy(acc);
       setGeoDenied(false);
       setLocating(false);
-      toast.success(`📍 Device GPS Locked (±${Math.round(acc || 5)}m): ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      setGpsRequiredModalOpen(false);
+      toast.success(`📍 Real Device GPS Locked (±${Math.round(acc || 5)}m): ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
     };
 
-    // Tier 1: True High-Accuracy Hardware GPS
+    const onGpsError = (err: GeolocationPositionError) => {
+      setLocating(false);
+      setGeoDenied(true);
+      setGpsRequiredModalOpen(true);
+      if (err.code === 1) {
+        toast.warn('⚠️ Location Permission Denied! Please click the lock icon in the address bar and allow Location Access.');
+      } else {
+        toast.warn('⚠️ Device GPS unavailable. Please turn ON your phone location and retry.');
+      }
+    };
+
+    // Pure Hardware GPS query — zero IP fake coordinates
     navigator.geolocation.getCurrentPosition(
       onGpsSuccess,
-      (err) => {
-        // Tier 2: Standard fast device location (Wi-Fi / cellular trilateration)
+      () => {
         navigator.geolocation.getCurrentPosition(
           onGpsSuccess,
-          async (err2) => {
-            setLocating(false);
-            if (err.code === 1 || err2.code === 1) {
-              setGeoDenied(true);
-              toast.warn('⚠️ Location Permission Blocked! Please click the lock icon in your URL bar and allow Location Access.');
-            } else {
-              toast.warn('Device GPS fix timed out — trying network location.');
-            }
-            const ipPos = await fetchIpLocation();
-            if (ipPos) {
-              setPosition({ lat: ipPos.lat, lng: ipPos.lng });
-            }
-          },
-          { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 }
+          onGpsError,
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
         );
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -608,7 +593,12 @@ export default function NewReport() {
               <button
                 type="button"
                 onClick={() => {
-                  if (position) void checkForDuplicates(position);
+                  if (!position || geoDenied) {
+                    setGpsRequiredModalOpen(true);
+                    void locate();
+                    return;
+                  }
+                  void checkForDuplicates(position);
                   setStep('location');
                 }}
                 className="btn-primary w-full py-3 text-fluid-sm font-bold shadow-md shadow-brand/20 flex items-center justify-center gap-2 cursor-pointer"
@@ -785,6 +775,59 @@ export default function NewReport() {
                 Dismiss
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= COMPULSORY DEVICE GPS MODAL ================= */}
+      {gpsRequiredModalOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl border-2 border-brand/40 bg-surface p-6 shadow-2xl space-y-4 animate-scale-in">
+            <div className="flex items-center gap-3">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand/15 text-brand shadow-xs">
+                <MapPin className="h-6 w-6 animate-bounce" />
+              </span>
+              <div>
+                <h3 className="text-fluid-base font-extrabold text-ink">Turn On Device GPS</h3>
+                <p className="text-fluid-xs text-muted">Compulsory for Complaint Dispatch</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-sunken/70 p-4 text-fluid-xs text-ink space-y-2.5">
+              <p className="font-semibold text-brand">Why is your live location compulsory?</p>
+              <p className="text-muted leading-relaxed">
+                To guarantee that the municipal garbage truck is sent directly to your location, your phone/device GPS must be turned on.
+              </p>
+              <div className="space-y-2 pt-1 text-muted">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand font-bold text-[10px]">1</span>
+                  <span>Turn ON <strong>Location / GPS</strong> in your phone settings.</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand font-bold text-[10px]">2</span>
+                  <span>Allow location permission when prompted in browser.</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={locate}
+              disabled={locating}
+              className="btn-primary w-full py-3.5 text-fluid-sm font-bold shadow-lg shadow-brand/25 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {locating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Detecting Live Device GPS…</span>
+                </>
+              ) : (
+                <>
+                  <Crosshair className="h-4 w-4" />
+                  <span>Turn On & Detect My Live Location</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       )}
