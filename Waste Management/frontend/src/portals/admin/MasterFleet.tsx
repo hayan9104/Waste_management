@@ -245,6 +245,7 @@ export default function MasterFleet() {
                     <p className="font-semibold">{v.registrationNumber}</p>
                     <p className="text-xs text-muted">{v.driver?.name ?? 'Unassigned'}</p>
                     <p className="text-xs">{v.isOffline && v.status === 'ON_ROUTE' ? 'Status unknown — offline' : v.status}</p>
+                    {v.gps && <p className="text-xs text-muted">GPS: {v.gps.label}</p>}
                   </div>
                 </TruckMarker>
               ))}
@@ -381,9 +382,37 @@ export default function MasterFleet() {
                       </Badge>
                     )}
                   </td>
+                  {/* Signal quality, not just presence. A handset can be
+                      reporting and still be useless to follow — drifting to
+                      80-metre accuracy, or dropping every third fix so the
+                      truck teleports between stops. Both look identical to
+                      "Live" on a map. */}
                   <td className="px-4 py-2.5">
-                    {!v.isOffline ? (
-                      <span className="inline-flex items-center gap-1 text-fluid-xs text-ok font-semibold">
+                    {v.gps ? (
+                      <span className="inline-flex flex-col gap-0.5">
+                        <span
+                          className={`inline-flex items-center gap-1 text-fluid-xs font-semibold ${
+                            v.gps.tone === 'ok'
+                              ? 'text-ok'
+                              : v.gps.tone === 'warn'
+                                ? 'text-warn'
+                                : v.gps.tone === 'danger'
+                                  ? 'text-danger'
+                                  : 'text-faint'
+                          }`}
+                        >
+                          {v.gps.tone === 'ok' ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                          {v.gps.label}
+                        </span>
+                        {v.gps.fixes > 0 && (
+                          <span className="text-[11px] text-faint">
+                            {v.gps.fixes} fixes/{v.gps.windowMinutes}m
+                            {v.gps.dropouts > 0 && ` · ${v.gps.dropouts} dropout${v.gps.dropouts > 1 ? 's' : ''}`}
+                          </span>
+                        )}
+                      </span>
+                    ) : !v.isOffline ? (
+                      <span className="inline-flex items-center gap-1 text-fluid-xs font-semibold text-ok">
                         <Wifi className="h-3.5 w-3.5" /> Live
                       </span>
                     ) : (
