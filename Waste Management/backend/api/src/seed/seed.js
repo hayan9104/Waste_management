@@ -526,7 +526,8 @@ async function main() {
             aiCategory: !autoApproved && r() > 0.6 ? pick(r, WASTE_CATEGORIES).id : spec.id,
             aiConfidence: confidence,
             aiVerified: autoApproved,
-            reviewNeeded: meta.emergency ? false : !autoApproved,
+            // Closed work is not awaiting review, and an emergency never was.
+            reviewNeeded: meta.emergency || shouldResolve ? false : !autoApproved,
             fraudScore: Number((r() * 0.35).toFixed(3)),
             status,
             severity: meta.severity,

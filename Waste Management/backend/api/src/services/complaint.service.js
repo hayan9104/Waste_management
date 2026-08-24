@@ -341,7 +341,16 @@ export async function transition({ complaintId, status, actorId, note, extra = {
     data: {
       status,
       ...extra,
-      ...(status === 'RESOLVED' ? { resolvedAt: new Date(), resolvedById: actorId } : {}),
+      /**
+       * Closing a complaint also closes the question of whether it needs
+       * looking at. Leaving reviewNeeded set meant finished work carried a
+       * "Review needed" flag forever, and the officer's review filter counted
+       * reports nobody could act on.
+       */
+      ...(status === 'RESOLVED'
+        ? { resolvedAt: new Date(), resolvedById: actorId, reviewNeeded: false }
+        : {}),
+      ...(status === 'REJECTED' ? { reviewNeeded: false } : {}),
       ...(status === 'ASSIGNED' ? { assignedAt: new Date(), assignedById: actorId } : {}),
     },
     include: { ward: true, citizen: { select: { id: true, name: true } }, assignedVehicle: true },

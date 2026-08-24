@@ -142,18 +142,32 @@ async function pickEscalationTarget(complaint, level) {
 }
 
 /** Countdown for the officer's emergency panel. */
+/**
+ * Where a complaint stands against its deadline.
+ *
+ * The clock stops when the work is done. Measuring a closed complaint against
+ * the current time meant a report resolved comfortably inside a four-hour
+ * window read as "14.2 days over" a fortnight later — and got worse every day
+ * it sat in the archive. The deadline did not move; the reader's clock did.
+ */
 export function slaCountdown(complaint) {
   if (!complaint.dueAt) return null;
-  const msLeft = new Date(complaint.dueAt).getTime() - Date.now();
+
+  const settled = complaint.resolvedAt ? new Date(complaint.resolvedAt).getTime() : null;
+  const measuredAt = settled ?? Date.now();
+  const msLeft = new Date(complaint.dueAt).getTime() - measuredAt;
+  const elapsedMs = measuredAt - new Date(complaint.createdAt).getTime();
+
   return {
     dueAt: complaint.dueAt,
+    /** True once the work is done — the figures below are then a verdict, not a countdown. */
+    settled: settled != null,
+    settledAt: complaint.resolvedAt ?? null,
     minutesLeft: Math.round(msLeft / 60_000),
     overdue: msLeft < 0,
     pctElapsed: Math.min(
       100,
-      Math.round(
-        ((Date.now() - new Date(complaint.createdAt).getTime()) / (complaint.slaMinutes * 60_000)) * 100
-      )
+      Math.round((elapsedMs / (Math.max(1, complaint.slaMinutes) * 60_000)) * 100)
     ),
   };
 }
