@@ -413,7 +413,13 @@ async function main() {
          * the last five days keep a realistic open backlog, which is what the
          * officer queue, emergency panel and route optimiser actually need.
          */
-        const shouldResolve = d > 5 ? true : r() > 0.45;
+        /**
+         * An emergency runs a 30-minute clock, so one still open after days is
+         * not a backlog item — it is a contradiction, and it made the officer
+         * panel show week-old "emergencies" that no longer meant anything.
+         * They are always closed unless they arrived in the last few hours.
+         */
+        const shouldResolve = meta.emergency ? d > 0 : d > 5 ? true : r() > 0.45;
         /**
          * Most work is cleared well inside its deadline, a minority runs late.
          *
@@ -463,10 +469,21 @@ async function main() {
             // The model is not always right — roughly one in eight is corrected
             // by an officer, so Model Health shows a believable agreement rate
             // rather than a flat 100%.
-            aiCategory: r() > 0.88 ? pick(r, WASTE_CATEGORIES).id : spec.id,
+            /**
+             * Confidence and category are one statement, not two.
+             *
+             * The model disagreeing with the final category is a real and
+             * useful case, but it only makes sense when confidence was low:
+             * a disagreement recorded at 95% says the AI was certain and
+             * wrong, which is not what a low-confidence review queue is for.
+             * Disagreements are therefore confined to the low-confidence
+             * band, and an emergency is never held back for review — it is
+             * already dispatched and on a 30-minute clock.
+             */
+            aiCategory: !autoApproved && r() > 0.6 ? pick(r, WASTE_CATEGORIES).id : spec.id,
             aiConfidence: confidence,
             aiVerified: autoApproved,
-            reviewNeeded: !autoApproved,
+            reviewNeeded: meta.emergency ? false : !autoApproved,
             fraudScore: Number((r() * 0.35).toFixed(3)),
             status,
             severity: meta.severity,
@@ -636,6 +653,7 @@ async function main() {
         aiCategory: spec.id,
         aiConfidence: 0.91,
         aiVerified: true,
+        reviewNeeded: false,
         status: 'PENDING',
         severity: 'CRITICAL',
         isEmergency: true,
@@ -870,7 +888,8 @@ async function main() {
         // Below the auto-approve gate is exactly what "needs a human" means,
         // so the flag is derived from the score rather than set by hand.
         aiVerified: spec.confidence >= 0.7,
-        reviewNeeded: spec.confidence < 0.7,
+        // An emergency is dispatched, not reviewed — same rule as intake.
+        reviewNeeded: emergency ? false : spec.confidence < 0.7,
         fraudScore: Number((r() * 0.12).toFixed(3)),
         status,
         severity: emergency ? 'CRITICAL' : meta.severity,

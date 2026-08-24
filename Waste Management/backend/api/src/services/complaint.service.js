@@ -102,7 +102,16 @@ export async function createComplaint({
       aiCategory: photo?.buffer ? aiCategory : null,
       aiConfidence: confidence,
       aiVerified: autoApproved && !ai.degraded,
-      reviewNeeded: !autoApproved || fraud.score >= env.ai.fraudReviewThreshold,
+      /**
+       * An emergency never waits on a review.
+       *
+       * "Review needed" means hold it back until a human agrees with the AI —
+       * which is exactly the wrong instruction for a report on a 30-minute
+       * clock that has already been auto-dispatched to a truck. The officer
+       * still acknowledges it on the emergency panel; that is a different act
+       * from gating the work behind a confidence score.
+       */
+      reviewNeeded: emergency ? false : !autoApproved || fraud.score >= env.ai.fraudReviewThreshold,
       fraudScore: fraud.score,
       fraudSignals: fraud.signals?.length ? { signals: fraud.signals, modelVersion: fraud.modelVersion } : undefined,
       status: autoApproved && !duplicate ? 'VERIFIED' : 'PENDING',

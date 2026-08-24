@@ -195,7 +195,13 @@ router.get(
       ...(q.category ? { category: q.category } : {}),
       ...(q.severity ? { severity: q.severity } : {}),
       ...(q.reviewNeeded ? { reviewNeeded: true } : {}),
-      ...(q.emergency ? { isEmergency: true } : {}),
+      /**
+       * Emergencies live on their own panel, with their own 30-minute clock
+       * and acknowledge action. Listing them here too meant the same report
+       * appeared in two places and could be worked twice, so the queue leaves
+       * them out unless explicitly asked for.
+       */
+      ...(q.emergency ? { isEmergency: true } : { isEmergency: false }),
       ...(q.overdue ? { dueAt: { lt: new Date() }, status: { notIn: ['RESOLVED', 'REJECTED'] } } : {}),
       ...(q.search
         ? {
@@ -207,13 +213,21 @@ router.get(
         : {}),
     };
 
+    /**
+     * Worst first, not newest first.
+     *
+     * A queue sorted purely by arrival buries a critical report under a
+     * morning of routine ones — precisely the case an officer must not miss.
+     * Severity leads, the deadline breaks ties, and arrival order only decides
+     * between reports that are otherwise equal.
+     */
     const orderBy = {
       newest: { createdAt: 'desc' },
       oldest: { createdAt: 'asc' },
-      severity: [{ isEmergency: 'desc' }, { severity: 'desc' }],
+      severity: [{ severity: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
       confidence: { aiConfidence: 'asc' },
       due: { dueAt: 'asc' },
-    }[q.sort || 'newest'];
+    }[q.sort || 'severity'];
 
     const [rows, total] = await Promise.all([
       prisma.complaint.findMany({
@@ -575,17 +589,31 @@ router.post(
       .parse(req.body);
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000);
-    const recentReportsCount = await prisma.complaint.count({
-      where: { ...where, createdAt: { gte: sevenDaysAgo } },
-    });
+    const { ids } = await scope(req);
+    const [recentReportsCount, openBacklog, trucks] = await Promise.all([
+      prisma.complaint.count({ where: { ...where, createdAt: { gte: sevenDaysAgo } } }),
+      // How far behind the crew is right now — the input that actually decides
+      // where the ward starts on the fill chain.
+      prisma.complaint.count({ where: { ...where, status: { notIn: ['RESOLVED', 'REJECTED'] } } }),
+      prisma.vehicle.count({
+        where: { ...(ids === null ? {} : { wardId: { in: ids } }), maintenanceFlag: false },
+      }),
+    ]);
 
-    const averageReportsPerHour = Math.max(0.2, (recentReportsCount / (7 * 24)));
-    const sim = simulateWardOverflow({ delayHours: body.delayHours, averageReportsPerHour });
+    const averageReportsPerHour = Math.max(0.2, recentReportsCount / (7 * 24));
+    const sim = simulateWardOverflow({
+      delayHours: body.delayHours,
+      averageReportsPerHour,
+      openBacklog,
+      trucks,
+    });
     const estimatedSlaPenaltyRisk = sim.overflowProbabilityPercent > 50 ? 'HIGH' : sim.atRiskProbabilityPercent > 30 ? 'MEDIUM' : 'LOW';
 
     res.json({
       delayHours: body.delayHours,
       averageReportsPerHour: Number(averageReportsPerHour.toFixed(2)),
+      openBacklog,
+      trucks,
       projectedAdditionalReports: sim.projectedAdditionalReports,
       overflowProbabilityPercent: sim.overflowProbabilityPercent,
       atRiskProbabilityPercent: sim.atRiskProbabilityPercent,
@@ -663,6 +691,52 @@ router.get(
         type: 'DRIVER_SOS',
       })),
     });
+  })
+);
+
+/**
+ * Close out an SOS.
+ *
+ * Acknowledging only says an officer has seen it. Without a way to close one,
+ * every alert ever raised stayed on the panel with a disabled button, so a
+ * breakdown sorted out an hour ago looked identical to one still stranded --
+ * and the panel grew until it was useless.
+ */
+router.post(
+  ['/sos/:id/resolve', '/emergencies/:id/resolve'],
+  writeLimiter,
+  audited('sos_resolve', 'sos_alerts'),
+  asyncHandler(async (req, res) => {
+    const sos = await prisma.sosAlert.findUnique({ where: { id: req.params.id } });
+    if (!sos) throw new HttpError(404, 'SOS alert not found');
+
+    const updated = await prisma.sosAlert.update({
+      where: { id: sos.id },
+      data: {
+        status: 'RESOLVED',
+        // An alert resolved without ever being acknowledged still had someone
+        // deal with it; record them rather than leaving the responder blank.
+        acknowledgedById: sos.acknowledgedById ?? req.user.id,
+        acknowledgedAt: sos.acknowledgedAt ?? new Date(),
+      },
+    });
+
+    await notify({
+      userId: sos.driverId,
+      type: 'SYSTEM',
+      title: 'Your SOS has been closed',
+      body: `${req.user.name} marked your alert as resolved.`,
+      payload: { sosId: sos.id },
+    });
+
+    const vehicle = sos.vehicleId ? await prisma.vehicle.findUnique({ where: { id: sos.vehicleId } }) : null;
+    emitTo([vehicle?.wardId ? `ward:${vehicle.wardId}` : null, 'city', `user:${sos.driverId}`], SOCKET_EVENTS.SOS_NEW, {
+      id: sos.id,
+      status: 'RESOLVED',
+      driverId: sos.driverId,
+    });
+
+    res.json({ success: true, item: updated });
   })
 );
 
