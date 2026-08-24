@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Camera, Check, ChevronLeft, ChevronRight, Clock, Eye, Loader2, Search, Sparkles, Truck, X } from 'lucide-react';
+
 import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, Modal, toast } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, SEVERITY_TONE, timeAgo, formatDuration } from '../../lib/format';
@@ -199,12 +199,13 @@ export default function ComplaintQueue() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <Card className="p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[12rem] flex-1">
+      <Card className="p-3.5 space-y-2.5">
+        {/* Top search & dropdowns row */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:min-w-[14rem] sm:flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
             <input
-              className="field pl-9"
+              className="field w-full pl-9 text-fluid-xs sm:text-fluid-sm min-h-[40px]"
               placeholder="Search by ticket or address"
               value={search}
               onChange={(e) => {
@@ -214,21 +215,35 @@ export default function ComplaintQueue() {
             />
           </div>
 
-          <select className="field w-auto min-w-[8rem]" value={filters.status ?? ''} onChange={(e) => setFilter('status', e.target.value)}>
-            <option value="">All statuses</option>
-            {Object.entries(STATUS_LABELS).map(([id, label]) => (
-              <option key={id} value={id}>{label}</option>
-            ))}
-          </select>
+          <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center">
+            <select
+              className="field w-full sm:w-auto sm:min-w-[8.5rem] text-fluid-xs min-h-[40px]"
+              value={filters.status ?? ''}
+              onChange={(e) => setFilter('status', e.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="AUTO_ASSIGNED">Auto-assigned</option>
+              {Object.entries(STATUS_LABELS).map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
 
-          <select className="field w-auto min-w-[9rem]" value={filters.sort} onChange={(e) => setFilter('sort', e.target.value)}>
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="severity">Severity</option>
-            <option value="confidence">Lowest AI confidence</option>
-            <option value="due">Due soonest</option>
-          </select>
+            <select
+              className="field w-full sm:w-auto sm:min-w-[9.5rem] text-fluid-xs min-h-[40px]"
+              value={filters.sort}
+              onChange={(e) => setFilter('sort', e.target.value)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="severity">Severity</option>
+              <option value="confidence">Lowest AI confidence</option>
+              <option value="due">Due soonest</option>
+            </select>
+          </div>
+        </div>
 
+        {/* Quick filter chips row with horizontal scroll affordance on small screens */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           {[
             { key: 'reviewNeeded', label: 'Review needed' },
             { key: 'emergency', label: 'Emergencies' },
@@ -238,7 +253,11 @@ export default function ComplaintQueue() {
               key={f.key}
               type="button"
               onClick={() => setFilter(f.key, params.get(f.key) ? undefined : '1')}
-              className={`chip transition ${params.get(f.key) ? 'border-brand bg-brand/10 text-brand' : 'text-muted hover:bg-sunken'}`}
+              className={`chip whitespace-nowrap px-3 py-1.5 text-[11px] font-semibold transition cursor-pointer min-h-[36px] ${
+                params.get(f.key)
+                  ? 'border-brand bg-brand/10 text-brand font-bold shadow-xs'
+                  : 'text-muted hover:bg-sunken hover:text-ink'
+              }`}
             >
               {f.label}
             </button>
@@ -389,7 +408,13 @@ export default function ComplaintQueue() {
                         {c.reviewNeeded && <span className="mt-1 block text-fluid-xs font-medium text-warn">Review needed</span>}
                       </td>
                       <td className="px-3 py-2.5">
-                        <Badge tone={STATUS_TONE[c.status]}>{t(`status.${c.status}`)}</Badge>
+                        {c.assignmentType === 'AUTO' ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-teal-600 dark:text-teal-400">
+                            <Sparkles className="h-3 w-3 text-teal-500" /> Auto-assigned
+                          </span>
+                        ) : (
+                          <Badge tone={STATUS_TONE[c.status]}>{t(`status.${c.status}`)}</Badge>
+                        )}
                       </td>
                       <td className="px-3 py-2.5">
                         {c.sla ? (
@@ -446,7 +471,13 @@ export default function ComplaintQueue() {
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-mono text-fluid-xs">{c.code}</span>
                         {c.isEmergency && <Badge tone="danger">SOS</Badge>}
-                        <Badge tone={STATUS_TONE[c.status]}>{t(`status.${c.status}`)}</Badge>
+                        {c.assignmentType === 'AUTO' ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-teal-600 dark:text-teal-400">
+                            <Sparkles className="h-2.5 w-2.5 text-teal-500" /> Auto-assigned
+                          </span>
+                        ) : (
+                          <Badge tone={STATUS_TONE[c.status]}>{t(`status.${c.status}`)}</Badge>
+                        )}
                       </div>
                       <p className="mt-1 truncate text-fluid-sm font-semibold">{t(`category.${c.category}`)}</p>
                       <p className="truncate text-fluid-xs text-muted">{c.address}</p>
@@ -550,8 +581,17 @@ export default function ComplaintQueue() {
                 <Row label="Category" value={t(`category.${detail.data.category}`)} />
                 <Row label="AI thought" value={detail.data.aiCategory ? t(`category.${detail.data.aiCategory}`) : '—'} />
                 <Row label="Confidence" value={`${Math.round((detail.data.aiConfidence ?? 0) * 100)}%`} />
-                <Row label="Fraud score" value={`${Math.round((detail.data.fraudScore ?? 0) * 100)}%`} />
+                <Row label="Assignment" value={detail.data.assignmentType === 'AUTO' ? 'Auto-assigned by System' : 'Manual Assignment'} />
                 <Row label="Ward" value={detail.data.ward?.name ?? '—'} />
+                {detail.data.detectedWard && (
+                  <Row label="Detected Ward" value={`${detail.data.detectedWard.name} (Auto-detected)`} />
+                )}
+                {detail.data.assignedVehicle && (
+                  <Row
+                    label="Assigned Vehicle"
+                    value={`${detail.data.assignedVehicle.driver?.name ? `${detail.data.assignedVehicle.driver.name} · ` : ''}${detail.data.assignedVehicle.registrationNumber}`}
+                  />
+                )}
                 <Row label="Reported by" value={detail.data.citizen?.name ?? '—'} />
                 <Row label="Address" value={detail.data.address ?? '—'} />
                 <Row label="Reported" value={timeAgo(detail.data.createdAt)} />

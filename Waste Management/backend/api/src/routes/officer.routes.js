@@ -181,16 +181,23 @@ router.get(
     const pageSize = q.pageSize || 25;
 
     let statusConstraint = undefined;
+    let assignmentTypeConstraint = undefined;
     if (q.status) {
-      if (q.status.toLowerCase() === 'ai_verifying') statusConstraint = 'PENDING';
-      else if (q.status.toLowerCase() === 'verified') statusConstraint = 'VERIFIED';
-      else if (q.status.toLowerCase() === 'flagged') statusConstraint = 'REJECTED';
-      else statusConstraint = q.status.toUpperCase();
+      const s = q.status.toLowerCase();
+      if (s === 'ai_verifying') statusConstraint = 'PENDING';
+      else if (s === 'verified') statusConstraint = 'VERIFIED';
+      else if (s === 'flagged') statusConstraint = 'REJECTED';
+      else if (s === 'auto_assigned' || s === 'auto') {
+        assignmentTypeConstraint = 'AUTO';
+      } else {
+        statusConstraint = q.status.toUpperCase();
+      }
     }
 
     const filter = {
       ...where,
       ...(q.wardId ? { wardId: q.wardId } : {}),
+      ...(assignmentTypeConstraint ? { assignmentType: assignmentTypeConstraint } : {}),
       /**
        * A queue is work outstanding, not an archive.
        *
@@ -201,7 +208,11 @@ router.get(
        * officer opening their queue is asking what still needs doing; history
        * stays reachable by naming a status explicitly.
        */
-      ...(statusConstraint ? { status: statusConstraint } : { status: { notIn: ['RESOLVED', 'REJECTED'] } }),
+      ...(statusConstraint
+        ? { status: statusConstraint }
+        : assignmentTypeConstraint
+          ? { status: { notIn: ['REJECTED'] } }
+          : { status: { notIn: ['RESOLVED', 'REJECTED'] } }),
       ...(q.minConfidence != null ? { aiConfidence: { gte: q.minConfidence } } : {}),
       ...(q.category ? { category: q.category } : {}),
       ...(q.severity ? { severity: q.severity } : {}),
@@ -245,6 +256,7 @@ router.get(
         where: filter,
         include: {
           ward: true,
+          detectedWard: true,
           citizen: { select: { id: true, name: true } },
           assignedVehicle: { include: { driver: { select: { id: true, name: true } } } },
         },
@@ -277,6 +289,7 @@ router.get(
       where: { id: req.params.id },
       include: {
         ward: true,
+        detectedWard: true,
         citizen: { select: { id: true, name: true, phone: true, greenCredits: true } },
         assignedVehicle: { include: { driver: { select: { id: true, name: true, phone: true } } } },
         events: { orderBy: { createdAt: 'asc' }, include: { actor: { select: { name: true, role: true } } } },

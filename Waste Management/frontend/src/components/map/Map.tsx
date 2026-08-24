@@ -86,6 +86,18 @@ export const WARD_OUTLINE = '#f97316';
 /** Dark casing drawn under a coloured line so it reads over busy imagery. */
 export const LINE_CASING = { color: '#0b1220', opacity: 0.5, fill: false, interactive: false };
 
+export function RecenterMap({ center, zoom }: { center: [number, number]; zoom?: number }) {
+  const map = useMap();
+  useEffect(() => {
+    // Invalidate size immediately so Leaflet recovers if it was rendered in a hidden tab or mobile viewport
+    map.invalidateSize();
+    if (center && typeof center[0] === 'number' && typeof center[1] === 'number') {
+      map.setView(center, zoom ?? map.getZoom(), { animate: true, duration: 0.6 });
+    }
+  }, [map, center?.[0], center?.[1], zoom]);
+  return null;
+}
+
 export function BaseMap({
   center = CITY_CENTER,
   zoom = 15,
@@ -124,6 +136,7 @@ export function BaseMap({
       ) : (
         <TileLayer url={TILE_URL} attribution={ATTRIBUTION} maxZoom={19} />
       )}
+      <RecenterMap center={center} zoom={zoom} />
       {children}
     </MapContainer>
   );

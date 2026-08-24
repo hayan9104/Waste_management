@@ -131,8 +131,8 @@ export default function OfficerDashboard() {
         )}
       </div>
 
-      {/* KPI row — 2-up on phones, 4-up on desktop. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* KPI row — 1-col on very small phones, 2-col on sm, 4-col on lg. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label="Open complaints"
           value={kpis.openComplaints}

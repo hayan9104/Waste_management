@@ -13,11 +13,13 @@ import {
   Sparkles,
   Trash2,
   Lock,
+  AlertTriangle,
   X,
 } from 'lucide-react';
 import { api, errorMessage, tokenStore } from '../lib/api';
 import { BaseMap, PinMarker, FollowTarget, CITY_CENTER, snapToCity } from './map/Map';
 import { CameraCapture } from './CameraCapture';
+import { validateWastePhoto } from '../lib/format';
 import { toast } from './ui';
 
 /**
@@ -86,44 +88,46 @@ export function ComplaintBookingModal({
   const [locating, setLocating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ code: string; id: string } | null>(null);
+  const [invalidPhotoWarning, setInvalidPhotoWarning] = useState<string | null>(null);
 
   const signedIn = Boolean(tokenStore.get('citizen'));
 
   const locate = useCallback(() => {
     if (!navigator.geolocation) {
-      toast.warn('Geolocation is not supported by your browser.');
+      toast.error('Geolocation is not supported by your browser or device.');
       return;
     }
     setLocating(true);
+
+    const onGpsSuccess = (pos: GeolocationPosition) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
+      setPosition({ lat, lng });
+      setLocating(false);
+      toast.success(`📍 Live Device GPS Locked (±${Math.round(acc || 5)}m): ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    };
+
+    const onGpsError = (err: GeolocationPositionError) => {
+      setLocating(false);
+      if (err.code === 1) {
+        toast.warn('⚠️ Location Permission Blocked. Please allow location access in your browser address bar.');
+      } else {
+        toast.warn('⚠️ Device GPS unavailable. Please ensure device Location is ON and retry.');
+      }
+    };
+
+    // Pure Hardware GPS query — zero IP fake coordinates
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setPosition({ lat, lng });
-        setLocating(false);
-        toast.success(`📍 Live GPS locked: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      onGpsSuccess,
+      () => {
+        navigator.geolocation.getCurrentPosition(
+          onGpsSuccess,
+          onGpsError,
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+        );
       },
-      async (err) => {
-        setLocating(false);
-        if (err.code === 1) {
-          toast.warn('GPS location permission blocked. Please allow location access in your browser address bar.');
-        } else {
-          toast.warn('Could not acquire fast GPS satellite lock. Trying network location…');
-        }
-        // Fallback: try fetching IP-based approximate location if GPS timed out
-        try {
-          const res = await fetch('https://ipapi.co/json/');
-          if (res.ok) {
-            const data = await res.json();
-            if (data.latitude && data.longitude) {
-              setPosition({ lat: Number(data.latitude), lng: Number(data.longitude) });
-            }
-          }
-        } catch {
-          // ignore
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   }, []);
 
@@ -156,7 +160,16 @@ export function ComplaintBookingModal({
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
-  function attach(file: File) {
+  async function attach(file: File) {
+    const quality = await validateWastePhoto(file);
+    if (!quality.valid) {
+      setInvalidPhotoWarning(
+        quality.reason ||
+          'Please take a clear photo of the actual garbage site. Blank, black, or unrelated photos cannot be processed.'
+      );
+      if (fileInput.current) fileInput.current.value = '';
+      return;
+    }
     if (preview) URL.revokeObjectURL(preview);
     setPhoto(file);
     setPreview(URL.createObjectURL(file));
@@ -545,6 +558,46 @@ export function ComplaintBookingModal({
           attach(f);
         }}
       />
+
+      {/* Invalid Photo / Blank Screen Warning Modal */}
+      {invalidPhotoWarning && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl border border-line bg-surface p-6 shadow-2xl text-center space-y-4">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-amber-500/15 text-amber-600">
+              <AlertTriangle className="h-8 w-8" />
+            </div>
+            <div>
+              <h3 className="text-fluid-base font-bold text-ink">Action Required: Genuine Photo Needed</h3>
+              <p className="mt-2 text-fluid-xs text-muted leading-relaxed">
+                {invalidPhotoWarning}
+              </p>
+              <p className="mt-2 text-[11px] text-faint">
+                Please upload only relevant photos of the actual civic waste. Blank, dark, or unrelated test images cannot be accepted for municipal collection dispatch.
+              </p>
+            </div>
+            <div className="pt-2 flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setInvalidPhotoWarning(null);
+                  setCameraOpen(true);
+                }}
+                className="btn-primary w-full py-2.5 text-fluid-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Camera className="h-4 w-4" />
+                <span>Retake Clear Photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInvalidPhotoWarning(null)}
+                className="btn-ghost w-full py-2.5 text-fluid-xs font-semibold cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

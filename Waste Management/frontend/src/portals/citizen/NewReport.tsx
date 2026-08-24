@@ -28,8 +28,8 @@ import {
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, Meter, toast } from '../../components/ui';
 import { CameraCapture } from '../../components/CameraCapture';
-import { BaseMap, PinMarker, FollowTarget, CITY_CENTER, snapToCity } from '../../components/map/Map';
-import { CATEGORY_LABELS, confidenceLabel, formatDistance } from '../../lib/format';
+import { BaseMap, PinMarker, FollowTarget, LocationPicker, CITY_CENTER, snapToCity } from '../../components/map/Map';
+import { CATEGORY_LABELS, confidenceLabel, formatDistance, validateWastePhoto } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
 type Step = 'capture' | 'review' | 'location';
@@ -75,6 +75,9 @@ export default function NewReport() {
   const [duplicate, setDuplicate] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [invalidPhotoWarning, setInvalidPhotoWarning] = useState<string | null>(null);
+  const [gpsRequiredModalOpen, setGpsRequiredModalOpen] = useState(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
 
   useEffect(() => {
     locate();
@@ -85,54 +88,47 @@ export default function NewReport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function fetchIpLocation() {
-    try {
-      const res = await fetch('https://ipapi.co/json/');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.latitude && data.longitude) {
-          return { lat: Number(data.latitude), lng: Number(data.longitude) };
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return null;
-  }
-
   async function locate() {
     if (!navigator.geolocation) {
-      toast.warn('Browser GPS not supported. Fetching approximate location.');
-      const ipPos = await fetchIpLocation();
-      setPosition(ipPos ? { lat: ipPos.lat, lng: ipPos.lng } : { lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
+      toast.error('Geolocation is not supported by your browser or device.');
       return;
     }
     setLocating(true);
+
+    const onGpsSuccess = (pos: GeolocationPosition) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
+      setPosition({ lat, lng });
+      setGpsAccuracy(acc);
+      setGeoDenied(false);
+      setLocating(false);
+      setGpsRequiredModalOpen(false);
+      toast.success(`📍 Real Device GPS Locked (±${Math.round(acc || 5)}m): ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    };
+
+    const onGpsError = (err: GeolocationPositionError) => {
+      setLocating(false);
+      setGeoDenied(true);
+      setGpsRequiredModalOpen(true);
+      if (err.code === 1) {
+        toast.warn('⚠️ Location Permission Denied! Please click the lock icon in the address bar and allow Location Access.');
+      } else {
+        toast.warn('⚠️ Device GPS unavailable. Please turn ON your phone location and retry.');
+      }
+    };
+
+    // Pure Hardware GPS query — zero IP fake coordinates
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setPosition({ lat, lng });
-        setGeoDenied(false);
-        setLocating(false);
-        toast.success(`📍 Live GPS Locked: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      onGpsSuccess,
+      () => {
+        navigator.geolocation.getCurrentPosition(
+          onGpsSuccess,
+          onGpsError,
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+        );
       },
-      async (err) => {
-        setLocating(false);
-        if (err.code === 1) {
-          setGeoDenied(true);
-          toast.warn('Browser Location Blocked! Please allow location permission in URL bar.');
-        } else {
-          toast.warn('Location fix delayed — using network approximate location.');
-        }
-        const ipPos = await fetchIpLocation();
-        if (ipPos) {
-          setPosition({ lat: ipPos.lat, lng: ipPos.lng });
-        } else if (!position) {
-          setPosition({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   }
 
@@ -189,6 +185,16 @@ export default function NewReport() {
   }
 
   async function onPhoto(selected: File) {
+    const quality = await validateWastePhoto(selected);
+    if (!quality.valid) {
+      setInvalidPhotoWarning(
+        quality.reason ||
+          'Please take a clear photo of the actual garbage site. Blank, black, or unrelated photos cannot be processed.'
+      );
+      if (fileInput.current) fileInput.current.value = '';
+      return;
+    }
+
     setFile(selected);
     const objectUrl = URL.createObjectURL(selected);
     setPreview(objectUrl);
@@ -587,7 +593,12 @@ export default function NewReport() {
               <button
                 type="button"
                 onClick={() => {
-                  if (position) void checkForDuplicates(position);
+                  if (!position || geoDenied) {
+                    setGpsRequiredModalOpen(true);
+                    void locate();
+                    return;
+                  }
+                  void checkForDuplicates(position);
                   setStep('location');
                 }}
                 className="btn-primary w-full py-3 text-fluid-sm font-bold shadow-md shadow-brand/20 flex items-center justify-center gap-2 cursor-pointer"
@@ -610,33 +621,39 @@ export default function NewReport() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-fluid-sm font-bold text-ink flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-brand" /> Auto-Detected GPS Location
+                      <MapPin className="h-4 w-4 text-brand" /> Waste Location Pin
                     </h3>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-ok/30 bg-ok/10 px-2 py-0.5 text-[10px] font-bold text-ok">
-                      <Lock className="h-3 w-3" /> Locked
+                    <span className="inline-flex items-center gap-1 rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">
+                      <Crosshair className="h-3 w-3" /> Live GPS Active
                     </span>
                   </div>
                   <p className="text-[11px] text-muted">
-                    Coordinates auto-detected from your device GPS for accurate truck dispatch.
+                    Tap anywhere on the satellite map if you need to fine-tune the exact pin.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={locate}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-elevated px-3 py-1.5 text-fluid-xs font-semibold text-ink hover:bg-sunken shadow-xs cursor-pointer"
+                  disabled={locating}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-elevated px-3 py-1.5 text-fluid-xs font-semibold text-ink hover:bg-sunken shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  <Crosshair className="h-3.5 w-3.5 text-brand" /> Recenter GPS
+                  {locating ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" /> : <Crosshair className="h-3.5 w-3.5 text-brand" />}
+                  <span>{locating ? 'Acquiring GPS…' : 'Recenter GPS'}</span>
                 </button>
               </div>
 
               <div className="h-[360px] w-full overflow-hidden rounded-2xl border border-line">
-                <BaseMap center={position ? [position.lat, position.lng] : CITY_CENTER} zoom={16}>
+                <BaseMap center={position ? [position.lat, position.lng] : CITY_CENTER} zoom={17}>
                   {position && (
                     <>
-                      <PinMarker
+                      <LocationPicker
                         latitude={position.lat}
                         longitude={position.lng}
-                        label="Auto-Detected GPS Location (Locked)"
+                        onChange={(lat, lng) => {
+                          setPosition({ lat, lng });
+                          void checkForDuplicates({ lat, lng });
+                          toast.info('📍 Pinned location updated');
+                        }}
                       />
                       <FollowTarget latitude={position.lat} longitude={position.lng} />
                     </>
@@ -646,7 +663,7 @@ export default function NewReport() {
 
               <div className="flex items-center justify-between rounded-xl border border-line bg-sunken/60 px-3 py-2 text-fluid-xs text-muted">
                 <span className="flex items-center gap-1.5 font-semibold text-ink">
-                  <Lock className="h-3.5 w-3.5 text-brand" /> GPS Coordinates Locked
+                  <MapPin className="h-3.5 w-3.5 text-brand" /> Target Coordinates
                 </span>
                 <span className="font-mono text-[11px]">
                   {position ? `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}` : 'Acquiring GPS…'}
@@ -722,6 +739,99 @@ export default function NewReport() {
                 )}
               </button>
             </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Invalid Photo / Blank Screen Warning Modal */}
+      {invalidPhotoWarning && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl border border-line bg-surface p-6 shadow-2xl text-center space-y-4">
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-amber-500/15 text-amber-600">
+              <AlertTriangle className="h-8 w-8" />
+            </div>
+            <div>
+              <h3 className="text-fluid-base font-bold text-ink">Action Required: Genuine Photo Needed</h3>
+              <p className="mt-2 text-fluid-xs text-muted leading-relaxed">
+                {invalidPhotoWarning}
+              </p>
+              <p className="mt-2 text-[11px] text-faint">
+                Please upload only relevant photos of the actual garbage site. Blank, dark, or unrelated test images cannot be accepted for municipal collection dispatch.
+              </p>
+            </div>
+            <div className="pt-2 flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setInvalidPhotoWarning(null);
+                  setCameraOpen(true);
+                }}
+                className="btn-primary w-full py-2.5 text-fluid-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Camera className="h-4 w-4" />
+                <span>Retake Clear Photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInvalidPhotoWarning(null)}
+                className="btn-ghost w-full py-2.5 text-fluid-xs font-semibold cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= COMPULSORY DEVICE GPS MODAL ================= */}
+      {gpsRequiredModalOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl border-2 border-brand/40 bg-surface p-6 shadow-2xl space-y-4 animate-scale-in">
+            <div className="flex items-center gap-3">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand/15 text-brand shadow-xs">
+                <MapPin className="h-6 w-6 animate-bounce" />
+              </span>
+              <div>
+                <h3 className="text-fluid-base font-extrabold text-ink">Turn On Device GPS</h3>
+                <p className="text-fluid-xs text-muted">Compulsory for Complaint Dispatch</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-sunken/70 p-4 text-fluid-xs text-ink space-y-2.5">
+              <p className="font-semibold text-brand">Why is your live location compulsory?</p>
+              <p className="text-muted leading-relaxed">
+                To guarantee that the municipal garbage truck is sent directly to your location, your phone/device GPS must be turned on.
+              </p>
+              <div className="space-y-2 pt-1 text-muted">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand font-bold text-[10px]">1</span>
+                  <span>Turn ON <strong>Location / GPS</strong> in your phone settings.</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand font-bold text-[10px]">2</span>
+                  <span>Allow location permission when prompted in browser.</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={locate}
+              disabled={locating}
+              className="btn-primary w-full py-3.5 text-fluid-sm font-bold shadow-lg shadow-brand/25 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {locating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Detecting Live Device GPS…</span>
+                </>
+              ) : (
+                <>
+                  <Crosshair className="h-4 w-4" />
+                  <span>Turn On & Detect My Live Location</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       )}
