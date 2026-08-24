@@ -6,6 +6,7 @@ import { api, errorMessage } from '../../lib/api';
 import { Card, toast } from '../../components/ui';
 import { CameraCapture } from '../../components/CameraCapture';
 import { BackLink } from '../../components/shells';
+import { CITY_CENTER, snapToCity } from '../../components/map/Map';
 
 /**
  * The red button (plan §2.1). These four categories bypass the normal queue and
@@ -34,8 +35,12 @@ export default function EmergencyReport() {
 
   function locate() {
     navigator.geolocation?.getCurrentPosition(
-      (pos) => setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setPosition({ lat: 23.0225, lng: 72.5714 }),
+      (pos) => {
+        const snapped = snapToCity(pos.coords.latitude, pos.coords.longitude);
+        if (snapped.moved) toast.warn('You appear to be outside Gandhinagar — the pin was moved to the nearest point inside the city.');
+        setPosition({ lat: snapped.lat, lng: snapped.lng });
+      },
+      () => setPosition({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] }),
       { enableHighAccuracy: true, timeout: 8000 }
     );
   }

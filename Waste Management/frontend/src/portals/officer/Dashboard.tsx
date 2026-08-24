@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Clock, Eye, Siren, Truck, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, Card, ErrorState, Loading, SectionTitle, Stat, toast } from '../../components/ui';
-import { BaseMap, WardLayer, ComplaintLayer, TruckMarker, FitBounds } from '../../components/map/Map';
+import { BaseMap, WardLayer, ComplaintLayer, TruckMarker, FitBounds, CITY_CENTER } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, pct, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
@@ -105,7 +105,7 @@ export default function OfficerDashboard() {
           </div>
 
           <div className="h-[52dvh] min-h-[320px] w-full xl:h-[560px]">
-            <BaseMap center={[23.0225, 72.5714]} zoom={12}>
+            <BaseMap center={CITY_CENTER} zoom={12}>
               <FitBounds points={mapPoints} />
               {wards.data && (
                 <WardLayer

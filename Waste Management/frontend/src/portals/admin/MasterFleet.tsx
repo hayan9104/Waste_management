@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, Truck, Wifi, WifiOff, Wrench, MapPin, Filter, Route as RouteIcon, X } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
-import { BaseMap, TruckMarker, StopDot, FitBounds, RouteLine, Polyline } from '../../components/map/Map';
+import { BaseMap, TruckMarker, StopDot, FitBounds, RouteLine, Polyline, CITY_CENTER } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { timeAgo, CATEGORY_LABELS } from '../../lib/format';
 
@@ -147,7 +147,7 @@ export default function MasterFleet() {
         </div>
 
         <div className="h-[44dvh] min-h-[320px] w-full xl:h-[420px]">
-          <BaseMap center={[23.0225, 72.5714]} zoom={12} satellite>
+          <BaseMap center={CITY_CENTER} zoom={12} satellite>
             {mapPoints.length > 0 && <FitBounds points={mapPoints} />}
 
             {/* The selected vehicle's actual planned route, drawn on the road. */}

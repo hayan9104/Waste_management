@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
-import { BaseMap, TruckMarker, RouteLine, StopDot, FollowTarget, FlyTo } from '../../components/map/Map';
+import { BaseMap, TruckMarker, RouteLine, StopDot, FollowTarget, FlyTo, CITY_CENTER } from '../../components/map/Map';
 import { CameraCapture } from '../../components/CameraCapture';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { CATEGORY_LABELS, formatDistance, timeAgo, distanceMeters } from '../../lib/format';
@@ -172,7 +172,7 @@ export default function DriverRoute() {
     ? [live.latitude, live.longitude]
     : polyline[0]
       ? [polyline[0][1], polyline[0][0]]
-      : [23.0225, 72.5714];
+      : CITY_CENTER;
 
   const resolvedCount = assignedStops.filter((s: any) => s.status === 'DONE').length;
   const totalStops = assignedStops.length;

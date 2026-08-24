@@ -44,14 +44,14 @@ export interface ScheduledRequest {
   createdAt: string;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; tone: 'brand' | 'ok' | 'warn' | 'danger' | 'muted' }> = {
+const STATUS_CONFIG: Record<string, { label: string; tone: 'brand' | 'ok' | 'warn' | 'danger' | 'neutral' }> = {
   PENDING_REVIEW: { label: 'Pending Review', tone: 'warn' },
   APPROVED_SCHEDULED: { label: 'Approved (Needs Driver)', tone: 'ok' },
   ASSIGNED: { label: 'Driver Assigned', tone: 'brand' },
   IN_PROGRESS: { label: 'In Progress', tone: 'brand' },
   COMPLETED: { label: 'Completed', tone: 'ok' },
   REJECTED: { label: 'Rejected', tone: 'danger' },
-  CANCELLED: { label: 'Cancelled by Citizen', tone: 'muted' },
+  CANCELLED: { label: 'Cancelled by Citizen', tone: 'neutral' },
 };
 
 const TIME_SLOT_LABELS = {
@@ -227,7 +227,7 @@ export default function ScheduledRequests() {
       {!isLoading && filtered.length > 0 && (
         <div className="space-y-4">
           {filtered.map((item) => {
-            const statusMeta = STATUS_CONFIG[item.status] || { label: item.status, tone: 'muted' as const };
+            const statusMeta = STATUS_CONFIG[item.status] || { label: item.status, tone: 'neutral' as const };
             const dateObj = new Date(item.scheduledDate);
 
             return (

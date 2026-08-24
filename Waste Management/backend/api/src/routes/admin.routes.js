@@ -16,6 +16,7 @@ import { polygonBBox, polygonCentroid } from '../lib/geo.js';
 import { aiHealth } from '../services/ai.service.js';
 import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
 import env from '../config/env.js';
+import { CITY } from '../seed/city.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -521,7 +522,7 @@ router.get(
       title: 'SWM Rules ward-wise compliance summary',
       generatedAt: new Date(),
       periodDays: days,
-      city: 'Ahmedabad',
+      city: CITY.name,
       rows,
       totals: {
         ...totals,

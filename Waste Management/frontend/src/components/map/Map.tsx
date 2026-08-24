@@ -26,7 +26,56 @@ const SATELLITE_ATTRIBUTION = 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Ea
 const SATELLITE_LABELS_URL =
   'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 
-export const CITY_CENTER: [number, number] = [23.0225, 72.5714];
+/**
+ * Gandhinagar, Gujarat — the only city this deployment serves.
+ *
+ * Kept in lockstep with `backend/api/src/seed/city.js` (CITY.center /
+ * CITY_BOUNDS). Every map in every portal centres here, and `CITY_BOUNDS`
+ * is handed to Leaflet as `maxBounds` so a user cannot drag the viewport
+ * out to Ahmedabad — or the Pacific — and then pin a report there.
+ */
+export const CITY_CENTER: [number, number] = [23.2156, 72.6369];
+
+/** [[south, west], [north, east]] — Gandhinagar's built-up area plus a margin. */
+export const CITY_BOUNDS: [[number, number], [number, number]] = [
+  [23.14, 72.56],
+  [23.29, 72.72],
+];
+
+/**
+ * Below this the whole district would no longer fill the frame — Leaflet
+ * fights `maxBounds` when the viewport is larger than the bounds, so the
+ * floor has to be set rather than left at Leaflet's default of 0.
+ */
+export const CITY_MIN_ZOOM = 11;
+
+/** True when a coordinate falls inside the Gandhinagar envelope above. */
+export function isInsideCity(latitude?: number | null, longitude?: number | null): boolean {
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') return false;
+  const [[south, west], [north, east]] = CITY_BOUNDS;
+  return latitude >= south && latitude <= north && longitude >= west && longitude <= east;
+}
+
+/** Clamps any coordinate back onto the city — used for GPS fixes taken outside it. */
+export function clampToCity(latitude: number, longitude: number): [number, number] {
+  const [[south, west], [north, east]] = CITY_BOUNDS;
+  return [Math.min(Math.max(latitude, south), north), Math.min(Math.max(longitude, west), east)];
+}
+
+/**
+ * Snaps a raw GPS/IP fix onto Gandhinagar and says whether it had to move.
+ *
+ * Clamping rather than rejecting is deliberate: someone demoing or testing
+ * from outside the city would otherwise be unable to file anything at all,
+ * and a pin outside `CITY_BOUNDS` is one the fenced map cannot even pan to.
+ * `moved` is returned so the caller can say so out loud instead of silently
+ * relocating the user.
+ */
+export function snapToCity(latitude: number, longitude: number): { lat: number; lng: number; moved: boolean } {
+  const moved = !isInsideCity(latitude, longitude);
+  const [lat, lng] = clampToCity(latitude, longitude);
+  return { lat, lng, moved };
+}
 
 /**
  * Ward outlines are orange, not the brand green: on aerial imagery a green line
@@ -60,6 +109,12 @@ export function BaseMap({
       center={center}
       zoom={zoom}
       scrollWheelZoom={scrollWheelZoom}
+      /* Gandhinagar-only deployment: the viewport is fenced to the city so no
+         portal can pan away and act on a location the fleet does not serve.
+         viscosity 1 makes the edge a hard wall rather than a rubber band. */
+      maxBounds={CITY_BOUNDS}
+      maxBoundsViscosity={1}
+      minZoom={CITY_MIN_ZOOM}
       /* The marker class is what stops index.css inverting these tiles for the
          AMOLED theme — that trick turns a street map dark, but it turns aerial
          photography into a colour negative. */

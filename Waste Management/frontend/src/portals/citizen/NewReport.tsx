@@ -27,7 +27,7 @@ import {
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, Meter, toast } from '../../components/ui';
 import { CameraCapture } from '../../components/CameraCapture';
-import { BaseMap, LocationPicker } from '../../components/map/Map';
+import { BaseMap, LocationPicker, CITY_CENTER, snapToCity } from '../../components/map/Map';
 import { CATEGORY_LABELS, confidenceLabel, formatDistance } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
@@ -103,13 +103,16 @@ export default function NewReport() {
     if (!navigator.geolocation) {
       toast.warn('Browser GPS not supported. Fetching approximate city location.');
       const ipPos = await fetchIpLocation();
-      setPosition(ipPos || { lat: 23.0225, lng: 72.5714 });
+      const snapped = ipPos ? snapToCity(ipPos.lat, ipPos.lng) : null;
+      setPosition(snapped ? { lat: snapped.lat, lng: snapped.lng } : { lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
       return;
     }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const snapped = snapToCity(pos.coords.latitude, pos.coords.longitude);
+        if (snapped.moved) toast.warn('You appear to be outside Gandhinagar — the pin was moved to the nearest point inside the city.');
+        setPosition({ lat: snapped.lat, lng: snapped.lng });
         setGeoDenied(false);
         setLocating(false);
       },
@@ -123,9 +126,10 @@ export default function NewReport() {
         }
         const ipPos = await fetchIpLocation();
         if (ipPos) {
-          setPosition(ipPos);
+          const snapped = snapToCity(ipPos.lat, ipPos.lng);
+          setPosition({ lat: snapped.lat, lng: snapped.lng });
         } else if (!position) {
-          setPosition({ lat: 23.0225, lng: 72.5714 });
+          setPosition({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
         }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -619,10 +623,10 @@ export default function NewReport() {
               </div>
 
               <div className="h-[360px] w-full overflow-hidden rounded-2xl border border-line">
-                <BaseMap center={position ? [position.lat, position.lng] : [23.0225, 72.5714]} zoom={16}>
+                <BaseMap center={position ? [position.lat, position.lng] : CITY_CENTER} zoom={16}>
                   <LocationPicker
-                    latitude={(position ?? { lat: 23.0225, lng: 72.5714 }).lat}
-                    longitude={(position ?? { lat: 23.0225, lng: 72.5714 }).lng}
+                    latitude={(position ?? { lat: CITY_CENTER[0], lng: CITY_CENTER[1] }).lat}
+                    longitude={(position ?? { lat: CITY_CENTER[0], lng: CITY_CENTER[1] }).lng}
                     onChange={(lat, lng) => {
                       const next = { lat, lng };
                       setPosition(next);

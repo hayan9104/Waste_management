@@ -44,14 +44,14 @@ export interface ScheduledPickupItem {
   createdAt: string;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; tone: 'brand' | 'ok' | 'warn' | 'danger' | 'muted' }> = {
+const STATUS_CONFIG: Record<string, { label: string; tone: 'brand' | 'ok' | 'warn' | 'danger' | 'neutral' }> = {
   PENDING_REVIEW: { label: 'Pending Review', tone: 'warn' },
   APPROVED_SCHEDULED: { label: 'Approved & Scheduled', tone: 'ok' },
   ASSIGNED: { label: 'Driver Assigned', tone: 'brand' },
   IN_PROGRESS: { label: 'Collection in Progress', tone: 'brand' },
   COMPLETED: { label: 'Completed (+25 Credits)', tone: 'ok' },
   REJECTED: { label: 'Not Accommodated', tone: 'danger' },
-  CANCELLED: { label: 'Cancelled', tone: 'muted' },
+  CANCELLED: { label: 'Cancelled', tone: 'neutral' },
 };
 
 const TIME_SLOT_LABELS = {
@@ -143,7 +143,7 @@ export default function MyScheduledRequests() {
       {!isLoading && items.length > 0 && (
         <div className="space-y-4">
           {items.map((item) => {
-            const statusMeta = STATUS_CONFIG[item.status] || { label: item.status, tone: 'muted' as const };
+            const statusMeta = STATUS_CONFIG[item.status] || { label: item.status, tone: 'neutral' as const };
             const dateObj = new Date(item.scheduledDate);
             const isUpcoming = dateObj.getTime() >= Date.now();
             const hoursUntil = Math.round((dateObj.getTime() - Date.now()) / 3600_000);

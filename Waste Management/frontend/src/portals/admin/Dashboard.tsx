@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Building2, CheckCircle2, Siren, Truck, Users, Clock, RefreshCw, Loader2 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
 import { Badge, Card, ErrorState, Loading, SectionTitle, Stat, toast } from '../../components/ui';
-import { BaseMap, WardLayer, TruckMarker, FitBounds } from '../../components/map/Map';
+import { BaseMap, WardLayer, TruckMarker, FitBounds, CITY_CENTER } from '../../components/map/Map';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 import { pct, formatDuration } from '../../lib/format';
 
@@ -80,7 +80,7 @@ export default function AdminDashboard() {
             </Badge>
           </div>
           <div className="h-[52dvh] min-h-[320px] w-full xl:h-[560px]">
-            <BaseMap center={[23.0225, 72.5714]} zoom={12}>
+            <BaseMap center={CITY_CENTER} zoom={12}>
               <FitBounds points={wards.map((w: any) => [w.center.latitude, w.center.longitude])} />
               <WardLayer
                 wards={wards}
