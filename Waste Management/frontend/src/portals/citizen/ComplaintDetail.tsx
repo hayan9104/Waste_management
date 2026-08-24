@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { Check, MapPin, Sparkles, Truck, Users } from 'lucide-react';
 import { api, assetUrl } from '../../lib/api';
-import { Badge, Card, ErrorState, Loading, Meter } from '../../components/ui';
+import { Badge, Card, ErrorState, EvidencePhoto, Loading, Meter } from '../../components/ui';
 import { BackLink } from '../../components/shells';
 import { BaseMap, PinMarker } from '../../components/map/Map';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, formatDateTime, timeAgo } from '../../lib/format';
@@ -57,7 +57,7 @@ export default function ComplaintDetail() {
           <div className={`grid ${data.resolutionPhotoUrl ? 'grid-cols-2 divide-x divide-line' : 'grid-cols-1'}`}>
             {data.photoUrl && (
               <div className="relative">
-                <img src={assetUrl(data.photoUrl)} alt="Citizen Reported Issue" className="aspect-[4/3] w-full object-cover" />
+                <EvidencePhoto src={assetUrl(data.photoUrl)} alt="Citizen Reported Issue" className="aspect-[4/3] w-full object-cover" />
                 <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-bold tracking-wider text-white uppercase backdrop-blur-sm">
                   1. Citizen Photo
                 </span>
@@ -65,7 +65,7 @@ export default function ComplaintDetail() {
             )}
             {data.resolutionPhotoUrl && (
               <div className="relative">
-                <img src={assetUrl(data.resolutionPhotoUrl)} alt="Driver Cleaned Proof" className="aspect-[4/3] w-full object-cover" />
+                <EvidencePhoto src={assetUrl(data.resolutionPhotoUrl)} alt="Driver Cleaned Proof" className="aspect-[4/3] w-full object-cover" />
                 <span className="absolute bottom-2 left-2 rounded-md bg-emerald-600/90 px-2 py-0.5 text-[10px] font-bold tracking-wider text-white uppercase backdrop-blur-sm">
                   2. Driver Cleaned Proof ✅
                 </span>
@@ -166,7 +166,7 @@ export default function ComplaintDetail() {
             <Check className="h-4 w-4 text-ok" />
             <p className="text-fluid-sm font-semibold">Proof of resolution</p>
           </div>
-          <img src={assetUrl(data.resolutionPhotoUrl)} alt="Resolved" className="aspect-[4/3] w-full object-cover" />
+          <EvidencePhoto src={assetUrl(data.resolutionPhotoUrl)} alt="Resolved" className="aspect-[4/3] w-full object-cover" />
         </Card>
       )}
 

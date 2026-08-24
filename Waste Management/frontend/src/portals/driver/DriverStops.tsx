@@ -16,7 +16,9 @@ import {
   CalendarDays,
 } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading, Modal, toast } from '../../components/ui';
+import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Modal, toast } from '../../components/ui';
+import { LocationModal } from '../../components/LocationModal';
+import { CameraCapture } from '../../components/CameraCapture';
 import { STATUS_TONE, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
@@ -29,11 +31,18 @@ export default function DriverStops() {
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'>('ALL');
   const todayStr = new Date().toISOString().slice(0, 10);
   const [dateFilter, setDateFilter] = useState<string>(todayStr);
-  const [allDates, setAllDates] = useState(false);
+  // Defaults to showing every date, not just today's. A task is created the
+  // moment a citizen reports it and can sit pending for days before an
+  // officer assigns it — scoping the driver's worklist to "created today"
+  // silently hid real pending and just-completed work that happened to be
+  // reported (or resolved) on an earlier day.
+  const [allDates, setAllDates] = useState(true);
   const [resolving, setResolving] = useState<any | null>(null);
+  const [locating, setLocating] = useState<any | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [note, setNote] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['driver', 'tasks', filter],
@@ -323,7 +332,7 @@ export default function DriverStops() {
                           rel="noopener noreferrer"
                           className="shrink-0 overflow-hidden rounded-xl border border-line"
                         >
-                          <img
+                          <EvidencePhoto
                             src={assetUrl(task.photoUrl)}
                             alt="Waste photo"
                             className="h-20 w-20 sm:h-24 sm:w-24 object-cover transition hover:scale-105"
@@ -337,14 +346,13 @@ export default function DriverStops() {
                         phone, split left/right once there's room for a
                         single row. */}
                     <div className="mt-4 flex flex-col gap-2 border-t border-line/60 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                      <a
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${task.latitude},${task.longitude}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => setLocating(task)}
                         className="btn-ghost btn-sm flex min-h-touch items-center justify-center gap-1.5 rounded-xl border border-line text-fluid-xs font-semibold hover:bg-sunken sm:min-h-0"
                       >
-                        <Navigation className="h-3.5 w-3.5 text-brand" /> GPS Directions
-                      </a>
+                        <Navigation className="h-3.5 w-3.5 text-brand" /> Locate on Map
+                      </button>
 
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         {!isDone && !inProg && (
@@ -421,6 +429,18 @@ export default function DriverStops() {
         </div>
       </div>
 
+      {/* Locate-on-map popup — no more leaving the app for a single pin. */}
+      {locating && (
+        <LocationModal
+          open={Boolean(locating)}
+          onClose={() => setLocating(null)}
+          latitude={locating.latitude}
+          longitude={locating.longitude}
+          title={`#${locating.code}`}
+          subtitle={locating.address || 'Reported location'}
+        />
+      )}
+
       {/* Completion Modal */}
       {resolving && (
         <Modal
@@ -453,7 +473,6 @@ export default function DriverStops() {
               ref={fileInput}
               type="file"
               accept="image/*"
-              capture="environment"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -463,13 +482,22 @@ export default function DriverStops() {
                 }
               }}
             />
+            <CameraCapture
+              open={cameraOpen}
+              onClose={() => setCameraOpen(false)}
+              onCapture={(f) => {
+                setCameraOpen(false);
+                setPhoto(f);
+                setPreview(URL.createObjectURL(f));
+              }}
+            />
 
             {preview ? (
               <div className="relative overflow-hidden rounded-2xl border border-line">
                 <img src={preview} alt="Clean proof" className="h-48 w-full object-cover" />
                 <button
                   type="button"
-                  onClick={() => fileInput.current?.click()}
+                  onClick={() => setCameraOpen(true)}
                   className="absolute bottom-2 right-2 rounded-xl bg-black/70 px-3 py-1.5 text-fluid-xs font-bold text-white backdrop-blur"
                 >
                   Retake Photo
@@ -478,11 +506,20 @@ export default function DriverStops() {
             ) : (
               <button
                 type="button"
-                onClick={() => fileInput.current?.click()}
+                onClick={() => setCameraOpen(true)}
                 className="flex h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-brand/40 bg-brand/5 text-brand transition hover:bg-brand/10"
               >
                 <Camera className="h-8 w-8" />
                 <span className="text-fluid-xs font-bold">Take Clean Proof Photo</span>
+              </button>
+            )}
+            {!preview && (
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                className="block w-full text-center text-fluid-xs font-semibold text-muted underline decoration-dotted underline-offset-4 hover:text-brand"
+              >
+                Or choose an existing photo instead
               </button>
             )}
 

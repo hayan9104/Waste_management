@@ -394,6 +394,23 @@ export function FollowTarget({ latitude, longitude, enabled = true, zoom }: { la
   return null;
 }
 
+/**
+ * One-shot pan/zoom to a point, triggered by a click elsewhere on the page
+ * (e.g. a "Navigate" button next to a stop) rather than by a continuously
+ * moving target — that's FollowTarget's job. Keyed by `nonce` so clicking the
+ * same stop twice in a row still re-centres it, even though lat/lng didn't
+ * change.
+ */
+export function FlyTo({ target, zoom = 17 }: { target: { latitude: number; longitude: number; nonce: number } | null; zoom?: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!target) return;
+    map.flyTo([target.latitude, target.longitude], zoom, { animate: true, duration: 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, target?.nonce]);
+  return null;
+}
+
 /** Fits the map to everything it has been given, once. */
 export function FitBounds({ points }: { points: Array<[number, number]> }) {
   const map = useMap();

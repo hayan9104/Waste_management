@@ -110,7 +110,7 @@ export default function Fleet() {
                   latitude={v.latitude}
                   longitude={v.longitude}
                   heading={v.heading ?? 0}
-                  active={v.status === 'ON_ROUTE'}
+                  active={v.status === 'ON_ROUTE' && !v.isOffline}
                   label={`${v.registrationNumber} · ${v.driver?.name ?? 'unassigned'}`}
                 />
               ))}
@@ -128,7 +128,7 @@ export default function Fleet() {
               <div className="flex items-start gap-3">
                 <span
                   className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
-                    v.status === 'ON_ROUTE' ? 'bg-brand/10 text-brand' : 'bg-sunken text-muted'
+                    v.status === 'ON_ROUTE' && !v.isOffline ? 'bg-brand/10 text-brand' : 'bg-sunken text-muted'
                   }`}
                 >
                   <Truck className="h-5 w-5" />
@@ -137,9 +137,9 @@ export default function Fleet() {
                   <p className="truncate font-mono text-fluid-sm font-semibold">{v.registrationNumber}</p>
                   <p className="truncate text-fluid-xs text-muted">{v.model} · {v.capacityKg} kg</p>
                 </div>
-                <Badge tone={v.online ? 'ok' : 'neutral'}>
-                  {v.online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-                  {v.online ? 'Live' : 'Offline'}
+                <Badge tone={!v.isOffline ? 'ok' : 'neutral'}>
+                  {!v.isOffline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                  {!v.isOffline ? 'Live' : 'Offline'}
                 </Badge>
               </div>
 
@@ -150,7 +150,15 @@ export default function Fleet() {
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-muted">Status</dt>
-                  <dd><Badge tone={v.status === 'ON_ROUTE' ? 'ok' : v.status === 'MAINTENANCE' ? 'warn' : 'neutral'}>{v.status}</Badge></dd>
+                  <dd>
+                    {/* ON_ROUTE without a live GPS signal to back it up is a
+                        guess, not a status -- withheld rather than shown stale. */}
+                    {v.isOffline && v.status === 'ON_ROUTE' ? (
+                      <span className="text-fluid-xs text-faint">—</span>
+                    ) : (
+                      <Badge tone={v.status === 'ON_ROUTE' ? 'ok' : v.status === 'MAINTENANCE' ? 'warn' : 'neutral'}>{v.status}</Badge>
+                    )}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-muted">Open stops</dt>
@@ -163,8 +171,12 @@ export default function Fleet() {
               </dl>
 
               {v.maintenanceFlag && (
-                <p className="mt-2 flex items-center gap-1.5 rounded-lg border border-warn/30 bg-warn/10 p-2 text-fluid-xs text-warn">
-                  <Wrench className="h-3.5 w-3.5" /> Flagged for maintenance
+                <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-warn/30 bg-warn/10 p-2 text-fluid-xs text-warn">
+                  <Wrench className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-semibold">Flagged for maintenance.</span> Not eligible for route
+                    assignment until cleared — back in service shortly.
+                  </span>
                 </p>
               )}
 

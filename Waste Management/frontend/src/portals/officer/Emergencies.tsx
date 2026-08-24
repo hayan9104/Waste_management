@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Clock, Siren, Truck, Phone } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading, Meter, toast } from '../../components/ui';
+import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, toast } from '../../components/ui';
+import { LocationModal } from '../../components/LocationModal';
 import { STATUS_TONE, timeAgo, formatDuration } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
@@ -16,6 +17,7 @@ export default function Emergencies() {
   const t = useT();
   const queryClient = useQueryClient();
   const [now, setNow] = useState(Date.now());
+  const [locating, setLocating] = useState<{ latitude: number; longitude: number; title: string; subtitle?: string } | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -91,7 +93,7 @@ export default function Emergencies() {
         <Card className={`p-4 ${overdue ? 'border-danger/60' : 'border-warn/40'}`}>
           <div className="flex items-start gap-3">
             {c.photoUrl ? (
-              <img src={assetUrl(c.photoUrl)} alt="" className="h-20 w-20 shrink-0 rounded-xl object-cover" />
+              <EvidencePhoto src={assetUrl(c.photoUrl)} alt="" className="h-20 w-20 shrink-0 rounded-xl object-cover" />
             ) : (
               <span className="grid h-20 w-20 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger">
                 <Siren className="h-7 w-7" />
@@ -125,14 +127,13 @@ export default function Emergencies() {
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <a
-              href={`https://www.google.com/maps?q=${c.latitude},${c.longitude}`}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => setLocating({ latitude: c.latitude, longitude: c.longitude, title: c.code, subtitle: c.address })}
               className="btn-ghost btn-sm"
             >
               <Truck className="h-3.5 w-3.5" /> Locate
-            </a>
+            </button>
             <button
               type="button"
               className="btn-primary btn-sm"
@@ -178,14 +179,20 @@ export default function Emergencies() {
                           <Phone className="h-3.5 w-3.5" /> Call
                         </a>
                       )}
-                      <a
-                        href={`https://www.google.com/maps?q=${alert.latitude},${alert.longitude}`}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLocating({
+                            latitude: alert.latitude,
+                            longitude: alert.longitude,
+                            title: alert.driver?.name || 'Driver SOS',
+                            subtitle: alert.vehicle?.registrationNumber,
+                          })
+                        }
                         className="btn-ghost btn-sm"
                       >
                         Locate
-                      </a>
+                      </button>
                       <button
                         type="button"
                         className="btn-danger btn-sm"
@@ -234,6 +241,17 @@ export default function Emergencies() {
           </p>
           <ul className="grid gap-3 lg:grid-cols-2">{breaches.map(renderComplaint)}</ul>
         </section>
+      )}
+
+      {locating && (
+        <LocationModal
+          open={Boolean(locating)}
+          onClose={() => setLocating(null)}
+          latitude={locating.latitude}
+          longitude={locating.longitude}
+          title={locating.title}
+          subtitle={locating.subtitle}
+        />
       )}
     </div>
   );

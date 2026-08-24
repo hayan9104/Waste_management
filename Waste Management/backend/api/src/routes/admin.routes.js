@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../middleware/error.js';
@@ -13,6 +15,7 @@ import { revokeAllSessions } from '../lib/tokens.js';
 import { polygonBBox, polygonCentroid } from '../lib/geo.js';
 import { aiHealth } from '../services/ai.service.js';
 import { ensureRoadSnappedPolyline } from '../services/routing.service.js';
+import env from '../config/env.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -267,7 +270,7 @@ router.post(
         role: body.role,
         passwordHash: await hashPassword(body.password),
         wardId: body.wardId,
-        emailVerifiedAt: body.role === 'DRIVER' ? null : new Date(),
+        emailVerifiedAt: new Date(),
       },
     });
 
@@ -652,6 +655,105 @@ router.post(
     runSeed()
       .then((summary) => console.log('[admin] re-seed complete:', JSON.stringify(summary)))
       .catch((err) => console.error('[admin] re-seed failed:', err));
+  })
+);
+
+/**
+ * Backfills photoUrl on any complaint that was seeded before the mock photo
+ * pool existed (or otherwise never got one) — targeted and additive, unlike
+ * /reseed-demo-data it never wipes anything, so it's safe to run against a
+ * database that already has real live-tested state on it.
+ *
+ * Fire-and-forget like /reseed-demo-data: a database with months of seeded
+ * history can mean thousands of individual complaint rows, each needing its
+ * own UPDATE (a random per-row pick isn't expressible as one updateMany) —
+ * comfortably past any HTTP request timeout, so the response returns
+ * immediately and the real work logs its progress server-side.
+ */
+router.post(
+  '/backfill-photos',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    res.json({ ok: true, message: 'Photo backfill started in the background -- check the server Logs for progress and a final summary.' });
+
+    (async () => {
+      const { buildPhotoPool } = await import('../seed/seed.js');
+      const pool = await buildPhotoPool();
+      const pick = () => pool[Math.floor(Math.random() * pool.length)];
+
+      const missingPhoto = await prisma.complaint.findMany({ where: { photoUrl: null }, select: { id: true } });
+      for (const { id } of missingPhoto) {
+        await prisma.complaint.update({ where: { id }, data: { photoUrl: pick() } });
+      }
+
+      const missingResolutionPhoto = await prisma.complaint.findMany({
+        where: { status: 'RESOLVED', resolutionPhotoUrl: null },
+        select: { id: true },
+      });
+      for (const { id } of missingResolutionPhoto) {
+        await prisma.complaint.update({ where: { id }, data: { resolutionPhotoUrl: pick() } });
+      }
+
+      console.log(
+        `[admin] photo backfill complete: ${missingPhoto.length} photoUrl, ${missingResolutionPhoto.length} resolutionPhotoUrl`
+      );
+    })().catch((err) => console.error('[admin] photo backfill failed:', err));
+  })
+);
+
+/**
+ * Deletes complaints whose photo is genuinely unrecoverable: local-disk
+ * uploads (photoUrl starting with /uploads/) whose file no longer exists on
+ * this container. Render's disk is ephemeral and gets wiped on every
+ * redeploy, so a citizen report submitted while STORAGE_DRIVER=local is
+ * permanently lost the next time the API redeploys -- unlike the missing-
+ * photo backfill, there's no photo to backfill here, just a dead reference,
+ * so the honest outcome is removing the orphaned report rather than
+ * pretending it has evidence it doesn't.
+ */
+router.post(
+  '/cleanup-broken-photo-complaints',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const candidates = await prisma.complaint.findMany({
+      where: { photoUrl: { startsWith: '/uploads/' } },
+      select: { id: true, code: true, photoUrl: true },
+    });
+
+    const toDelete = candidates.filter((c) => {
+      const filePath = path.join(env.uploadDir, path.basename(c.photoUrl));
+      return !fs.existsSync(filePath);
+    });
+
+    for (const c of toDelete) {
+      await prisma.complaint.delete({ where: { id: c.id } });
+    }
+
+    res.json({
+      ok: true,
+      checked: candidates.length,
+      deleted: toDelete.length,
+      deletedCodes: toDelete.map((c) => c.code),
+    });
+  })
+);
+
+/** Deletes specific complaints by ticket code — a precise, small-blast-radius tool, unlike the broader cleanup jobs above. */
+router.post(
+  '/delete-complaints-by-code',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const { codes } = z.object({ codes: z.array(z.string()).min(1).max(20) }).parse(req.body);
+
+    const matches = await prisma.complaint.findMany({
+      where: { code: { in: codes } },
+      select: { id: true, code: true },
+    });
+    for (const { id } of matches) {
+      await prisma.complaint.delete({ where: { id } });
+    }
+
+    res.json({ ok: true, requested: codes, deleted: matches.map((c) => c.code) });
   })
 );
 

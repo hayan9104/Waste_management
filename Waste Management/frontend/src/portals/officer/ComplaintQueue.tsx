@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Camera, Check, ChevronLeft, ChevronRight, Eye, Search, Truck, X } from 'lucide-react';
 import { api, assetUrl, errorMessage } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading, Meter, Modal, toast } from '../../components/ui';
+import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, Modal, toast } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, SEVERITY_TONE, timeAgo, formatDuration } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
@@ -164,6 +164,7 @@ export default function ComplaintQueue() {
                         onChange={(e) => setSelected(e.target.checked ? items.map((c: any) => c.id) : [])}
                       />
                     </th>
+                    <th className="px-3 py-2.5">Photo</th>
                     <th className="px-3 py-2.5">Ticket</th>
                     <th className="px-3 py-2.5">Category</th>
                     <th className="px-3 py-2.5">AI confidence</th>
@@ -184,6 +185,14 @@ export default function ComplaintQueue() {
                           onChange={(e) =>
                             setSelected((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
                           }
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <EvidencePhoto
+                          src={assetUrl(c.photoUrl)}
+                          alt=""
+                          compact
+                          className="h-11 w-11 shrink-0 rounded-lg object-cover"
                         />
                       </td>
                       <td className="px-3 py-2.5">
@@ -240,6 +249,12 @@ export default function ComplaintQueue() {
                         setSelected((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
                       }
                     />
+                    <EvidencePhoto
+                      src={assetUrl(c.photoUrl)}
+                      alt=""
+                      compact
+                      className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-mono text-fluid-xs">{c.code}</span>
@@ -290,7 +305,7 @@ export default function ComplaintQueue() {
                 right column (the actually-variable-length content) to grow past it. */}
             <div className="space-y-2.5 sm:sticky sm:top-0">
               {detail.data.photoUrl ? (
-                <img src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-square w-full rounded-xl object-cover" />
+                <EvidencePhoto src={assetUrl(detail.data.photoUrl)} alt="" className="aspect-square w-full rounded-xl object-cover" />
               ) : (
                 <div className="grid aspect-square w-full place-items-center gap-1.5 rounded-xl border border-dashed border-line bg-sunken text-faint">
                   <Camera className="h-6 w-6" />

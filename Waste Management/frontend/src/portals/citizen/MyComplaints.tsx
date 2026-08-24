@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Camera } from 'lucide-react';
 import { api, assetUrl } from '../../lib/api';
-import { Badge, Card, EmptyState, ErrorState, Loading } from '../../components/ui';
+import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 
@@ -57,30 +57,28 @@ export default function MyComplaints() {
           }
         />
       ) : (
-        <ul className="space-y-2.5">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((c: any) => (
             <li key={c.id}>
-              <Link to={`/app/complaints/${c.id}`}>
-                <Card className="flex items-center gap-3 p-3.5 transition hover:shadow-lift">
-                  <div className="flex items-center gap-1 shrink-0">
+              <Link to={`/app/complaints/${c.id}`} className="block h-full">
+                <Card className="flex h-full flex-col overflow-hidden p-0 transition hover:shadow-lift">
+                  <div className="relative aspect-[4/3] w-full shrink-0 bg-sunken">
                     {c.photoUrl ? (
-                      <img src={assetUrl(c.photoUrl)} alt="Reported" className="h-16 w-16 rounded-xl object-cover" loading="lazy" />
+                      <EvidencePhoto src={assetUrl(c.photoUrl)} alt="Reported" className="h-full w-full object-cover" />
                     ) : (
-                      <span className="grid h-16 w-16 place-items-center rounded-xl bg-sunken text-faint">
-                        <Camera className="h-5 w-5" />
+                      <span className="grid h-full w-full place-items-center text-faint">
+                        <Camera className="h-6 w-6" />
                       </span>
                     )}
                     {c.resolutionPhotoUrl && (
-                      <img
+                      <EvidencePhoto
                         src={assetUrl(c.resolutionPhotoUrl)}
                         alt="Cleaned Proof"
-                        className="h-16 w-16 rounded-xl object-cover border-2 border-emerald-500 shadow-sm"
-                        title="Driver Cleaned Photo Proof"
-                        loading="lazy"
+                        className="absolute bottom-2 right-2 h-12 w-12 rounded-lg border-2 border-emerald-500 object-cover shadow-md"
                       />
                     )}
                   </div>
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 p-3.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <p className="truncate text-fluid-sm font-semibold">{t(`category.${c.category}`)}</p>
                       {c.isEmergency && <Badge tone="danger">SOS</Badge>}

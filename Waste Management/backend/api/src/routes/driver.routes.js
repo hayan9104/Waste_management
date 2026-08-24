@@ -9,7 +9,7 @@ import { PORTALS, SOCKET_EVENTS } from '../config/constants.js';
 import { ingestLocation, serializeVehicle, locationHistory, today, startOfToday } from '../services/tracking.service.js';
 import { transition, serializeComplaint } from '../services/complaint.service.js';
 import { emitTo } from '../sockets/realtime.js';
-import { notifyWardOfficers } from '../services/notification.service.js';
+import { notify, notifyWardOfficers, awardCredits } from '../services/notification.service.js';
 import { distanceKm } from '../lib/geo.js';
 import { ensureRoadSnappedPolyline, navigationRoute, solveLocal } from '../services/routing.service.js';
 

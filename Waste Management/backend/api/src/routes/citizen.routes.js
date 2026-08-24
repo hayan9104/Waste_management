@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { PORTALS, WASTE_CATEGORIES, CATEGORY_MAP, EMERGENCY_TYPES, CREDIT_RULES } from '../config/constants.js';
 import { createComplaint, serializeComplaint, findDuplicate, wardForPoint } from '../services/complaint.service.js';
 import { classifyWaste } from '../services/ai.service.js';
+import { notify, notifyWardOfficers } from '../services/notification.service.js';
 import { distanceMeters, boundsAround } from '../lib/geo.js';
 import { roadSnappedPolyline } from '../services/routing.service.js';
 
