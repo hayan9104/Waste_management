@@ -72,9 +72,7 @@ export function clampToCity(latitude: number, longitude: number): [number, numbe
  * relocating the user.
  */
 export function snapToCity(latitude: number, longitude: number): { lat: number; lng: number; moved: boolean } {
-  const moved = !isInsideCity(latitude, longitude);
-  const [lat, lng] = clampToCity(latitude, longitude);
-  return { lat, lng, moved };
+  return { lat: latitude, lng: longitude, moved: false };
 }
 
 /**
@@ -90,11 +88,12 @@ export const LINE_CASING = { color: '#0b1220', opacity: 0.5, fill: false, intera
 
 export function BaseMap({
   center = CITY_CENTER,
-  zoom = 13,
+  zoom = 15,
   children,
   className = 'h-full w-full',
   scrollWheelZoom = true,
   satellite = true,
+  bounded = false,
 }: {
   center?: [number, number];
   zoom?: number;
@@ -103,21 +102,16 @@ export function BaseMap({
   scrollWheelZoom?: boolean;
   /** Aerial imagery with place labels. Set false for the plain street map. */
   satellite?: boolean;
+  bounded?: boolean;
 }) {
   return (
     <MapContainer
       center={center}
       zoom={zoom}
       scrollWheelZoom={scrollWheelZoom}
-      /* Gandhinagar-only deployment: the viewport is fenced to the city so no
-         portal can pan away and act on a location the fleet does not serve.
-         viscosity 1 makes the edge a hard wall rather than a rubber band. */
-      maxBounds={CITY_BOUNDS}
-      maxBoundsViscosity={1}
-      minZoom={CITY_MIN_ZOOM}
-      /* The marker class is what stops index.css inverting these tiles for the
-         AMOLED theme — that trick turns a street map dark, but it turns aerial
-         photography into a colour negative. */
+      maxBounds={bounded ? CITY_BOUNDS : undefined}
+      maxBoundsViscosity={bounded ? 1 : undefined}
+      minZoom={bounded ? CITY_MIN_ZOOM : 2}
       className={`${className} ${satellite ? 'map-satellite' : ''}`}
       zoomControl={false}
       preferCanvas

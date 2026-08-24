@@ -102,20 +102,20 @@ export default function NewReport() {
 
   async function locate() {
     if (!navigator.geolocation) {
-      toast.warn('Browser GPS not supported. Fetching approximate city location.');
+      toast.warn('Browser GPS not supported. Fetching approximate location.');
       const ipPos = await fetchIpLocation();
-      const snapped = ipPos ? snapToCity(ipPos.lat, ipPos.lng) : null;
-      setPosition(snapped ? { lat: snapped.lat, lng: snapped.lng } : { lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
+      setPosition(ipPos ? { lat: ipPos.lat, lng: ipPos.lng } : { lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
       return;
     }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const snapped = snapToCity(pos.coords.latitude, pos.coords.longitude);
-        if (snapped.moved) toast.warn('You appear to be outside Gandhinagar — the pin was moved to the nearest point inside the city.');
-        setPosition({ lat: snapped.lat, lng: snapped.lng });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setPosition({ lat, lng });
         setGeoDenied(false);
         setLocating(false);
+        toast.success(`📍 Live GPS Locked: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
       },
       async (err) => {
         setLocating(false);
@@ -123,17 +123,16 @@ export default function NewReport() {
           setGeoDenied(true);
           toast.warn('Browser Location Blocked! Please allow location permission in URL bar.');
         } else {
-          toast.warn('Location fix delayed — using city approximate location.');
+          toast.warn('Location fix delayed — using network approximate location.');
         }
         const ipPos = await fetchIpLocation();
         if (ipPos) {
-          const snapped = snapToCity(ipPos.lat, ipPos.lng);
-          setPosition({ lat: snapped.lat, lng: snapped.lng });
+          setPosition({ lat: ipPos.lat, lng: ipPos.lng });
         } else if (!position) {
           setPosition({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
         }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   }
 

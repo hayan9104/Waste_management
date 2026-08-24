@@ -91,22 +91,39 @@ export function ComplaintBookingModal({
 
   const locate = useCallback(() => {
     if (!navigator.geolocation) {
-      setPosition({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
+      toast.warn('Geolocation is not supported by your browser.');
       return;
     }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const snapped = snapToCity(pos.coords.latitude, pos.coords.longitude);
-        if (snapped.moved) toast.warn('You appear to be outside Gandhinagar — the pin was snapped to the city.');
-        setPosition({ lat: snapped.lat, lng: snapped.lng });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setPosition({ lat, lng });
         setLocating(false);
+        toast.success(`📍 Live GPS locked: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
       },
-      () => {
-        setPosition({ lat: CITY_CENTER[0], lng: CITY_CENTER[1] });
+      async (err) => {
         setLocating(false);
+        if (err.code === 1) {
+          toast.warn('GPS location permission blocked. Please allow location access in your browser address bar.');
+        } else {
+          toast.warn('Could not acquire fast GPS satellite lock. Trying network location…');
+        }
+        // Fallback: try fetching IP-based approximate location if GPS timed out
+        try {
+          const res = await fetch('https://ipapi.co/json/');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.latitude && data.longitude) {
+              setPosition({ lat: Number(data.latitude), lng: Number(data.longitude) });
+            }
+          }
+        } catch {
+          // ignore
+        }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   }, []);
 
