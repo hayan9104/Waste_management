@@ -333,7 +333,7 @@ export default function ComplaintQueue() {
                 {detail.data.reviewNeeded && <Badge tone="warn">Review needed</Badge>}
               </div>
 
-              <div className="grid gap-x-4 gap-y-2 text-fluid-sm sm:grid-cols-3">
+              <div className="grid gap-x-4 gap-y-2 text-fluid-sm sm:grid-cols-2">
                 <Row label="Category" value={t(`category.${detail.data.category}`)} />
                 <Row label="AI thought" value={detail.data.aiCategory ? t(`category.${detail.data.aiCategory}`) : '—'} />
                 <Row label="Confidence" value={`${Math.round((detail.data.aiConfidence ?? 0) * 100)}%`} />

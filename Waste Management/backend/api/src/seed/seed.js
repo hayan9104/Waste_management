@@ -48,6 +48,22 @@ export async function buildPhotoPool() {
   return pool;
 }
 
+/**
+ * Real, verified-relevant free stock photos (checked by hand -- Unsplash
+ * photo IDs are otherwise a coin flip on actual subject matter). Every
+ * seeded complaint gets one; without this the entire demo dataset showed a
+ * blank photo slot, which is not what the real citizen /report flow ever
+ * produces (a photo is mandatory there).
+ */
+const CITIZEN_PHOTO_POOL = [
+  'https://images.unsplash.com/photo-1584744982491-665216d95f8b?w=800', // hand sanitizer + mask
+  'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=800', // colour-coded wheelie bins
+  'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=800', // labelled compost/waste/recycle bins
+  'https://images.unsplash.com/photo-1573497491765-dccce02b29df?w=800', // plastic pollution in water
+  'https://images.unsplash.com/photo-1721622248541-001da7c67fbe?w=800', // baled plastic waste
+  'https://images.unsplash.com/photo-1662534264036-7bfa0d35de9c?w=800', // litter-strewn dump site
+];
+
 /** Deterministic PRNG so every run produces the identical city. */
 function rng(seed) {
   let a = 0;
