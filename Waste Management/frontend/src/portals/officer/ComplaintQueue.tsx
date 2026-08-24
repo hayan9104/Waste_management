@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Camera, Check, ChevronLeft, ChevronRight, Clock, Eye, Search, Sparkles, Truck, X } from 'lucide-react';
+
 import { api, assetUrl, errorMessage } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, Modal, toast } from '../../components/ui';
 import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, SEVERITY_TONE, timeAgo, formatDuration } from '../../lib/format';
@@ -129,6 +129,63 @@ export default function ComplaintQueue() {
     onError: (err) => toast.error(errorMessage(err)),
   });
 
+  /**
+   * Dispatch the whole backlog in one press.
+   *
+   * Assigning by hand is select, open a modal, choose a truck, repeated per
+   * report — so in practice the top of the queue gets a crew and the tail
+   * waits until it breaches. Everything needed to choose is already known:
+   * the ward, which trucks are reporting, what each is carrying and how far
+   * each one is. The server ranks and applies it through the same transition
+   * a manual assignment uses, so the driver and the audit trail see no
+   * difference.
+   *
+   * Sends the current selection when there is one, and otherwise every
+   * unassigned report in the officer's wards.
+   */
+  const autoAssign = useMutation({
+    mutationFn: async () =>
+      (
+        await api('officer').post('/officer/complaints/auto-assign', {
+          complaintIds: selected.length ? selected : undefined,
+        })
+      ).data,
+    onSuccess: async (res) => {
+      await queryClient.invalidateQueries({ queryKey: ['officer'] });
+      setSelected([]);
+      if (!res.assignedCount) {
+        toast.info(res.message ?? 'Nothing waiting to be assigned');
+        return;
+      }
+      const crew = res.perDriver?.length ?? 0;
+      toast.success(
+        `${res.assignedCount} report${res.assignedCount === 1 ? '' : 's'} dispatched across ` +
+          `${crew} truck${crew === 1 ? '' : 's'}`
+      );
+      if (res.skipped?.length) {
+        toast.info(`${res.skipped.length} could not be assigned — ${res.skipped[0].reason}`);
+      }
+    },
+    onError: (err) => toast.error(errorMessage(err, 'Could not auto-assign')),
+  });
+
+  /**
+   * Reports in view that no truck has been given yet.
+   *
+   * Keyed on assignedVehicleId, not on an `assignedVehicle` object — the queue
+   * serialises the id alongside a `vehicle` relation, so testing a field that
+   * is never present counted every row and offered to auto-assign seventeen
+   * reports of which twelve already had a crew.
+   *
+   * Counted from the page while the action covers every unassigned report in
+   * the officer's wards. Those agree at demo scale (a page holds 25, a ward
+   * queue is well under that); if a queue ever ran longer the button would
+   * dispatch more than it advertised, which the toast then reports.
+   */
+  const unassignedCount = (data?.items ?? []).filter(
+    (c: any) => !c.assignedVehicleId && !['RESOLVED', 'REJECTED'].includes(c.status)
+  ).length;
+
   const setFilter = (key: string, value?: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -208,11 +265,50 @@ export default function ComplaintQueue() {
         </div>
       </Card>
 
+{/* Auto-assign sits above the queue rather than inside the selection bar:
+          its whole point is that nothing has to be selected first. */}
+      {unassignedCount > 0 && selected.length === 0 && (
+        <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 border-brand/40 bg-brand/5 p-3">
+          <Sparkles className="h-4 w-4 shrink-0 text-brand" />
+          <p className="min-w-0 text-fluid-sm">
+            <strong className="tabular-nums">{unassignedCount}</strong> report
+            {unassignedCount === 1 ? '' : 's'} waiting for a truck
+            <span className="ml-1 text-muted">· nearest crew, load balanced, emergencies first</span>
+          </p>
+          <button
+            type="button"
+            className="btn-primary btn-sm ml-auto"
+            disabled={autoAssign.isPending}
+            onClick={() => autoAssign.mutate()}
+          >
+            {autoAssign.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            Auto-assign {unassignedCount}
+          </button>
+        </Card>
+      )}
+
       {/* Bulk assign bar */}
       {selected.length > 0 && (
         <Card className="flex flex-wrap items-center gap-3 border-brand/40 bg-brand/5 p-3">
           <p className="text-fluid-sm font-semibold">{selected.length} selected</p>
-          <button type="button" className="btn-primary btn-sm ml-auto" onClick={() => setAssigning(true)}>
+          <button
+            type="button"
+            className="btn-ghost btn-sm ml-auto"
+            disabled={autoAssign.isPending}
+            onClick={() => autoAssign.mutate()}
+          >
+            {autoAssign.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            Auto-assign these
+          </button>
+          <button type="button" className="btn-primary btn-sm" onClick={() => setAssigning(true)}>
             <Truck className="h-3.5 w-3.5" /> Assign to a vehicle
           </button>
           <button type="button" className="btn-ghost btn-sm" onClick={() => setSelected([])}>Clear</button>

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Route, Routes } from 'react-router-dom';
-import { LayoutDashboard, ListFilter, Siren, Truck, ArrowUpRight, BarChart3, Calendar } from 'lucide-react';
+import { LayoutDashboard, ListFilter, Siren, TrendingUp, Truck, ArrowUpRight, BarChart3, Calendar } from 'lucide-react';
 import { ConsoleShell, type NavItem } from '../../components/shells';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -8,6 +8,7 @@ import { useT } from '../../lib/i18n';
 import OfficerDashboard from './Dashboard';
 import ComplaintQueue from './ComplaintQueue';
 import Emergencies from './Emergencies';
+import Hotspots from './Hotspots';
 import Fleet from './Fleet';
 import Escalations from './Escalations';
 import Analytics from './Analytics';
@@ -28,6 +29,7 @@ export default function OfficerPortal() {
     { to: '/officer/queue', label: t('officer.nav.queue'), icon: ListFilter, badge: data?.kpis?.reviewNeeded },
     { to: '/officer/scheduled-requests', label: 'Schedule', icon: Calendar },
     { to: '/officer/emergencies', label: t('officer.nav.emergencies'), icon: Siren, badge: data?.kpis?.emergenciesOpen },
+    { to: '/officer/hotspots', label: t('officer.nav.hotspots'), icon: TrendingUp },
     { to: '/officer/fleet', label: t('officer.nav.fleet'), icon: Truck },
     { to: '/officer/analytics', label: t('officer.nav.analytics'), icon: BarChart3 },
   ];
@@ -44,6 +46,7 @@ export default function OfficerPortal() {
         <Route path="queue" element={<ComplaintQueue />} />
         <Route path="scheduled-requests" element={<ScheduledRequests />} />
         <Route path="emergencies" element={<Emergencies />} />
+        <Route path="hotspots" element={<Hotspots />} />
         <Route path="fleet" element={<Fleet />} />
         <Route path="escalations" element={<Escalations />} />
         <Route path="analytics" element={<Analytics />} />
