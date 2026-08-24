@@ -198,22 +198,42 @@ async function main() {
       avatarColor: '#0f766e',
     },
   });
-  const admin2 = await prisma.user.create({
-    data: {
-      name: 'Dy. Commissioner R. Shah',
-      email: 'admin2@safaai.gov.in',
-      phone: '9900000002',
-      role: ROLES.ADMIN,
-      passwordHash,
-      emailVerifiedAt: new Date(),
-      avatarColor: '#115e59',
-    },
-  });
+  /**
+   * A city command centre is not one person. Five named admin accounts so the
+   * user list, the audit trail and the "who changed this" question all have
+   * more than a single actor to attribute anything to.
+   */
+  const ADMIN_STAFF = [
+    { name: 'Dy. Commissioner R. Shah', email: 'admin2@safaai.gov.in', phone: '9900000002', avatarColor: '#115e59' },
+    { name: 'Addl. Commissioner M. Desai', email: 'admin3@safaai.gov.in', phone: '9900000003', avatarColor: '#0e7490' },
+    { name: 'Dir. (Sanitation) K. Bhatt', email: 'admin4@safaai.gov.in', phone: '9900000004', avatarColor: '#1d4ed8' },
+    { name: 'Chief Engineer S. Chauhan', email: 'admin5@safaai.gov.in', phone: '9900000005', avatarColor: '#4338ca' },
+  ];
+  const admins = [admin];
+  for (const spec of ADMIN_STAFF) {
+    admins.push(
+      await prisma.user.create({
+        data: { ...spec, role: ROLES.ADMIN, passwordHash, emailVerifiedAt: new Date() },
+      })
+    );
+  }
+  const admin2 = admins[1];
 
+  /**
+   * Five ward officers over eight wards, dealt round-robin.
+   *
+   * Round-robin rather than contiguous pairs because eight does not divide by
+   * five: slicing `[i*2, i*2+1]` would hand officers 4 and 5 nothing at all and
+   * leave their consoles empty on login. Dealing wardIndex % 5 gives every ward
+   * exactly one officer and every officer at least one ward, which is also what
+   * makes isPrimary true here honestly — no ward is orphaned and none is
+   * double-owned.
+   */
+  const OFFICER_COUNT = 5;
   const officers = [];
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < OFFICER_COUNT; i += 1) {
     const r = rng(`officer-${i}`);
-    const scoped = [wards[i * 2], wards[i * 2 + 1]].filter(Boolean);
+    const scoped = wards.filter((_, w) => w % OFFICER_COUNT === i);
     const officer = await prisma.user.create({
       data: {
         name: `${pick(r, FIRST_NAMES)} ${pick(r, LAST_NAMES)} (Ward Officer)`,
@@ -227,7 +247,8 @@ async function main() {
       },
     });
     await prisma.wardOfficer.createMany({
-      data: scoped.map((w, k) => ({ wardId: w.ward.id, officerId: officer.id, isPrimary: k === 0 })),
+      // Every ward has exactly one officer, so each link is the primary one.
+      data: scoped.map((w) => ({ wardId: w.ward.id, officerId: officer.id, isPrimary: true })),
     });
     officers.push(officer);
   }
@@ -461,17 +482,52 @@ async function main() {
   console.log(`[seed] ${created} complaints (${resolvedCount} resolved) across ${HISTORY_DAYS} days`);
 
   // Credit ledgers reflecting that history.
+  /**
+   * Split each citizen's lifetime total across several dated entries instead
+   * of writing one lump sum. The Rewards page shows a credit history, and a
+   * history with exactly one row in it reads as a broken ledger — while the
+   * running balance is also what makes "balanceAfter" mean anything.
+   */
+  const CREDIT_SLICES = 6;
   for (const [userId, total] of creditTally) {
     await prisma.user.update({ where: { id: userId }, data: { greenCredits: total } });
-    await prisma.greenCredit.create({
-      data: {
-        userId,
-        delta: total,
-        balanceAfter: total,
-        reason: 'Historical reporting activity',
-        reasonCode: 'seed',
-      },
-    });
+
+    const r = rng('credits-' + userId);
+    /**
+     * Slice count follows the total, and the per-slice minimum is bounded by
+     * what is actually left.
+     *
+     * A flat `Math.max(1, ...)` floor invents credits when the total is small:
+     * six slices of at least 1 sum to 6 even when the citizen earned 0, and
+     * the ledger then contradicts the wallet balance set just above. Reserving
+     * one unit for each remaining slice keeps every entry positive and the run
+     * exact for any total.
+     */
+    const slices = total >= CREDIT_SLICES ? CREDIT_SLICES : total > 0 ? 1 : 0;
+    const weights = Array.from({ length: slices }, () => 0.5 + r());
+    const sum = weights.reduce((a, b) => a + b, 0) || 1;
+    let running = 0;
+    for (let k = 0; k < slices; k += 1) {
+      const isLast = k === slices - 1;
+      const remainingAfter = slices - 1 - k;
+      const headroom = total - running - remainingAfter;
+      const delta = isLast
+        ? total - running
+        : Math.max(1, Math.min(Math.round((total * weights[k]) / sum), headroom));
+      if (delta <= 0) continue;
+      running += delta;
+      const at = new Date(Date.now() - (slices - k) * 6 * 86_400_000);
+      await prisma.greenCredit.create({
+        data: {
+          userId,
+          delta,
+          balanceAfter: running,
+          reason: k === 0 ? 'Verified reports — first month' : 'Verified reports cleared with photo proof',
+          reasonCode: 'report_resolved',
+          createdAt: at,
+        },
+      });
+    }
   }
 
   /**
@@ -1057,6 +1113,305 @@ async function main() {
   }
   console.log(`[seed] ${fuelEntries} fuel log entries across ${FUEL_HISTORY_DAYS} days`);
 
+
+  // A ward -> officer lookup available at this point in the run. The audit
+  // block below builds its own later; this one is needed earlier and must
+  // agree with it, so both derive from the same round-robin rule.
+  const officerByWardId = new Map();
+  for (let w = 0; w < wards.length; w += 1) {
+    officerByWardId.set(wards[w].ward.id, officers[w % officers.length]);
+  }
+  const officerForWardAtSeed = (wardId) => officerByWardId.get(wardId) ?? officers[0];
+  const formatOverdue = (mins) =>
+    mins >= 1440 ? Math.round(mins / 1440) + ' day(s)' : mins >= 60 ? Math.round(mins / 60) + ' hour(s)' : mins + ' minute(s)';
+
+
+  // ------------------------------------------------- demo account top-up ----
+  /**
+   * Floors, not fabrications.
+   *
+   * The generated history is random, so whether driver1 happens to have five
+   * open stops today, or citizen1 five notifications, is luck. A demo where a
+   * section is empty reads as a broken feature rather than a quiet day, so
+   * each section of the named demo logins is topped up to a minimum.
+   *
+   * Everything here reuses rows that already exist and are already consistent
+   * — a complaint gets assigned to a truck in its own ward, a resolution date
+   * is moved within the same record — rather than inventing parallel data that
+   * the rest of the dataset knows nothing about.
+   */
+  const DEMO_MIN = 5;
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+
+  let toppedTasks = 0;
+  let toppedDone = 0;
+  for (const entry of vehicles.slice(0, 6)) {
+    const { vehicle, driver, ward } = entry;
+
+    // -- open stops -------------------------------------------------------
+    const open = await prisma.complaint.count({
+      where: { assignedVehicleId: vehicle.id, status: { in: ['ASSIGNED', 'IN_PROGRESS'] } },
+    });
+    if (open < DEMO_MIN) {
+      const spare = await prisma.complaint.findMany({
+        // Same ward only: handing a truck work outside its own ward would
+        // break the ward/truck agreement the showcase verifier asserts.
+        //
+        // And never the showcase set. SS-DEMO1 is deliberately pending and
+        // unassigned — that is the whole point of it — so sweeping it up here
+        // silently destroyed the officer review-queue demo and left it
+        // holding a truck whose route had never heard of it.
+        where: {
+          wardId: ward.id,
+          assignedVehicleId: null,
+          status: { in: ['PENDING', 'VERIFIED'] },
+          code: { not: { startsWith: 'SS-DEMO' } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: DEMO_MIN - open,
+        select: { id: true },
+      });
+      for (const c of spare) {
+        await prisma.complaint.update({
+          where: { id: c.id },
+          data: { assignedVehicleId: vehicle.id, status: 'ASSIGNED', assignedAt: new Date() },
+        });
+        await prisma.complaintEvent.create({
+          data: { complaintId: c.id, status: 'ASSIGNED', note: 'Assigned to ' + vehicle.registrationNumber },
+        });
+        toppedTasks += 1;
+      }
+    }
+
+    // -- stops closed today ------------------------------------------------
+    const doneToday = await prisma.complaint.count({
+      where: { assignedVehicleId: vehicle.id, status: 'RESOLVED', resolvedAt: { gte: dayStart } },
+    });
+    if (doneToday < DEMO_MIN) {
+      const older = await prisma.complaint.findMany({
+        where: {
+          assignedVehicleId: vehicle.id,
+          status: 'RESOLVED',
+          resolvedAt: { lt: dayStart },
+          code: { not: { startsWith: 'SS-DEMO' } },
+        },
+        orderBy: { resolvedAt: 'desc' },
+        take: DEMO_MIN - doneToday,
+        select: { id: true, resolutionPhotoUrl: true, photoUrl: true },
+      });
+      for (let k = 0; k < older.length; k += 1) {
+        const c = older[k];
+        const at = new Date(dayStart.getTime() + (7 + k) * 3_600_000);
+        await prisma.complaint.update({
+          where: { id: c.id },
+          data: {
+            resolvedAt: at,
+            updatedAt: at,
+            resolvedById: driver.id,
+            // A closed stop without proof is exactly the state the API now
+            // refuses to create, so it must not exist in the seed either.
+            resolutionPhotoUrl:
+              c.resolutionPhotoUrl ??
+              CITIZEN_PHOTO_POOL.find((u) => u !== c.photoUrl) ??
+              CITIZEN_PHOTO_POOL[0],
+          },
+        });
+        toppedDone += 1;
+      }
+    }
+  }
+  console.log('[seed] demo top-up: ' + toppedTasks + ' stops assigned, ' + toppedDone + ' closed today');
+
+  // -- notifications ------------------------------------------------------
+  /**
+   * Every demo login gets a readable inbox. Each notification points at a row
+   * that genuinely exists for that account, so tapping one never lands on
+   * something the user does not own.
+   */
+  let notes = 0;
+  for (const citizen of citizens.slice(0, 4)) {
+    const have = await prisma.notification.count({ where: { userId: citizen.id } });
+    if (have >= DEMO_MIN) continue;
+    const mine = await prisma.complaint.findMany({
+      where: { citizenId: citizen.id },
+      orderBy: { createdAt: 'desc' },
+      take: DEMO_MIN - have,
+      select: { id: true, code: true, status: true, createdAt: true },
+    });
+    for (const c of mine) {
+      const resolved = c.status === 'RESOLVED';
+      await prisma.notification.create({
+        data: {
+          userId: citizen.id,
+          type: resolved ? 'CREDIT_AWARDED' : 'COMPLAINT_UPDATE',
+          title: resolved ? c.code + ' resolved' : 'Update on ' + c.code,
+          body: resolved
+            ? 'The site was cleared and photo proof attached. Green Credits added to your wallet.'
+            : 'Your report is ' + String(c.status).toLowerCase().replace('_', ' ') + '. You can follow it under My Reports.',
+          payload: { complaintId: c.id, code: c.code },
+          createdAt: c.createdAt,
+        },
+      });
+      notes += 1;
+    }
+  }
+  for (const { driver, vehicle } of vehicles.slice(0, 6)) {
+    const have = await prisma.notification.count({ where: { userId: driver.id } });
+    if (have >= DEMO_MIN) continue;
+    const mine = await prisma.complaint.findMany({
+      where: { assignedVehicleId: vehicle.id },
+      orderBy: { createdAt: 'desc' },
+      take: DEMO_MIN - have,
+      select: { id: true, code: true, address: true, isEmergency: true, createdAt: true },
+    });
+    for (const c of mine) {
+      await prisma.notification.create({
+        data: {
+          userId: driver.id,
+          type: c.isEmergency ? 'EMERGENCY' : 'ASSIGNMENT',
+          title: c.isEmergency ? 'EMERGENCY — go now: ' + c.code : 'New stop assigned: ' + c.code,
+          body: (c.address || 'Reported location') + ' — added to your route.',
+          payload: { complaintId: c.id, code: c.code, vehicleId: vehicle.id },
+          createdAt: c.createdAt,
+        },
+      });
+      notes += 1;
+    }
+  }
+  console.log('[seed] demo top-up: ' + notes + ' notifications');
+
+  // ------------------------------------- SOS, escalations, model telemetry ----
+  /**
+   * Four tables the seed never populated, so four sections were permanently
+   * empty however good the code behind them was: the officer's driver-SOS
+   * panel, the escalations page, the hotspot forecast and admin Model Health.
+   * An empty panel reads as a broken feature, not a quiet day.
+   */
+
+  // -- Driver SOS ------------------------------------------------------------
+  // A spread of states, because a panel that only ever shows OPEN alerts never
+  // demonstrates that acknowledging one does anything.
+  const SOS_SPECS = [
+    { reason: 'breakdown', message: 'Rear axle noise, truck stopped on Ch Road', status: 'OPEN', minutesAgo: 12 },
+    { reason: 'fuel', message: 'Diesel finished before the last three stops', status: 'OPEN', minutesAgo: 34 },
+    { reason: 'accident', message: 'Minor collision at the sector crossing, no injuries', status: 'ACKNOWLEDGED', minutesAgo: 95 },
+    { reason: 'medical', message: 'Helper feeling unwell, need relief crew', status: 'ACKNOWLEDGED', minutesAgo: 160 },
+    { reason: 'other', message: 'Road blocked by a procession, cannot reach two stops', status: 'OPEN', minutesAgo: 48 },
+    { reason: 'breakdown', message: 'Front tyre puncture, changed and back on route', status: 'RESOLVED', minutesAgo: 400 },
+  ];
+  let sosCreated = 0;
+  for (let i = 0; i < SOS_SPECS.length; i += 1) {
+    const spec = SOS_SPECS[i];
+    const crew = vehicles[(i * 5 + 2) % vehicles.length];
+    const at = new Date(Date.now() - spec.minutesAgo * 60_000);
+    const point = pointNear(wardAnchors, crew.index, 3100 + i * 17);
+    await prisma.sosAlert.create({
+      data: {
+        driverId: crew.driver.id,
+        vehicleId: crew.vehicle.id,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        message: spec.reason + ' — ' + spec.message,
+        status: spec.status,
+        // An acknowledged alert without a responder or a timestamp would be a
+        // contradiction the officer panel renders as a blank column.
+        acknowledgedById: spec.status === 'OPEN' ? null : officerForWardAtSeed(crew.ward.id).id,
+        acknowledgedAt: spec.status === 'OPEN' ? null : new Date(at.getTime() + 6 * 60_000),
+        createdAt: at,
+      },
+    });
+    sosCreated += 1;
+  }
+  console.log('[seed] ' + sosCreated + ' driver SOS alerts (open / acknowledged / resolved)');
+
+  // -- Escalations -----------------------------------------------------------
+  // Raised only against complaints that are genuinely past due and still open,
+  // so the page never shows an escalation for work that was finished on time.
+  const overdue = await prisma.complaint.findMany({
+    where: { dueAt: { lt: new Date() }, status: { notIn: ['RESOLVED', 'REJECTED'] } },
+    select: { id: true, code: true, wardId: true, dueAt: true, isEmergency: true },
+    orderBy: { dueAt: 'asc' },
+    take: 14,
+  });
+  let escalations = 0;
+  for (let i = 0; i < overdue.length; i += 1) {
+    const c = overdue[i];
+    const minutesOver = Math.round((Date.now() - new Date(c.dueAt).getTime()) / 60_000);
+    // Level rises with how far past the deadline it is, rather than at random.
+    const level = minutesOver > 2880 ? 3 : minutesOver > 720 ? 2 : 1;
+    await prisma.escalation.create({
+      data: {
+        complaintId: c.id,
+        escalatedToId: officerForWardAtSeed(c.wardId).id,
+        level,
+        reason:
+          (c.isEmergency ? 'Emergency ' : '') +
+          c.code + ' passed its SLA ' + formatOverdue(minutesOver) + ' ago with no resolution',
+        escalatedAt: new Date(new Date(c.dueAt).getTime() + 5 * 60_000),
+        // The older half have been looked at; the newest are still unread.
+        acknowledgedAt: i % 2 === 0 ? new Date(new Date(c.dueAt).getTime() + 40 * 60_000) : null,
+      },
+    });
+    escalations += 1;
+  }
+  console.log('[seed] ' + escalations + ' escalations raised on genuinely overdue reports');
+
+  // -- Hotspot forecast ------------------------------------------------------
+  // Tomorrow's risk per ward, derived from that ward's own recent volume rather
+  // than a random number, so a busy ward really does forecast higher.
+  const forDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  let predictions = 0;
+  for (const { ward } of wards) {
+    const recent = await prisma.complaint.count({
+      where: { wardId: ward.id, createdAt: { gte: new Date(Date.now() - 14 * 86_400_000) } },
+    });
+    const r = rng('hotspot-' + ward.code);
+    const perDay = recent / 14;
+    for (let d = 0; d < 3; d += 1) {
+      const day = new Date(Date.now() + (d + 1) * 86_400_000).toISOString().slice(0, 10);
+      const predictedCount = Number((perDay * (0.85 + r() * 0.5)).toFixed(2));
+      await prisma.hotspotPrediction.create({
+        data: {
+          wardId: ward.id,
+          forDate: day,
+          predictedCount,
+          riskScore: Math.min(100, Math.round(predictedCount * 9)),
+          confidence: Number((0.55 + r() * 0.35).toFixed(2)),
+          drivers: [
+            { feature: 'same_weekday_weighted_mean', value: Number(perDay.toFixed(2)) },
+            { feature: 'trailing_14d_volume', value: recent },
+            { feature: 'weekend_uplift', value: d === 1 ? 2.2 : 1 },
+          ],
+          modelVersion: 'hotspot-v1',
+        },
+      });
+      predictions += 1;
+    }
+  }
+  console.log('[seed] ' + predictions + ' hotspot predictions (' + wards.length + ' wards x 3 days from ' + forDate + ')');
+
+  // -- Model health ----------------------------------------------------------
+  // Fourteen daily samples so the admin chart has a trend rather than a dot.
+  let samples = 0;
+  for (let d = 13; d >= 0; d -= 1) {
+    const r = rng('modelhealth-' + d);
+    const at = new Date(Date.now() - d * 86_400_000);
+    at.setHours(23, 0, 0, 0);
+    await prisma.modelHealthSample.create({
+      data: {
+        modelVersion: 'yolov8n-waste-v1',
+        avgConfidence: Number((0.78 + r() * 0.12).toFixed(3)),
+        lowConfidenceRate: Number((0.08 + r() * 0.09).toFixed(3)),
+        falsePositiveRate: Number((0.03 + r() * 0.05).toFixed(3)),
+        sampleCount: intBetween(r, 40, 180),
+        recordedAt: at,
+      },
+    });
+    samples += 1;
+  }
+  console.log('[seed] ' + samples + ' model health samples over 14 days');
+
   // -------------------------------------------------------- audit trail ----
   /**
    * Audit entries for the privileged actions the seeded history implies.
@@ -1081,10 +1436,8 @@ async function main() {
   });
 
   const officerForWard = new Map();
-  for (let i = 0; i < officers.length; i += 1) {
-    for (const w of [wards[i * 2], wards[i * 2 + 1]].filter(Boolean)) {
-      officerForWard.set(w.ward.id, officers[i]);
-    }
+  for (let w = 0; w < wards.length; w += 1) {
+    officerForWard.set(wards[w].ward.id, officers[w % officers.length]);
   }
 
   for (let i = 0; i < auditables.length; i += 1) {
@@ -1125,7 +1478,7 @@ async function main() {
     const r = rng(`audit-ward-${i}`);
     const at = new Date(Date.now() - intBetween(r, 2, 40) * 86_400_000);
     auditSamples.push({
-      actorId: (i % 2 === 0 ? admin : admin2).id,
+      actorId: admins[i % admins.length].id,
       action: 'ward_update',
       targetTable: 'wards',
       targetId: wards[i].ward.id,
@@ -1181,13 +1534,30 @@ async function main() {
     { status: 'CANCELLED', daysFromNow: 7 },
   ];
 
+  /**
+   * Run the status lifecycle several times over.
+   *
+   * One pass produced ten rows spread across 24 citizens and 8 wards, so a
+   * given citizen's "My scheduled pickups" was almost always empty and most
+   * officers saw one or two. Rounds are dealt so the first four demo citizens
+   * each get a full lifecycle of their own, and the ward follows the citizen
+   * so an officer's list is never empty either.
+   */
+  const SCHEDULE_ROUNDS = 5;
   let scheduledCount = 0;
-  for (let i = 0; i < SCHEDULE_SPECS.length; i += 1) {
-    const spec = SCHEDULE_SPECS[i];
+  for (let i = 0; i < SCHEDULE_SPECS.length * SCHEDULE_ROUNDS; i += 1) {
+    const spec = SCHEDULE_SPECS[i % SCHEDULE_SPECS.length];
+    const round = Math.floor(i / SCHEDULE_SPECS.length);
     const r = rng(`scheduled-${i}`);
-    const citizenIdx = (i * 5 + 2) % citizens.length;
+    // Rounds 0-3 belong to the four named demo citizens, one round each, so
+    // each of them ends up with a full ten-row lifecycle. Later rounds spread
+    // across the rest of the population.
+    const citizenIdx = round < 4 ? round : (i * 5 + 2) % citizens.length;
     const citizen = citizens[citizenIdx];
-    const { ward, index } = wards[citizenIdx % wards.length];
+    // Ward follows the citizen, not the loop counter, so the request, the
+    // citizen and the officer who sees it are all in the same place.
+    const wardSlot = wards.findIndex((w) => w.ward.id === citizen.wardId);
+    const { ward, index } = wards[wardSlot >= 0 ? wardSlot : citizenIdx % wards.length];
     const home = crews[index][0];
     const point = pointNear(wardAnchors, index, 5000 + i * 11);
 
