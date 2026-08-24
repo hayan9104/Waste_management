@@ -47,6 +47,33 @@ Keep replies very short — 1 to 3 sentences, plain and direct, no markdown. If 
   lang === 'hi' ? 'Hindi (हिन्दी)' : lang === 'gu' ? 'Gujarati (ગુજરાતી)' : 'English'
 }.`;
 
+/**
+ * Ward officer and city admin.
+ *
+ * Supervisors ask about state — what is overdue, who is on duty, how is SLA —
+ * so the reply's job is to name the right view and, where it matters, the
+ * judgement behind the number. It carries the same hard rule as the driver
+ * prompt: the assistant cannot read live data or perform actions, so it must
+ * never state a figure as if it had looked it up.
+ */
+const STAFF_PROMPT = (lang, role) => `You are "AI Safaai Sahayak", the console assistant for a ${
+  role === 'admin' ? 'city administrator running Gandhinagar Municipal Corporation' : 'ward sanitation officer in Gandhinagar'
+}, Gujarat, India, inside the Safaai Sarathi platform.
+
+The buttons in this assistant panel open: ${
+  role === 'admin'
+    ? 'city status, the whole fleet and live routes, on-duty crew, an SLA snapshot, fuel and expenditure, and recent audit entries'
+    : 'the review queue (verify, reject or assign a truck), open emergencies and driver SOS (acknowledge or assign), ward status, on-duty crew, the fleet, an SLA snapshot, and fuel'
+}. Never tell them to navigate to another page — say which button to press.
+
+CRITICAL: you have no access to live data and you cannot perform any action. Never state a count, percentage, name or status as if you had checked — you have not. Do not claim a complaint was verified, a truck assigned, or an alert acknowledged. Say which button shows the real figure, and let the panel answer. A supervisor who acts on a number you invented is worse off than one you told nothing.
+
+Useful judgement to offer when relevant: SLA compliance is measured only over resolved reports that had a deadline, so reports still open past due are counted separately and a ward that closes nothing does not score 100%. Emergencies run on a 30-minute clock and are auto-dispatched to the nearest truck, so check whether one is already on the way before assigning a second.
+
+Keep replies short — 1 to 3 sentences, plain, no markdown. Reply in ${
+  lang === 'hi' ? 'Hindi (हिन्दी)' : lang === 'gu' ? 'Gujarati (ગુજરાતી)' : 'English'
+}.`;
+
 /** Returns the model's reply, or null if Groq isn't configured / the call failed. */
 export async function askGroq(message, lang = 'en', audience = 'citizen') {
   if (!env.groq.apiKey) return null;
@@ -57,7 +84,15 @@ export async function askGroq(message, lang = 'en', audience = 'citizen') {
       {
         model: env.groq.model,
         messages: [
-          { role: 'system', content: (audience === 'driver' ? DRIVER_PROMPT : SYSTEM_PROMPT)(lang) },
+          {
+            role: 'system',
+            content:
+              audience === 'driver'
+                ? DRIVER_PROMPT(lang)
+                : audience === 'officer' || audience === 'admin'
+                  ? STAFF_PROMPT(lang, audience)
+                  : SYSTEM_PROMPT(lang),
+          },
           { role: 'user', content: message },
         ],
         temperature: 0.4,
@@ -171,10 +206,69 @@ export function driverRuleReply(message, lang = 'en') {
   );
 }
 
+/** Deterministic fallback for officer and admin. */
+export function staffRuleReply(message, lang = 'en', role = 'officer') {
+  const q = message.toLowerCase();
+  const pick = (en, hi, gu) => (lang === 'gu' ? gu : lang === 'hi' ? hi : en);
+
+  if (/emergency|sos|critical|आपात|इमरजेंसी|ઇમરજન્સી/.test(q)) {
+    return pick(
+      'Open the emergencies panel below to see what is live and acknowledge it. Check whether a truck was already auto-dispatched before assigning another.',
+      'नीचे आपात पैनल खोलें और स्थिति देखकर स्वीकार करें। दूसरा ट्रक भेजने से पहले देखें कि कोई पहले से भेजा जा चुका है या नहीं।',
+      'નીચે ઇમરજન્સી પેનલ ખોલો અને સ્થિતિ જોઈને સ્વીકારો. બીજી ટ્રક મોકલતાં પહેલાં જુઓ કે કોઈ પહેલેથી મોકલાઈ છે કે નહીં.'
+    );
+  }
+  if (/review|verify|queue|pending|समीक्षा|कतार|રિવ્યૂ|કતાર/.test(q)) {
+    return pick(
+      'Open the review queue below — you can verify, reject or assign a truck from there without leaving this panel.',
+      'नीचे समीक्षा कतार खोलें — वहीं से वेरिफ़ाई, रिजेक्ट या ट्रक असाइन कर सकते हैं।',
+      'નીચે રિવ્યૂ કતાર ખોલો — ત્યાંથી જ વેરિફાય, રિજેક્ટ કે ટ્રક અસાઇન કરી શકો છો.'
+    );
+  }
+  if (/sla|overdue|breach|deadline|समयसीमा|સમયમર્યાદા/.test(q)) {
+    return pick(
+      'Open the SLA snapshot below. It counts only resolved reports that had a deadline, and lists reports still open past due separately.',
+      'नीचे SLA स्नैपशॉट खोलें। इसमें केवल वे बंद रिपोर्ट गिनी जाती हैं जिनकी समयसीमा थी; अब भी खुली विलंबित रिपोर्ट अलग दिखती हैं।',
+      'નીચે SLA સ્નેપશોટ ખોલો. તેમાં ફક્ત સમયમર્યાદાવાળી બંધ થયેલી ફરિયાદો ગણાય છે; હજુ ખુલ્લી મોડી ફરિયાદો અલગ બતાવાય છે.'
+    );
+  }
+  if (/fuel|diesel|spend|cost|ईंधन|खर्च|ઇંધણ|ખર્ચ/.test(q)) {
+    return pick(
+      'Open fuel and expenditure below. It also states how many trucks actually logged a fill-up, so a low total is not mistaken for a cheap month.',
+      'नीचे ईंधन और खर्च खोलें। यह यह भी बताता है कि कितने ट्रकों ने वास्तव में एंट्री की, ताकि कम कुल को सस्ता महीना न समझा जाए।',
+      'નીચે ઇંધણ અને ખર્ચ ખોલો. તે એ પણ જણાવે છે કે કેટલી ટ્રકોએ ખરેખર એન્ટ્રી કરી, જેથી ઓછો કુલ સસ્તો મહિનો ન સમજાય.'
+    );
+  }
+  if (/duty|shift|crew|driver|ड्यूटी|शिफ्ट|ड्राइवर|ડ્યુટી|ડ્રાઇવર/.test(q)) {
+    return pick(
+      'Open the on-duty crew list below to see who is clocked in right now and what they are driving.',
+      'नीचे ड्यूटी सूची खोलें — अभी कौन क्लॉक-इन है और कौन-सी गाड़ी चला रहा है, दिख जाएगा।',
+      'નીચે ડ્યુટી યાદી ખોલો — હમણાં કોણ ક્લોક-ઇન છે અને કઈ ગાડી ચલાવે છે તે દેખાશે.'
+    );
+  }
+
+  return role === 'admin'
+    ? pick(
+        'I can open city status, the fleet and live routes, on-duty crew, SLA, fuel and recent audit entries. Use the buttons below.',
+        'मैं शहर की स्थिति, बेड़ा और लाइव रूट, ड्यूटी पर स्टाफ, SLA, ईंधन और हाल की ऑडिट प्रविष्टियाँ खोल सकता हूँ। नीचे बटन इस्तेमाल करें।',
+        'હું શહેરની સ્થિતિ, કાફલો અને લાઇવ રૂટ, ડ્યુટી પરનો સ્ટાફ, SLA, ઇંધણ અને તાજેતરની ઓડિટ એન્ટ્રી ખોલી શકું છું. નીચેના બટન વાપરો.'
+      )
+    : pick(
+        'I can open your review queue, emergencies and SOS, ward status, on-duty crew, the fleet, SLA and fuel. Use the buttons below.',
+        'मैं समीक्षा कतार, आपात/SOS, वार्ड स्थिति, ड्यूटी पर स्टाफ, बेड़ा, SLA और ईंधन खोल सकता हूँ। नीचे बटन इस्तेमाल करें।',
+        'હું રિવ્યૂ કતાર, ઇમરજન્સી/SOS, વોર્ડ સ્થિતિ, ડ્યુટી પરનો સ્ટાફ, કાફલો, SLA અને ઇંધણ ખોલી શકું છું. નીચેના બટન વાપરો.'
+      );
+}
+
 /** Single entry point the routes call: tries Groq, falls back to rules. */
 export async function getChatReply(message, lang = 'en', audience = 'citizen') {
   const aiReply = await askGroq(message, lang, audience);
   if (aiReply) return { reply: aiReply, source: 'ai' };
-  const fallback = audience === 'driver' ? driverRuleReply(message, lang) : ruleBasedReply(message, lang);
+  const fallback =
+    audience === 'driver'
+      ? driverRuleReply(message, lang)
+      : audience === 'officer' || audience === 'admin'
+        ? staffRuleReply(message, lang, audience)
+        : ruleBasedReply(message, lang);
   return { reply: fallback, source: 'rules' };
 }

@@ -5,6 +5,7 @@ import { useI18n } from '../lib/i18n';
 import { BASE } from '../lib/api';
 import { ComplaintBookingModal } from './ComplaintBookingModal';
 import { DriverAssistantSheet } from './DriverAssistantSheet';
+import { StaffAssistantSheet } from './StaffAssistantSheet';
 
 interface Message {
   id: string;
@@ -15,6 +16,8 @@ interface Message {
   action?: 'book';
   /** Driver portal: which action sheet this reply offers to open. */
   driverAction?: DriverAction;
+  /** Officer/admin console: which view this reply offers to open. */
+  staffMode?: StaffMode;
 }
 
 /**
@@ -62,6 +65,78 @@ const DRIVER_KB: Record<'en' | 'hi' | 'gu', { welcome: string; quickPrompts: str
       'નમસ્તે! હું તમારો ઇન-કેબ સહાયક છું. શિફ્ટ, આજના સ્ટોપ, ફોટો પુરાવા સાથે ટાસ્ક પૂરું કરવા, ઇંધણ નોંધવા કે SOS માં મદદ કરી શકું છું.',
     quickPrompts: ['મારા સ્ટોપ બતાવો', 'સ્ટોપ કેવી રીતે બંધ કરું?', 'ડીઝલ નોંધો', 'ગાડી બગડી ગઈ'],
   },
+};
+
+type StaffMode = 'menu' | 'queue' | 'emergencies' | 'status' | 'crew' | 'fleet' | 'sla' | 'fuel' | 'audit';
+
+/**
+ * Officer and admin ask supervisory questions — "what is overdue", "who is on
+ * duty", "how is SLA" — so their prompts and buttons open the matching view
+ * rather than explaining where to click.
+ */
+const STAFF_KB: Record<'officer' | 'admin', Record<'en' | 'hi' | 'gu', { welcome: string; quickPrompts: string[] }>> = {
+  officer: {
+    en: {
+      welcome:
+        'Namaste! I am your ward assistant. I can pull up your review queue, open emergencies and SOS, ward status, on-duty crew, SLA and fuel — and you can verify, reject or assign straight from here.',
+      quickPrompts: ["What's waiting for review?", 'Any open emergencies?', 'Who is on duty?', 'How is our SLA?'],
+    },
+    hi: {
+      welcome:
+        'नमस्ते! मैं आपका वार्ड सहायक हूँ। समीक्षा कतार, आपात/SOS, वार्ड स्थिति, ड्यूटी पर स्टाफ, SLA और ईंधन यहीं से देख सकते हैं — और सीधे वेरिफ़ाई, रिजेक्ट या असाइन भी कर सकते हैं।',
+      quickPrompts: ['समीक्षा में क्या बाकी है?', 'कोई आपात स्थिति?', 'कौन ड्यूटी पर है?', 'हमारा SLA कैसा है?'],
+    },
+    gu: {
+      welcome:
+        'નમસ્તે! હું તમારો વોર્ડ સહાયક છું. રિવ્યૂ કતાર, ઇમરજન્સી/SOS, વોર્ડ સ્થિતિ, ડ્યુટી પરનો સ્ટાફ, SLA અને ઇંધણ અહીંથી જ જોઈ શકો — અને સીધા વેરિફાય, રિજેક્ટ કે અસાઇન પણ કરી શકો.',
+      quickPrompts: ['રિવ્યૂમાં શું બાકી છે?', 'કોઈ ઇમરજન્સી?', 'કોણ ડ્યુટી પર છે?', 'અમારું SLA કેવું છે?'],
+    },
+  },
+  admin: {
+    en: {
+      welcome:
+        'Namaste! I am your city assistant. I can show city status, the whole fleet and live routes, on-duty crew, SLA and fuel, and recent audit entries.',
+      quickPrompts: ['How is the city doing?', 'Show the fleet', 'Who is on duty?', 'Recent audit entries'],
+    },
+    hi: {
+      welcome:
+        'नमस्ते! मैं आपका सिटी सहायक हूँ। शहर की स्थिति, पूरा बेड़ा और लाइव रूट, ड्यूटी पर स्टाफ, SLA, ईंधन और हाल की ऑडिट प्रविष्टियाँ दिखा सकता हूँ।',
+      quickPrompts: ['शहर की स्थिति?', 'बेड़ा दिखाओ', 'कौन ड्यूटी पर है?', 'हाल की ऑडिट प्रविष्टियाँ'],
+    },
+    gu: {
+      welcome:
+        'નમસ્તે! હું તમારો સિટી સહાયક છું. શહેરની સ્થિતિ, આખો કાફલો અને લાઇવ રૂટ, ડ્યુટી પરનો સ્ટાફ, SLA, ઇંધણ અને તાજેતરની ઓડિટ એન્ટ્રી બતાવી શકું છું.',
+      quickPrompts: ['શહેરની સ્થિતિ?', 'કાફલો બતાવો', 'કોણ ડ્યુટી પર છે?', 'તાજેતરની ઓડિટ એન્ટ્રી'],
+    },
+  },
+};
+
+/** Maps a turn to the staff view it should open, or null for plain chat. */
+function staffModeFor(userText: string, botText: string, isOfficer: boolean): StaffMode | null {
+  const hay = `${userText} ${botText}`.toLowerCase();
+  // Emergencies first: an officer asking about an overdue emergency wants the
+  // emergency panel, not the generic SLA view that also matches "overdue".
+  if (isOfficer && /emergency|emergencies|sos|critical|आपात|इमरजेंसी|ઇમરજન્સી|અકસ્માત/.test(hay)) return 'emergencies';
+  if (isOfficer && /review|verify|reject|approve|queue|pending|समीक्षा|कतार|मंज़ूर|રિવ્યૂ|કતાર/.test(hay)) return 'queue';
+  if (/audit|log|who did|ऑडिट|ઓડિટ/.test(hay)) return isOfficer ? null : 'audit';
+  if (/sla|overdue|breach|deadline|compliance|समयसीमा|સમયમર્યાદા/.test(hay)) return 'sla';
+  if (/fuel|diesel|spend|cost|expenditure|ईंधन|डीजल|खर्च|ઇંધણ|ડીઝલ|ખર્ચ/.test(hay)) return 'fuel';
+  if (/duty|shift|crew|staff|driver|ड्यूटी|शिफ्ट|ड्राइवर|ડ્યુટી|શિફ્ટ|ડ્રાઇવર/.test(hay)) return 'crew';
+  if (/fleet|truck|vehicle|route|बेड़ा|गाड़ी|रूट|કાફલો|ગાડી|રૂટ/.test(hay)) return 'fleet';
+  if (/status|how (is|are)|overview|summary|dashboard|स्थिति|सारांश|સ્થિતિ|સારાંશ/.test(hay)) return 'status';
+  return null;
+}
+
+const STAFF_CTA: Record<StaffMode, Record<'en' | 'hi' | 'gu', string>> = {
+  menu: { en: 'Open assistant actions', hi: 'सहायक विकल्प खोलें', gu: 'સહાયક વિકલ્પો ખોલો' },
+  queue: { en: 'Open review queue', hi: 'समीक्षा कतार खोलें', gu: 'રિવ્યૂ કતાર ખોલો' },
+  emergencies: { en: 'Open emergencies & SOS', hi: 'आपात/SOS खोलें', gu: 'ઇમરજન્સી/SOS ખોલો' },
+  status: { en: 'Show status', hi: 'स्थिति दिखाएँ', gu: 'સ્થિતિ બતાવો' },
+  crew: { en: 'Show on-duty crew', hi: 'ड्यूटी पर स्टाफ दिखाएँ', gu: 'ડ્યુટી પરનો સ્ટાફ બતાવો' },
+  fleet: { en: 'Show the fleet', hi: 'बेड़ा दिखाएँ', gu: 'કાફલો બતાવો' },
+  sla: { en: 'Show SLA snapshot', hi: 'SLA दिखाएँ', gu: 'SLA બતાવો' },
+  fuel: { en: 'Show fuel & spend', hi: 'ईंधन और खर्च दिखाएँ', gu: 'ઇંધણ અને ખર્ચ બતાવો' },
+  audit: { en: 'Show audit entries', hi: 'ऑडिट प्रविष्टियाँ दिखाएँ', gu: 'ઓડિટ એન્ટ્રી બતાવો' },
 };
 
 type DriverAction = 'stops' | 'complete' | 'fuel' | 'sos' | 'summary' | 'menu';
@@ -151,12 +226,22 @@ export function Chatbot() {
   const [isTyping, setIsTyping] = useState(false);
   const [booking, setBooking] = useState(false);
   const [driverSheet, setDriverSheet] = useState<DriverAction | null>(null);
+  const [staffSheet, setStaffSheet] = useState<StaffMode | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Re-read on every render rather than once: the widget is mounted above the
   // router and survives navigation between portals.
-  const isDriver = typeof window !== 'undefined' && window.location.pathname.startsWith('/driver');
-  const kb = isDriver ? DRIVER_KB[currentLang] : localized;
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  const isDriver = path.startsWith('/driver');
+  const isOfficer = path.startsWith('/officer');
+  const isAdmin = path.startsWith('/admin');
+  const staffPortal: 'officer' | 'admin' | null = isOfficer ? 'officer' : isAdmin ? 'admin' : null;
+
+  const kb = isDriver
+    ? DRIVER_KB[currentLang]
+    : staffPortal
+      ? STAFF_KB[staffPortal][currentLang]
+      : localized;
 
   useEffect(() => {
     if (isOpen) {
@@ -224,8 +309,9 @@ export function Chatbot() {
         sender: 'bot',
         text: botReply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        action: !isDriver && wantsBooking(text, botReply) ? 'book' : undefined,
+        action: !isDriver && !staffPortal && wantsBooking(text, botReply) ? 'book' : undefined,
         driverAction: isDriver ? driverActionFor(text, botReply) ?? undefined : undefined,
+        staffMode: staffPortal ? staffModeFor(text, botReply, isOfficer) ?? undefined : undefined,
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch {
@@ -251,8 +337,9 @@ export function Chatbot() {
         sender: 'bot',
         text: fallbackReply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        action: isDriver ? undefined : 'book',
+        action: isDriver || staffPortal ? undefined : 'book',
         driverAction: isDriver ? driverActionFor(text, '') ?? 'menu' : undefined,
+        staffMode: staffPortal ? staffModeFor(text, '', isOfficer) ?? 'menu' : undefined,
       };
       setMessages((prev) => [...prev, botMsg]);
     } finally {
@@ -302,12 +389,29 @@ export function Chatbot() {
               <div className="min-w-0">
                 <h3 className="truncate text-fluid-sm font-bold leading-tight">AI Safaai Sahayak</h3>
                 <p className="truncate text-[11px] opacity-85">
-                  {isDriver ? 'In-cab driver assistant' : 'Municipal 24/7 Sanitation Assistant'}
+                  {isDriver
+                    ? 'In-cab driver assistant'
+                    : isOfficer
+                      ? 'Ward officer assistant'
+                      : isAdmin
+                        ? 'City command assistant'
+                        : 'Municipal 24/7 Sanitation Assistant'}
                 </p>
               </div>
             </div>
             {/* Drivers get a permanent way into their actions, so nothing
                 depends on the assistant having guessed the right intent. */}
+            {staffPortal && (
+              <button
+                type="button"
+                onClick={() => setStaffSheet('menu')}
+                aria-label="Assistant actions"
+                title="Assistant actions"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/25 bg-white/15 text-brand-ink transition hover:bg-white/30 active:scale-95"
+              >
+                <ClipboardList className="h-5 w-5" />
+              </button>
+            )}
             {isDriver && (
               <button
                 type="button"
@@ -351,6 +455,19 @@ export function Chatbot() {
                   }`}
                 >
                   <p>{m.text}</p>
+
+                  {m.staffMode && (
+                    <button
+                      type="button"
+                      onClick={() => setStaffSheet(m.staffMode!)}
+                      className={`mt-2 flex w-full min-h-touch items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold text-white transition active:scale-[0.98] hover:brightness-110 ${
+                        m.staffMode === 'emergencies' ? 'bg-danger' : isAdmin ? 'bg-orange-600' : 'bg-brand'
+                      }`}
+                    >
+                      {m.staffMode === 'emergencies' ? <Siren className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
+                      {STAFF_CTA[m.staffMode][currentLang]}
+                    </button>
+                  )}
 
                   {m.driverAction && (
                     <button
@@ -448,6 +565,26 @@ export function Chatbot() {
 
       {/* Booking sheet. Rendered as a sibling of the chat panel, not inside it,
           so on desktop it is not clipped by the 380px floating window. */}
+      {staffPortal && (
+        <StaffAssistantSheet
+          portal={staffPortal}
+          open={staffSheet !== null}
+          initialMode={staffSheet ?? 'menu'}
+          onClose={() => setStaffSheet(null)}
+          onEvent={(text) =>
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: String(Date.now() + 4),
+                sender: 'bot',
+                text,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              },
+            ])
+          }
+        />
+      )}
+
       <DriverAssistantSheet
         open={driverSheet !== null}
         initialMode={driverSheet ?? 'menu'}

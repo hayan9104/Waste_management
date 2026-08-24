@@ -24,7 +24,7 @@ router.post(
         lang: z.enum(['en', 'hi', 'gu']).optional(),
         // Which assistant is asking. A driver on the road needs instructions
         // for the job in front of them, not an explanation of the citizen app.
-        audience: z.enum(['citizen', 'driver']).optional(),
+        audience: z.enum(['citizen', 'driver', 'officer', 'admin']).optional(),
       })
       .parse(req.body);
 
