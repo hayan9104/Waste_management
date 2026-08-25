@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma.js';
-import { CATEGORY_MAP } from '../config/constants.js';
+import { CATEGORY_MAP, STREAM_MAP, STREAM_REVIEW_THRESHOLD, QUANTITY_NOMINAL_KG } from '../config/constants.js';
 import { predictHotspots } from './ai.service.js';
 import { env } from '../config/env.js';
 import { CALIBRATION } from '../config/calibration/index.js';
@@ -239,7 +239,11 @@ export async function fuelAndExpenditure(wardIds, days = 30) {
   const litres = logs.reduce((n, l) => n + (l.liters ?? 0), 0);
   const cost = logs.reduce((n, l) => n + (l.cost ?? 0), 0);
   const missingCost = logs.filter((l) => l.liters != null && l.cost == null).length;
-  const km = routes.reduce((n, r) => n + (r.actualKm || r.distanceKm || 0), 0);
+  // Filled in from the per-vehicle rollup below, so the headline figure and
+  // the table are the same measurement rather than two different ones.
+  let km = 0;
+  /** City-wide litres across the measured spans, for the headline km/l. */
+  let burned = 0;
 
   // Per-day series for the trend chart.
   const byDay = new Map();
@@ -263,10 +267,53 @@ export async function fuelAndExpenditure(wardIds, days = 30) {
     });
   }
 
-  // Per-vehicle and per-ward rollups.
-  const kmByVehicle = new Map();
+  /**
+   * Distance from the odometer, which is how a fleet actually measures it.
+   *
+   * This used to sum published route distance, and the two sides of the ratio
+   * were then measured over different spans: fuel logs go back thirty days but
+   * routes are published for today, so a month of diesel was being divided by
+   * one day of driving. Across the seeded city that was 60 km of route against
+   * 13,000 litres — every truck showed "0 km" and both km/l and cost/km came
+   * out blank, which is the column the whole page exists for.
+   *
+   * Full-to-full is the standard method and it needs nothing we do not already
+   * collect: the driver enters the odometer with each fill-up, so the distance
+   * between the first and last fill in the window is measured, not planned.
+   * The first fill's litres are excluded because they were burned before that
+   * reading was taken — including them understates efficiency on every truck.
+   *
+   * Route distance stays as the fallback for a truck whose driver has logged
+   * fewer than two readings; better a planned figure than an empty column.
+   */
+  const routeKmByVehicle = new Map();
   for (const r of routes) {
-    kmByVehicle.set(r.vehicleId, (kmByVehicle.get(r.vehicleId) ?? 0) + (r.actualKm || r.distanceKm || 0));
+    routeKmByVehicle.set(r.vehicleId, (routeKmByVehicle.get(r.vehicleId) ?? 0) + (r.actualKm || r.distanceKm || 0));
+  }
+
+  /** Odometer span and the litres that span actually consumed. */
+  const odometerByVehicle = new Map();
+  for (const l of logs) {
+    if (l.odometerKm == null) continue;
+    const row = odometerByVehicle.get(l.vehicleId) ?? { readings: [] };
+    row.readings.push({ odometerKm: l.odometerKm, liters: l.liters ?? 0 });
+    odometerByVehicle.set(l.vehicleId, row);
+  }
+
+  const kmByVehicle = new Map();
+  const burnedByVehicle = new Map();
+  for (const [vehicleId, row] of odometerByVehicle) {
+    // logs come back newest-first; ascending odometer is what we need here.
+    const asc = [...row.readings].sort((a, b) => a.odometerKm - b.odometerKm);
+    if (asc.length < 2) continue;
+    const span = asc[asc.length - 1].odometerKm - asc[0].odometerKm;
+    // A rolled-back or mistyped reading is not a distance.
+    if (!(span > 0)) continue;
+    kmByVehicle.set(vehicleId, span);
+    burnedByVehicle.set(vehicleId, asc.slice(1).reduce((n, x) => n + x.liters, 0));
+  }
+  for (const [vehicleId, km] of routeKmByVehicle) {
+    if (!kmByVehicle.has(vehicleId) && km > 0) kmByVehicle.set(vehicleId, km);
   }
 
   const perVehicle = [];
@@ -278,6 +325,8 @@ export async function fuelAndExpenditure(wardIds, days = 30) {
     const vLitres = mine.reduce((n, l) => n + (l.liters ?? 0), 0);
     const vCost = mine.reduce((n, l) => n + (l.cost ?? 0), 0);
     const vKm = kmByVehicle.get(v.id) ?? 0;
+    // Litres burned across the measured span — see the note above.
+    const vBurned = burnedByVehicle.get(v.id) ?? vLitres;
 
     perVehicle.push({
       vehicleId: v.id,
@@ -291,18 +340,22 @@ export async function fuelAndExpenditure(wardIds, days = 30) {
       entries: mine.length,
       // Null rather than 0 when there is nothing to divide by: "0 km/l" reads
       // as a catastrophically thirsty truck, not as "no data yet".
-      kmPerLitre: vLitres > 0 && vKm > 0 ? Number((vKm / vLitres).toFixed(2)) : null,
+      kmPerLitre: vBurned > 0 && vKm > 0 ? Number((vKm / vBurned).toFixed(2)) : null,
       costPerKm: vKm > 0 && vCost > 0 ? Number((vCost / vKm).toFixed(2)) : null,
     });
 
     if (v.ward) {
-      const w = wardAgg.get(v.ward.id) ?? { ward: v.ward, litres: 0, cost: 0, km: 0, vehicles: 0 };
+      const w = wardAgg.get(v.ward.id) ?? { ward: v.ward, litres: 0, cost: 0, km: 0, burned: 0, vehicles: 0 };
       w.litres += vLitres;
+      w.burned += vBurned;
       w.cost += vCost;
       w.km += vKm;
       w.vehicles += 1;
       wardAgg.set(v.ward.id, w);
     }
+
+    km += vKm;
+    burned += vBurned;
   }
 
   perVehicle.sort((a, b) => b.cost - a.cost || b.litres - a.litres);
@@ -314,7 +367,7 @@ export async function fuelAndExpenditure(wardIds, days = 30) {
       litres: Number(w.litres.toFixed(1)),
       cost: Number(w.cost.toFixed(0)),
       km: Number(w.km.toFixed(1)),
-      kmPerLitre: w.litres > 0 && w.km > 0 ? Number((w.km / w.litres).toFixed(2)) : null,
+      kmPerLitre: w.burned > 0 && w.km > 0 ? Number((w.km / w.burned).toFixed(2)) : null,
       costPerKm: w.km > 0 && w.cost > 0 ? Number((w.cost / w.km).toFixed(2)) : null,
     }))
     .sort((a, b) => b.cost - a.cost);
@@ -331,7 +384,7 @@ export async function fuelAndExpenditure(wardIds, days = 30) {
       entries: logs.length,
       vehiclesReporting: reporting,
       fleetSize: vehicles.length,
-      kmPerLitre: litres > 0 && km > 0 ? Number((km / litres).toFixed(2)) : null,
+      kmPerLitre: burned > 0 && km > 0 ? Number((km / burned).toFixed(2)) : null,
       costPerKm: km > 0 && cost > 0 ? Number((cost / km).toFixed(2)) : null,
       avgCostPerDay: Number((cost / days).toFixed(0)),
     },
@@ -742,6 +795,150 @@ export async function perModelHealth(days = 14, visionReachable = false) {
   };
 }
 
+// ------------------------------------------------- waste streams & volume ----
+
+/**
+ * Open work in the ward, split by processing stream.
+ *
+ * Counts what is *outstanding*, not what was ever filed: this drives the
+ * officer's categorization page, where the question is "what do I still have
+ * to route", so resolved and rejected reports are noise. `null` is reported as
+ * its own bucket rather than folded into OTHER — a report the classifier never
+ * saw is a different problem from one it looked at and could not call, and
+ * only the first is fixed by re-running classification.
+ */
+export async function streamBreakdown(wardIds, { includeResolved = false } = {}) {
+  const rows = await prisma.complaint.groupBy({
+    by: ['wasteStream'],
+    where: {
+      ...wardScope(wardIds),
+      ...(includeResolved ? {} : { status: { notIn: ['RESOLVED', 'REJECTED'] } }),
+    },
+    _count: { _all: true },
+    _avg: { wasteStreamConfidence: true },
+  });
+
+  const total = rows.reduce((a, r) => a + r._count._all, 0) || 1;
+  return rows
+    .map((r) => ({
+      stream: r.wasteStream ?? 'UNCLASSIFIED',
+      label: r.wasteStream ? (STREAM_MAP[r.wasteStream]?.label ?? r.wasteStream) : 'Not yet classified',
+      count: r._count._all,
+      pct: Number(((r._count._all / total) * 100).toFixed(1)),
+      avgConfidence: Number((r._avg.wasteStreamConfidence ?? 0).toFixed(3)),
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** How many open reports in scope still need an officer to confirm the stream. */
+export async function streamReviewCount(wardIds) {
+  return prisma.complaint.count({
+    where: {
+      ...wardScope(wardIds),
+      status: { notIn: ['RESOLVED', 'REJECTED'] },
+      wasteStreamOverridden: false,
+      OR: [{ wasteStream: null }, { wasteStreamConfidence: { lt: STREAM_REVIEW_THRESHOLD } }],
+    },
+  });
+}
+
+/**
+ * Ward scoping for handoffs.
+ *
+ * A ComplaintAssignment has no ward of its own — it inherits the one on the
+ * complaint it describes — so scoping has to reach through the relation rather
+ * than filter a column that is not there.
+ */
+const assignmentWardScope = (wardIds) =>
+  wardIds === null ? {} : { complaint: { wardId: { in: wardIds } } };
+
+/**
+ * Volume handed to processors over time, and how it splits.
+ *
+ * Weighed kilograms where a handoff has been completed and weighed, the
+ * officer's estimate band where it has not — `estimatedKg` is reported
+ * alongside so a chart can show how much of a bar is still an estimate rather
+ * than presenting the two as one settled number.
+ */
+export async function wasteVolume(wardIds, days = 30, { companyId = null, stream = null } = {}) {
+  const from = startOfDay(days - 1);
+  const rows = await prisma.complaintAssignment.findMany({
+    where: {
+      ...assignmentWardScope(wardIds),
+      createdAt: { gte: from },
+      status: { not: 'CANCELLED' },
+      ...(companyId ? { companyId } : {}),
+      ...(stream ? { wasteStream: stream } : {}),
+    },
+    select: {
+      createdAt: true,
+      wasteStream: true,
+      companyId: true,
+      estimatedQuantity: true,
+      actualQuantityKg: true,
+      company: { select: { id: true, name: true, code: true } },
+      complaint: { select: { wardId: true, ward: { select: { id: true, name: true, code: true } } } },
+    },
+  });
+
+  const kg = (r) => (r.actualQuantityKg != null ? r.actualQuantityKg : QUANTITY_NOMINAL_KG[r.estimatedQuantity] ?? 0);
+
+  const series = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const start = startOfDay(i);
+    const end = startOfDay(i - 1);
+    const inDay = rows.filter((r) => r.createdAt >= start && r.createdAt < end);
+    series.push({
+      date: dayKey(start),
+      assignments: inDay.length,
+      totalKg: Math.round(inDay.reduce((a, r) => a + kg(r), 0)),
+      weighedKg: Math.round(inDay.filter((r) => r.actualQuantityKg != null).reduce((a, r) => a + kg(r), 0)),
+      estimatedKg: Math.round(inDay.filter((r) => r.actualQuantityKg == null).reduce((a, r) => a + kg(r), 0)),
+    });
+  }
+
+  const bucket = (keyOf, labelOf) => {
+    const map = new Map();
+    for (const r of rows) {
+      const key = keyOf(r);
+      if (key == null) continue;
+      const cur = map.get(key) ?? { key, label: labelOf(r), count: 0, totalKg: 0 };
+      cur.count += 1;
+      cur.totalKg += kg(r);
+      map.set(key, cur);
+    }
+    return [...map.values()]
+      .map((b) => ({ ...b, totalKg: Math.round(b.totalKg) }))
+      .sort((a, b) => b.totalKg - a.totalKg);
+  };
+
+  const totalKg = Math.round(rows.reduce((a, r) => a + kg(r), 0));
+  const weighedKg = Math.round(rows.filter((r) => r.actualQuantityKg != null).reduce((a, r) => a + kg(r), 0));
+
+  return {
+    days,
+    totalKg,
+    weighedKg,
+    estimatedKg: totalKg - weighedKg,
+    /** Share of the total that has actually been weighed — honesty about the chart. */
+    weighedShare: totalKg ? Number(((weighedKg / totalKg) * 100).toFixed(1)) : 0,
+    assignments: rows.length,
+    series,
+    byStream: bucket(
+      (r) => r.wasteStream,
+      (r) => STREAM_MAP[r.wasteStream]?.label ?? r.wasteStream
+    ),
+    byCompany: bucket(
+      (r) => r.companyId,
+      (r) => r.company?.name ?? 'Unknown'
+    ),
+    byWard: bucket(
+      (r) => r.complaint?.wardId,
+      (r) => r.complaint?.ward?.name ?? 'Unassigned ward'
+    ),
+  };
+}
+
 export { startOfDay, dayKey, median };
 export default {
   overview,
@@ -755,4 +952,7 @@ export default {
   perModelHealth,
   fuelAndExpenditure,
   slaPerformance,
+  streamBreakdown,
+  streamReviewCount,
+  wasteVolume,
 };

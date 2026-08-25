@@ -5,7 +5,7 @@ import { requirePortal, loadUser, officerWardIds } from '../middleware/auth.js';
 import { writeLimiter } from '../middleware/rateLimit.js';
 import { audited } from '../middleware/audit.js';
 import { prisma } from '../lib/prisma.js';
-import { PORTALS, SOCKET_EVENTS } from '../config/constants.js';
+import { PORTALS, SOCKET_EVENTS, WASTE_STREAMS, STREAM_MAP, STREAM_REVIEW_THRESHOLD } from '../config/constants.js';
 import analytics from '../services/analytics.service.js';
 import { transition, serializeComplaint, addEvent } from '../services/complaint.service.js';
 import { escalate, slaCountdown } from '../services/escalation.service.js';
@@ -17,6 +17,14 @@ import { notify } from '../services/notification.service.js';
 import { hashPassword } from '../lib/password.js';
 import { wardRoster } from '../services/roster.service.js';
 import { shiftBoard } from '../services/shift.service.js';
+import { planAutoAssign } from '../services/dispatch.service.js';
+import {
+  getSuggestedCompanies,
+  assignComplaintToCompany,
+  updateAssignmentStatus,
+  serializeAssignment,
+  LIVE_ASSIGNMENT_STATUSES,
+} from '../services/company.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.OFFICER), loadUser);
@@ -250,7 +258,7 @@ router.get(
       due: { dueAt: 'asc' },
     }[q.sort || 'severity'];
 
-    const [rows, total] = await Promise.all([
+    const [rows, total, unassignedTotal] = await Promise.all([
       prisma.complaint.findMany({
         where: filter,
         include: {
@@ -264,12 +272,26 @@ router.get(
         take: pageSize,
       }),
       prisma.complaint.count({ where: filter }),
+      /**
+       * How much work has no truck — the number auto-assign offers to dispatch.
+       *
+       * Deliberately not derived from `filter` or from the page. Auto-assign
+       * covers every unassigned report in the officer's wards, so counting the
+       * rows on screen understated it the moment a queue ran past one page,
+       * and any active filter understated it further: the button offered three
+       * and dispatched seventeen. This is the same predicate planAutoAssign
+       * selects on, so the number on the button is the number that goes out.
+       */
+      prisma.complaint.count({
+        where: { ...where, assignedVehicleId: null, status: { notIn: ['RESOLVED', 'REJECTED'] } },
+      }),
     ]);
 
     res.json({
       page,
       pageSize,
       total,
+      unassignedTotal,
       pages: Math.ceil(total / pageSize),
       items: rows.map((c) => ({
         ...serializeComplaint(c),
@@ -536,6 +558,495 @@ router.post(
       driver: vehicle.driver,
       complaints: assigned,
     });
+  })
+);
+
+
+/**
+ * POST /api/officer/complaints/auto-assign
+ *
+ * Hands the outstanding unassigned queue to the crew in one press. The plan is
+ * worked out in dispatch.service; this applies it through the same transition
+ * and the same notifications a manual assignment uses, so the audit trail and
+ * what the driver sees are identical either way.
+ */
+router.post(
+  ['/complaints/auto-assign', '/auto-assign'],
+  writeLimiter,
+  audited('complaint_auto_assign', 'complaints'),
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        // Optional: auto-assign only a selection. Omit for the whole queue.
+        complaintIds: z.array(z.string()).optional(),
+      })
+      .parse(req.body ?? {});
+
+    const { ids } = await scope(req);
+    const plan = await planAutoAssign(ids, body.complaintIds?.length ? body.complaintIds : null);
+
+    if (!plan.assignments.length) {
+      return res.json({
+        success: true,
+        assignedCount: 0,
+        trucksUsed: 0,
+        perDriver: [],
+        skipped: plan.skipped.map((s) => ({ code: s.complaint.code, reason: s.reason })),
+        message: plan.skipped.length
+          ? plan.skipped[0].reason
+          : 'Nothing waiting — every report in your wards already has a truck.',
+      });
+    }
+
+    /**
+     * Applied report by report rather than as one all-or-nothing batch.
+     *
+     * If the seventeenth report cannot be written — another officer took it a
+     * second ago, it was just resolved — an officer who pressed one button
+     * should still get the sixteen trucks that could be sent, with the rest
+     * named. So each report is claimed, applied and accounted for on its own,
+     * and whatever could not go out comes back in `skipped` rather than taking
+     * the whole request down with it.
+     */
+    const skipped = plan.skipped.map((s) => ({ code: s.complaint.code, reason: s.reason }));
+
+    // Grouped so each driver gets one notification naming all their new stops,
+    // rather than one buzz per complaint.
+    const byVehicle = new Map();
+    for (const a of plan.assignments) {
+      const row = byVehicle.get(a.vehicle.id) ?? { vehicle: a.vehicle, complaints: [] };
+      row.complaints.push(a.complaint);
+      byVehicle.set(a.vehicle.id, row);
+    }
+
+    const perDriver = [];
+    let assignedCount = 0;
+
+    for (const { vehicle, complaints } of byVehicle.values()) {
+      const payloads = [];
+      const landed = [];
+
+      for (const c of complaints) {
+        /**
+         * Claim the report before working it.
+         *
+         * The plan was read a moment ago and is not a lock: a second officer
+         * pressing the same button, or one assigning by hand in the modal, can
+         * take a report in between. A conditional write that only succeeds
+         * while the report is still unassigned settles it — the loser skips
+         * that report instead of overwriting a truck already on its way, and
+         * pressing auto-assign twice cannot double-dispatch.
+         */
+        const claim = await prisma.complaint.updateMany({
+          where: { id: c.id, assignedVehicleId: null, status: { notIn: ['RESOLVED', 'REJECTED'] } },
+          data: { assignedVehicleId: vehicle.id },
+        });
+        if (!claim.count) {
+          skipped.push({ code: c.code, reason: 'Already assigned or closed while dispatching' });
+          continue;
+        }
+
+        try {
+          const payload = await transition({
+            complaintId: c.id,
+            status: 'ASSIGNED',
+            actorId: req.user.id,
+            note: `Auto-assigned to ${vehicle.registrationNumber} (Driver: ${vehicle.driver?.name || 'Assigned Crew'})`,
+            extra: { assignedVehicleId: vehicle.id },
+          });
+          payloads.push(payload);
+          landed.push(c);
+          emitTo(
+            [`complaint:${c.id}`, `complaint_${c.id}`, vehicle.wardId ? `ward:${vehicle.wardId}` : null, 'city'],
+            SOCKET_EVENTS.COMPLAINT_UPDATE,
+            payload
+          );
+        } catch (err) {
+          /**
+           * The claim landed but the transition did not, so the report is
+           * holding a truck it was never actually assigned to. Release it —
+           * guarded on the status never having reached ASSIGNED, so a write
+           * that did take effect is left alone — and it comes back to the
+           * queue for the next press instead of vanishing into a route no
+           * driver was ever told about.
+           */
+          await prisma.complaint
+            .updateMany({
+              where: { id: c.id, assignedVehicleId: vehicle.id, status: { not: 'ASSIGNED' } },
+              data: { assignedVehicleId: null },
+            })
+            .catch(() => {});
+          console.error(`[auto-assign] ${c.code}: could not apply assignment:`, err.message);
+          skipped.push({ code: c.code, reason: 'Could not be dispatched — assign it manually' });
+        }
+      }
+
+      // A truck every one of whose reports was taken by someone else is not
+      // part of this dispatch: no notification, and it does not count as used.
+      if (!payloads.length) continue;
+      assignedCount += payloads.length;
+
+      if (vehicle.driverId) {
+        /**
+         * The stops are already written and the driver's route already shows
+         * them, so a push provider that is down must not turn a dispatch that
+         * did happen into a 500 saying it did not.
+         */
+        await notify({
+          userId: vehicle.driverId,
+          type: 'ASSIGNMENT',
+          title: `${payloads.length} new stop${payloads.length === 1 ? '' : 's'} assigned`,
+          body: `${vehicle.registrationNumber} — open your route to see them.`,
+          payload: { complaintIds: landed.map((c) => c.id) },
+        }).catch((err) =>
+          console.error(`[auto-assign] ${vehicle.registrationNumber}: driver notification failed:`, err.message)
+        );
+        const driverRooms = [`truck:${vehicle.id}`, `user:${vehicle.driverId}`, `driver_${vehicle.driverId}`];
+        emitTo(driverRooms, SOCKET_EVENTS.ASSIGNMENT_NEW, { vehicleId: vehicle.id, complaints: payloads });
+        emitTo(driverRooms, 'new_task_assigned', { vehicleId: vehicle.id, complaints: payloads });
+      }
+
+      perDriver.push({
+        vehicleId: vehicle.id,
+        registrationNumber: vehicle.registrationNumber,
+        driver: vehicle.driver,
+        count: payloads.length,
+        codes: landed.map((c) => c.code),
+      });
+    }
+
+    perDriver.sort((a, b) => b.count - a.count);
+
+    /**
+     * Everything planned was taken by someone else between the read and the
+     * write. Nothing actually failed, so this reports the same "nothing to do"
+     * shape as an empty plan rather than a success naming zero trucks.
+     */
+    if (!assignedCount) {
+      return res.json({
+        success: true,
+        assignedCount: 0,
+        trucksUsed: 0,
+        perDriver: [],
+        skipped,
+        message: skipped[0]?.reason ?? 'Nothing waiting — every report in your wards already has a truck.',
+      });
+    }
+
+    res.json({
+      success: true,
+      assignedCount,
+      trucksUsed: perDriver.length,
+      perDriver,
+      skipped,
+    });
+  })
+);
+
+// ----------------------------------------- waste streams & company handoff ----
+
+/**
+ * GET /api/officer/waste-categorization
+ *
+ * The ward's open work split by processing stream, plus the tickets whose
+ * stream the classifier was not confident enough to settle. Same shape of
+ * answer as the queue — a summary to read and a list to act on — because the
+ * officer's question here is the same one in a different axis: what is
+ * outstanding, and what needs me specifically.
+ */
+router.get(
+  ['/waste-categorization', '/waste-streams'],
+  asyncHandler(async (req, res) => {
+    const { ids, where } = await scope(req);
+    const q = z
+      .object({
+        stream: z.enum(['BIO', 'NON_BIO', 'HAZARDOUS', 'E_WASTE', 'OTHER', 'UNCLASSIFIED']).optional(),
+        reviewOnly: z.coerce.boolean().optional(),
+        page: z.coerce.number().min(1).optional(),
+        pageSize: z.coerce.number().min(5).max(100).optional(),
+      })
+      .parse(req.query);
+
+    const page = q.page || 1;
+    const pageSize = q.pageSize || 25;
+
+    const streamFilter =
+      q.stream === 'UNCLASSIFIED' ? { wasteStream: null } : q.stream ? { wasteStream: q.stream } : {};
+
+    const filter = {
+      ...where,
+      status: { notIn: ['RESOLVED', 'REJECTED'] },
+      ...streamFilter,
+      ...(q.reviewOnly
+        ? {
+            wasteStreamOverridden: false,
+            OR: [{ wasteStream: null }, { wasteStreamConfidence: { lt: STREAM_REVIEW_THRESHOLD } }],
+          }
+        : {}),
+    };
+
+    const [breakdown, reviewNeeded, rows, total, assignedCount] = await Promise.all([
+      analytics.streamBreakdown(ids),
+      analytics.streamReviewCount(ids),
+      prisma.complaint.findMany({
+        where: filter,
+        include: {
+          ward: true,
+          citizen: { select: { id: true, name: true } },
+          assignedVehicle: { include: { driver: { select: { id: true, name: true } } } },
+          /** Only the live handoff — a cancelled one must not read as assigned. */
+          companyAssignments: {
+            where: { status: { in: LIVE_ASSIGNMENT_STATUSES } },
+            include: { company: true },
+            take: 1,
+          },
+        },
+        orderBy: [{ severity: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.complaint.count({ where: filter }),
+      prisma.complaintAssignment.count({
+        where: {
+          status: { in: LIVE_ASSIGNMENT_STATUSES },
+          ...(ids === null ? {} : { complaint: { wardId: { in: ids } } }),
+        },
+      }),
+    ]);
+
+    res.json({
+      page,
+      pageSize,
+      total,
+      pages: Math.ceil(total / pageSize),
+      breakdown,
+      reviewNeeded,
+      liveAssignments: assignedCount,
+      streams: WASTE_STREAMS,
+      items: rows.map((c) => ({
+        ...serializeComplaint(c),
+        sla: slaCountdown(c),
+        assignment: c.companyAssignments?.[0] ? serializeAssignment(c.companyAssignments[0]) : null,
+      })),
+    });
+  })
+);
+
+/**
+ * PATCH /api/officer/complaints/:id/waste-stream
+ *
+ * The officer's correction of a suggested stream. Flagged as an override so
+ * the model-health view can separate what the classifier got right from what a
+ * human had to fix, and so a corrected ticket stops asking to be reviewed.
+ */
+router.patch(
+  '/complaints/:id/waste-stream',
+  writeLimiter,
+  audited('complaint_waste_stream_set', 'complaints'),
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({ wasteStream: z.enum(['BIO', 'NON_BIO', 'HAZARDOUS', 'E_WASTE', 'OTHER']) })
+      .parse(req.body);
+
+    const { ids } = await scope(req);
+    const before = await prisma.complaint.findUnique({ where: { id: req.params.id } });
+    if (!before) throw new HttpError(404, 'Complaint not found');
+    if (ids !== null && before.wardId && !ids.includes(before.wardId)) {
+      throw new HttpError(403, 'This report is not in your ward');
+    }
+
+    /**
+     * A live handoff was made under the old stream and the company was chosen
+     * for it. Silently changing the stream underneath would leave a licensed
+     * processor holding a load it never agreed to take.
+     */
+    const live = await prisma.complaintAssignment.findFirst({
+      where: { complaintId: before.id, status: { in: LIVE_ASSIGNMENT_STATUSES } },
+      include: { company: true },
+    });
+    if (live && live.wasteStream !== body.wasteStream) {
+      throw new HttpError(
+        409,
+        `${live.company.name} already has this under ${STREAM_MAP[live.wasteStream]?.label ?? live.wasteStream} — cancel that handoff first`
+      );
+    }
+
+    const complaint = await prisma.complaint.update({
+      where: { id: before.id },
+      data: {
+        wasteStream: body.wasteStream,
+        // An officer's decision is certain by definition; the confidence field
+        // stops being a model score once a human has settled it.
+        wasteStreamConfidence: 1,
+        wasteStreamOverridden: true,
+      },
+      include: { ward: true, citizen: { select: { id: true, name: true } }, assignedVehicle: true },
+    });
+
+    await addEvent(
+      complaint.id,
+      complaint.status,
+      `Waste stream set to ${STREAM_MAP[body.wasteStream]?.label ?? body.wasteStream} by officer`,
+      req.user.id
+    );
+
+    res.json(serializeComplaint(complaint));
+  })
+);
+
+/**
+ * GET /api/officer/complaints/:id/suggested-companies
+ *
+ * Who could lawfully take this load, best first. Read-only — the officer is
+ * free to pick any licensed company, or none.
+ */
+router.get(
+  '/complaints/:id/suggested-companies',
+  asyncHandler(async (req, res) => {
+    const { ids } = await scope(req);
+    res.json(await getSuggestedCompanies(req.params.id, ids));
+  })
+);
+
+/**
+ * POST /api/officer/complaints/:id/assign-company
+ *
+ * Hand the report to a processing company. Distinct from `/complaints/assign`,
+ * which sends a truck: one is collection, the other is disposal, and a report
+ * routinely needs both.
+ */
+router.post(
+  '/complaints/:id/assign-company',
+  writeLimiter,
+  audited('complaint_company_assign', 'complaint_assignments'),
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        companyId: z.string().min(1),
+        estimatedQuantity: z.enum(['SMALL', 'MEDIUM', 'LARGE']).optional(),
+        note: z.string().max(500).optional(),
+      })
+      .parse(req.body);
+
+    const { ids } = await scope(req);
+    const assignment = await assignComplaintToCompany({
+      complaintId: req.params.id,
+      companyId: body.companyId,
+      officer: req.user,
+      estimatedQuantity: body.estimatedQuantity ?? 'MEDIUM',
+      note: body.note,
+      wardIds: ids,
+      req,
+    });
+
+    res.status(201).json(assignment);
+  })
+);
+
+/**
+ * GET /api/officer/my-assignments
+ *
+ * What this officer has handed over. Scoped to the acting officer rather than
+ * the ward: this page answers "what did I send and where has it got to", which
+ * a colleague's handoffs would only dilute — the ward-wide view is the admin's
+ * Assignment Overview.
+ */
+router.get(
+  '/my-assignments',
+  asyncHandler(async (req, res) => {
+    const q = z
+      .object({
+        status: z.enum(['PENDING_PICKUP', 'PICKED', 'COMPLETED', 'CANCELLED']).optional(),
+        companyId: z.string().optional(),
+        stream: z.enum(['BIO', 'NON_BIO', 'HAZARDOUS', 'E_WASTE', 'OTHER']).optional(),
+        search: z.string().trim().min(1).max(120).optional(),
+        page: z.coerce.number().min(1).optional(),
+        pageSize: z.coerce.number().min(5).max(100).optional(),
+      })
+      .parse(req.query);
+
+    const page = q.page || 1;
+    const pageSize = q.pageSize || 25;
+
+    const filter = {
+      assignedById: req.user.id,
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.companyId ? { companyId: q.companyId } : {}),
+      ...(q.stream ? { wasteStream: q.stream } : {}),
+      ...(q.search
+        ? {
+            OR: [
+              { complaint: { code: { contains: q.search, mode: 'insensitive' } } },
+              { company: { name: { contains: q.search, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, total, counts] = await Promise.all([
+      prisma.complaintAssignment.findMany({
+        where: filter,
+        include: {
+          company: true,
+          assignedBy: { select: { id: true, name: true } },
+          complaint: { include: { ward: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.complaintAssignment.count({ where: filter }),
+      prisma.complaintAssignment.groupBy({
+        by: ['status'],
+        where: { assignedById: req.user.id },
+        _count: { _all: true },
+      }),
+    ]);
+
+    res.json({
+      page,
+      pageSize,
+      total,
+      pages: Math.ceil(total / pageSize),
+      statusCounts: Object.fromEntries(counts.map((c) => [c.status, c._count._all])),
+      items: rows.map((a) =>
+        serializeAssignment(a, {
+          /** Reuses the queue's SLA clock so ageing reads the same everywhere. */
+          sla: a.complaint ? slaCountdown(a.complaint) : null,
+        })
+      ),
+    });
+  })
+);
+
+/**
+ * PATCH /api/officer/assignments/:id — advance or withdraw a handoff.
+ */
+router.patch(
+  '/assignments/:id',
+  writeLimiter,
+  audited('complaint_company_assignment_update', 'complaint_assignments'),
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        status: z.enum(['PENDING_PICKUP', 'PICKED', 'COMPLETED', 'CANCELLED']),
+        actualQuantityKg: z.coerce.number().min(0).max(100000).optional(),
+        cancelReason: z.string().max(300).optional(),
+      })
+      .parse(req.body);
+
+    const { ids } = await scope(req);
+    res.json(
+      await updateAssignmentStatus({
+        assignmentId: req.params.id,
+        status: body.status,
+        actor: req.user,
+        actualQuantityKg: body.actualQuantityKg,
+        cancelReason: body.cancelReason,
+        wardIds: ids,
+        req,
+      })
+    );
   })
 );
 

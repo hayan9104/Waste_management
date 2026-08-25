@@ -190,6 +190,47 @@ async function main() {
   check('every working truck has a route today', idle.length === 0,
     `${idle.length} without: ${idle.slice(0, 4).map((v) => v.registrationNumber).join(', ')}`);
 
+  // Fuel efficiency is the column the analytics page exists for, and it was
+  // blank on every truck: litres were summed over thirty days while distance
+  // came from routes published for today, so a month of diesel was divided by
+  // one day of driving. Distance now comes from the odometer readings drivers
+  // enter with each fill-up.
+  const fuel = (await getJson(tokens.admin, '/admin/fuel')).body;
+  const noEfficiency = (fuel?.perVehicle ?? []).filter((v) => v.kmPerLitre == null);
+  check('every truck with fuel logs reports km/l', noEfficiency.length === 0,
+    `${noEfficiency.length} blank: ${noEfficiency.slice(0, 4).map((v) => v.registrationNumber).join(', ')}`);
+  check('…and cost per km', (fuel?.perVehicle ?? []).every((v) => v.costPerKm != null),
+    'a truck has distance and spend but no ₹/km');
+  // A waste truck is not a motorbike and not a tanker; outside this band the
+  // distance and the litres are not measuring the same thing.
+  check('fleet km/l is physically plausible',
+    fuel?.totals?.kmPerLitre > 1.5 && fuel?.totals?.kmPerLitre < 12,
+    `got ${fuel?.totals?.kmPerLitre}`);
+
+  // Every ward officer opens Advance Scheduled Requests, and the ward is what
+  // decides who sees a request — a skew leaves whole officers on an empty page.
+  for (const n of [1, 2, 3, 4, 5]) {
+    const h = await login('officer', `officer${n}@safaai.gov.in`);
+    const items = (await getJson(h, '/officer/scheduled-requests')).body?.items ?? [];
+    check(`officer${n} has scheduled requests`, items.length >= 5, `got ${items.length}`);
+  }
+
+  /**
+   * Auto-assign needs something to assign.
+   *
+   * The route builder used to take every outstanding report onto a published
+   * route, so the queue was full but every row already had a crew and the
+   * Auto-assign bar never appeared. Three stops per truck are planned in the
+   * morning; the rest is the live backlog an officer dispatches. Asserted
+   * read-only — pressing the button is a write, so it is not done here.
+   */
+  const queue = (await getJson(tokens.officer, '/officer/queue')).body?.items ?? [];
+  const waiting = queue.filter(
+    (c) => !c.assignedVehicleId && !['RESOLVED', 'REJECTED'].includes(c.status)
+  );
+  check('officer queue has unassigned work for auto-assign', waiting.length >= 1,
+    `every report in the queue already has a truck (${queue.length} rows)`);
+
   // GPS health has to be measured, not assumed: a fleet that is uniformly
   // "Strong signal" is the signature of no ping data at all.
   const grades = new Set(roster.map((d) => d.gps?.status).filter(Boolean));

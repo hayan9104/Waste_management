@@ -59,6 +59,41 @@ enum WasteCategory {
   OTHER
 }
 
+/// How the waste is *processed*, as distinct from `WasteCategory`, which is
+/// what the citizen reported seeing.
+///
+/// The two are deliberately separate axes. A garbage pile and an overflowing
+/// bin are different incidents but the same processing stream; medical waste
+/// and burning waste look nothing alike and both have to go to a licensed
+/// hazardous handler. Routing a ticket to a company depends on this axis, and
+/// collapsing it into the incident type would mean a company had to enumerate
+/// every incident shape it accepts rather than the one thing it is licensed for.
+enum WasteStream {
+  /// Organic / wet — kitchen waste, garden waste, animal remains.
+  BIO
+  /// Dry and recyclable — paper, plastic, glass, metal, inert rubble.
+  NON_BIO
+  /// Requires a licensed handler — clinical, chemical, combustion, sewage.
+  HAZARDOUS
+  /// Electronic waste, handled under separate e-waste rules.
+  E_WASTE
+  /// Genuinely mixed or undetermined; needs an officer to look.
+  OTHER
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Lifecycle of one complaint handed to one processing company.
+enum AssignmentStatus {
+  PENDING_PICKUP
+  PICKED
+  COMPLETED
+  CANCELLED
+}
+
 enum VehicleStatus {
   IDLE
   ON_ROUTE
@@ -134,28 +169,29 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  ward                Ward?            @relation(fields: [wardId], references: [id], onDelete: SetNull)
-  officerWards        WardOfficer[]
-  oauthIdentities     OAuthIdentity[]
-  refreshTokens       RefreshToken[]
-  emailTokens         EmailToken[]
-  complaints          Complaint[]      @relation("ComplaintCitizen")
-  assignedComplaints  Complaint[]      @relation("ComplaintAssigner")
-  resolvedComplaints  Complaint[]      @relation("ComplaintResolver")
-  complaintEvents     ComplaintEvent[]
-  drivenVehicles      Vehicle[]        @relation("VehicleDriver")
-  routes              Route[]
-  escalationsReceived Escalation[]     @relation("EscalationTarget")
-  auditLogs           AuditLog[]
-  notifications       Notification[]
-  creditEntries       GreenCredit[]
-  sosAlerts           SosAlert[]       @relation("SosDriver")
-  sosAcknowledged     SosAlert[]       @relation("SosResponder")
-  fuelLogs            FuelLog[]
-  shifts              DriverShift[]
+  ward                     Ward?                    @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  officerWards             WardOfficer[]
+  oauthIdentities          OAuthIdentity[]
+  refreshTokens            RefreshToken[]
+  emailTokens              EmailToken[]
+  complaints               Complaint[]              @relation("ComplaintCitizen")
+  assignedComplaints       Complaint[]              @relation("ComplaintAssigner")
+  resolvedComplaints       Complaint[]              @relation("ComplaintResolver")
+  complaintEvents          ComplaintEvent[]
+  drivenVehicles           Vehicle[]                @relation("VehicleDriver")
+  routes                   Route[]
+  escalationsReceived      Escalation[]             @relation("EscalationTarget")
+  auditLogs                AuditLog[]
+  notifications            Notification[]
+  creditEntries            GreenCredit[]
+  sosAlerts                SosAlert[]               @relation("SosDriver")
+  sosAcknowledged          SosAlert[]               @relation("SosResponder")
+  fuelLogs                 FuelLog[]
+  shifts                   DriverShift[]
   scheduledPickups         ScheduledPickupRequest[] @relation("CitizenScheduledPickups")
   assignedScheduledPickups ScheduledPickupRequest[] @relation("DriverScheduledPickups")
   feedbacks                Feedback[]
+  companyAssignments       ComplaintAssignment[]    @relation("CompanyAssignmentOfficer")
 
   @@index([role])
   @@index([wardId])
@@ -258,11 +294,12 @@ model Ward {
   complaints         Complaint[]
   detectedComplaints Complaint[]              @relation("ComplaintDetectedWard")
   vehicles           Vehicle[]
-  routes      Route[]
-  predictions HotspotPrediction[]
-  contacts    EmergencyContact[]
-  shifts      DriverShift[]
-  scheduledPickups ScheduledPickupRequest[]
+  routes             Route[]
+  predictions        HotspotPrediction[]
+  contacts           EmergencyContact[]
+  shifts             DriverShift[]
+  scheduledPickups   ScheduledPickupRequest[]
+  companies          CompanyWard[]
 
   @@index([minLat, maxLat, minLng, maxLng])
   @@map("wards")
@@ -299,7 +336,22 @@ model Complaint {
   fraudScore   Float          @default(0)
   fraudSignals Json?
 
-  assignmentType AssignmentType  @default(MANUAL)
+  /// Which processing stream this belongs to — see `WasteStream`.
+  ///
+  /// Nullable rather than defaulted: every complaint filed before this existed
+  /// has no stream, and defaulting them all to OTHER would be indistinguishable
+  /// from the classifier having actually looked and found it ambiguous. Null
+  /// means "never classified", which the officer views can then ask about.
+  wasteStream           WasteStream?
+  /// 0-1, on the same scale as `aiConfidence`, and subject to the same
+  /// <0.70 -> officer review rule. Derived from the vision classification, so
+  /// it can never exceed the confidence of the class it was derived from.
+  wasteStreamConfidence Float        @default(0)
+  /// Set when an officer overrides the suggested stream, so the analytics can
+  /// separate what the model got right from what a human had to correct.
+  wasteStreamOverridden Boolean      @default(false)
+
+  assignmentType AssignmentType @default(MANUAL)
   detectedWardId String?
 
   status      ComplaintStatus @default(PENDING)
@@ -322,18 +374,18 @@ model Complaint {
   resolutionPhotoUrl String?
   resolutionNote     String?
 
-  slaMinutes      Int       @default(1440)
-  dueAt           DateTime?
+  slaMinutes Int       @default(1440)
+  dueAt      DateTime?
 
   /// Officer deferral. Recorded as fields rather than left to be parsed back
   /// out of a timeline note, because the citizen is shown the reason and the
   /// new date verbatim and neither should depend on string formatting.
-  deferredAt     DateTime?
-  deferredReason String?
+  deferredAt      DateTime?
+  deferredReason  String?
   /// How many times this report has been pushed back. A report deferred four
   /// times is a different problem from one deferred once, and only the count
   /// makes that visible.
-  deferredCount  Int       @default(0)
+  deferredCount   Int       @default(0)
   escalationCount Int       @default(0)
   upvotes         Int       @default(0)
   duplicateOfId   String?
@@ -355,6 +407,20 @@ model Complaint {
   escalations      Escalation[]
   creditEntries    GreenCredit[]
   feedbacks        Feedback[]
+  citizen            User                  @relation("ComplaintCitizen", fields: [citizenId], references: [id], onDelete: Cascade)
+  ward               Ward?                 @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  detectedWard       Ward?                 @relation("ComplaintDetectedWard", fields: [detectedWardId], references: [id], onDelete: SetNull)
+  assignedVehicle    Vehicle?              @relation(fields: [assignedVehicleId], references: [id], onDelete: SetNull)
+  assignedBy         User?                 @relation("ComplaintAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  resolvedBy         User?                 @relation("ComplaintResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  duplicateOf        Complaint?            @relation("ComplaintDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates         Complaint[]           @relation("ComplaintDuplicates")
+  duplicateLinks     ComplaintDuplicate[]  @relation("DuplicateParent")
+  duplicateOfLinks   ComplaintDuplicate[]  @relation("DuplicateChild")
+  events             ComplaintEvent[]
+  escalations        Escalation[]
+  creditEntries      GreenCredit[]
+  companyAssignments ComplaintAssignment[]
 
   @@index([status])
   @@index([assignmentType])
@@ -363,6 +429,8 @@ model Complaint {
   @@index([isEmergency, status])
   @@index([createdAt])
   @@index([latitude, longitude])
+  /// Drives the officer's category-wise breakdown, which is always ward-scoped.
+  @@index([wardId, wasteStream])
   @@map("complaints")
 }
 
@@ -422,14 +490,14 @@ model Vehicle {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  ward       Ward?             @relation(fields: [wardId], references: [id], onDelete: SetNull)
-  driver     User?             @relation("VehicleDriver", fields: [driverId], references: [id], onDelete: SetNull)
-  locations  VehicleLocation[]
-  routes     Route[]
-  complaints Complaint[]
-  sosAlerts  SosAlert[]
-  fuelLogs   FuelLog[]
-  shifts     DriverShift[]
+  ward             Ward?                    @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  driver           User?                    @relation("VehicleDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  locations        VehicleLocation[]
+  routes           Route[]
+  complaints       Complaint[]
+  sosAlerts        SosAlert[]
+  fuelLogs         FuelLog[]
+  shifts           DriverShift[]
   scheduledPickups ScheduledPickupRequest[]
 
   @@index([wardId, status])
@@ -612,7 +680,7 @@ model FuelLog {
 /// currently clocked on at all from ping data -- a truck silent for ten
 /// minutes is indistinguishable from one whose shift ended an hour ago.
 model DriverShift {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   driverId  String
   vehicleId String?
   wardId    String?
@@ -713,6 +781,125 @@ model EmergencyContact {
 
   @@index([category])
   @@map("emergency_contacts")
+}
+
+// ------------------------------------------- processing companies & handoff ----
+
+/// A downstream processor — the firm that actually takes the waste away.
+///
+/// Distinct from a Vehicle: a truck is the corporation's own collection asset
+/// and answers to a driver on a route, whereas a company is an external party
+/// that is licensed for particular streams and has finite daily intake. A
+/// complaint can need both — a truck to lift it and a company to receive it.
+model Company {
+  id   String @id @default(cuid())
+  name String
+  /// Short human key used on the admin table and in exports, e.g. "GRN-BIO-01".
+  code String @unique
+
+  contactName  String?
+  contactPhone String
+  contactEmail String?
+  address      String?
+
+  /// Which streams this company is licensed to take. An enum array rather than
+  /// a join table: the set is small, fixed, and always read whole — the only
+  /// query is "does this company accept X", which `has` answers on an index.
+  acceptedStreams WasteStream[]
+
+  /// Daily intake ceiling. Used to rank suggestions, not to hard-block an
+  /// officer: a ward with one licensed hazardous handler must still be able to
+  /// assign to it when it is near capacity, with the pressure made visible.
+  capacityKgPerDay Int @default(0)
+
+  /// Depot location, for the proximity leg of the suggestion ranking.
+  latitude  Float?
+  longitude Float?
+
+  /// True when the company serves the whole city rather than named wards.
+  /// Kept explicit so "covers everywhere" is a stated fact rather than the
+  /// accidental meaning of an empty coverage list.
+  isCityWide Boolean       @default(false)
+  status     CompanyStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wards       CompanyWard[]
+  assignments ComplaintAssignment[]
+
+  @@index([status])
+  @@map("companies")
+}
+
+/// Ward coverage for a company, mirroring the WardOfficer join.
+model CompanyWard {
+  id        String   @id @default(cuid())
+  companyId String
+  wardId    String
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ward    Ward    @relation(fields: [wardId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, wardId])
+  @@index([wardId])
+  @@map("company_wards")
+}
+
+/// One complaint handed to one company by one officer.
+///
+/// A row rather than a set of columns on Complaint, because a handoff can be
+/// cancelled and re-made — a company refuses the load, or the stream turns out
+/// to be wrong on arrival — and the admin view is accountability reporting:
+/// who sent what where, including the attempt that was withdrawn. Columns
+/// would overwrite that history on the second assignment.
+model ComplaintAssignment {
+  id           String  @id @default(cuid())
+  complaintId  String
+  companyId    String
+  /// The ward officer who made the call. Never null in practice, but SetNull
+  /// on delete so removing a staff account cannot erase the handoff record.
+  assignedById String?
+
+  status AssignmentStatus @default(PENDING_PICKUP)
+
+  /// The stream this was assigned under, copied at assignment time.
+  ///
+  /// Denormalised on purpose: the complaint's own stream can later be
+  /// corrected, and the report has to keep showing what the officer actually
+  /// decided on, not what the record was retconned to afterwards.
+  wasteStream WasteStream
+
+  /// Officer's estimate at handoff, in the same bands the citizen already uses
+  /// on scheduled pickups.
+  estimatedQuantity WasteQuantity @default(MEDIUM)
+  /// Weighed on completion. Volume analytics prefer this and fall back to the
+  /// nominal weight of the band above, so a chart is never silently empty.
+  actualQuantityKg  Float?
+
+  note String?
+
+  pickedAt     DateTime?
+  completedAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  complaint  Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assignedBy User?     @relation("CompanyAssignmentOfficer", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  /// A complaint may only have one live handoff at a time. Enforced in the
+  /// service rather than here, because a partial unique index over
+  /// "status not in (CANCELLED)" is not expressible in Prisma schema.
+  @@index([complaintId, status])
+  @@index([companyId, status])
+  @@index([assignedById, createdAt])
+  @@index([createdAt])
+  @@map("complaint_assignments")
 }
 
 /// Model health panel (plan §2.4) — one row per inference batch summary.

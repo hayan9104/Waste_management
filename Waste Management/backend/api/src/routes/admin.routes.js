@@ -7,7 +7,12 @@ import { requirePortal, loadUser } from '../middleware/auth.js';
 import { writeLimiter } from '../middleware/rateLimit.js';
 import { audited, recordAudit } from '../middleware/audit.js';
 import { prisma } from '../lib/prisma.js';
-import { PORTALS, ROLES, WASTE_CATEGORIES } from '../config/constants.js';
+import { PORTALS, ROLES, WASTE_CATEGORIES, WASTE_STREAMS, STREAM_MAP } from '../config/constants.js';
+import {
+  serializeCompany,
+  serializeAssignment,
+  LIVE_ASSIGNMENT_STATUSES,
+} from '../services/company.service.js';
 import analytics from '../services/analytics.service.js';
 import { serializeVehicle, today, locationHistory } from '../services/tracking.service.js';
 import { hashPassword } from '../lib/password.js';
@@ -780,6 +785,361 @@ router.get(
   asyncHandler(async (req, res) => {
     const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
     res.json(await analytics.slaPerformance(null, days));
+  })
+);
+
+// ---------------------------------------------- processing companies (CRUD) ----
+
+/** GET /api/admin/companies — the processor registry. */
+router.get(
+  '/companies',
+  asyncHandler(async (req, res) => {
+    const q = z
+      .object({
+        status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+        stream: z.enum(['BIO', 'NON_BIO', 'HAZARDOUS', 'E_WASTE', 'OTHER']).optional(),
+        wardId: z.string().optional(),
+        search: z.string().trim().min(1).max(120).optional(),
+      })
+      .parse(req.query);
+
+    const companies = await prisma.company.findMany({
+      where: {
+        ...(q.status ? { status: q.status } : {}),
+        ...(q.stream ? { acceptedStreams: { has: q.stream } } : {}),
+        ...(q.wardId ? { OR: [{ isCityWide: true }, { wards: { some: { wardId: q.wardId } } }] } : {}),
+        ...(q.search
+          ? {
+              OR: [
+                { name: { contains: q.search, mode: 'insensitive' } },
+                { code: { contains: q.search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      include: { wards: { include: { ward: true } } },
+      orderBy: { name: 'asc' },
+    });
+
+    /**
+     * Live load per company, so the table shows who is actually carrying work
+     * rather than only who exists. Counted in one grouped query rather than a
+     * per-row include: the registry is read on every admin page load.
+     */
+    const load = await prisma.complaintAssignment.groupBy({
+      by: ['companyId'],
+      where: { status: { in: LIVE_ASSIGNMENT_STATUSES } },
+      _count: { _all: true },
+    });
+    const openBy = new Map(load.map((r) => [r.companyId, r._count._all]));
+
+    res.json({
+      streams: WASTE_STREAMS,
+      items: companies.map((c) => serializeCompany(c, { openAssignments: openBy.get(c.id) ?? 0 })),
+    });
+  })
+);
+
+const companyWrite = z.object({
+  name: z.string().trim().min(2).max(120),
+  code: z.string().trim().min(2).max(32),
+  contactName: z.string().trim().max(120).optional(),
+  contactPhone: z.string().trim().min(6).max(20),
+  contactEmail: z.string().email().optional().or(z.literal('')),
+  address: z.string().trim().max(300).optional(),
+  acceptedStreams: z.array(z.enum(['BIO', 'NON_BIO', 'HAZARDOUS', 'E_WASTE', 'OTHER'])).min(1),
+  capacityKgPerDay: z.coerce.number().min(0).max(10_000_000).optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
+  isCityWide: z.boolean().optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+  wardIds: z.array(z.string()).optional(),
+});
+
+router.post(
+  '/companies',
+  writeLimiter,
+  audited('company_create', 'companies'),
+  asyncHandler(async (req, res) => {
+    const body = companyWrite.parse(req.body);
+    const { wardIds = [], contactEmail, ...rest } = body;
+
+    const clash = await prisma.company.findUnique({ where: { code: rest.code } });
+    if (clash) throw new HttpError(409, `Code ${rest.code} is already used by ${clash.name}`);
+
+    const company = await prisma.company.create({
+      data: {
+        ...rest,
+        contactEmail: contactEmail || null,
+        wards: wardIds.length ? { create: wardIds.map((wardId) => ({ wardId })) } : undefined,
+      },
+      include: { wards: { include: { ward: true } } },
+    });
+
+    res.status(201).json(serializeCompany(company, { openAssignments: 0 }));
+  })
+);
+
+router.patch(
+  '/companies/:id',
+  writeLimiter,
+  audited('company_update', 'companies'),
+  asyncHandler(async (req, res) => {
+    const body = companyWrite.partial().parse(req.body);
+    const { wardIds, contactEmail, ...rest } = body;
+
+    const before = await prisma.company.findUnique({
+      where: { id: req.params.id },
+      include: { wards: true },
+    });
+    if (!before) throw new HttpError(404, 'Company not found');
+
+    if (rest.code && rest.code !== before.code) {
+      const clash = await prisma.company.findUnique({ where: { code: rest.code } });
+      if (clash) throw new HttpError(409, `Code ${rest.code} is already used by ${clash.name}`);
+    }
+
+    /**
+     * Narrowing the licence is checked against work already in flight. A
+     * company that has live hazardous loads cannot have HAZARDOUS removed
+     * underneath them, or those handoffs become records of something nobody
+     * was licensed to do.
+     */
+    if (rest.acceptedStreams) {
+      const live = await prisma.complaintAssignment.findMany({
+        where: { companyId: before.id, status: { in: LIVE_ASSIGNMENT_STATUSES } },
+        select: { wasteStream: true },
+        distinct: ['wasteStream'],
+      });
+      const orphaned = live.map((l) => l.wasteStream).filter((s) => !rest.acceptedStreams.includes(s));
+      if (orphaned.length) {
+        throw new HttpError(
+          409,
+          `Still holding live ${orphaned.map((s) => STREAM_MAP[s]?.label ?? s).join(', ')} work — reassign it before removing that licence`
+        );
+      }
+    }
+
+    const company = await prisma.company.update({
+      where: { id: before.id },
+      data: {
+        ...rest,
+        ...(contactEmail !== undefined ? { contactEmail: contactEmail || null } : {}),
+        // Coverage is replaced wholesale when supplied: the admin form sends
+        // the full set, so a diff would only be a way to lose a removal.
+        ...(wardIds
+          ? { wards: { deleteMany: {}, create: wardIds.map((wardId) => ({ wardId })) } }
+          : {}),
+      },
+      include: { wards: { include: { ward: true } } },
+    });
+
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'company_update',
+      targetTable: 'companies',
+      targetId: company.id,
+      before: { name: before.name, status: before.status, acceptedStreams: before.acceptedStreams },
+      after: { name: company.name, status: company.status, acceptedStreams: company.acceptedStreams },
+      req,
+    });
+
+    res.json(serializeCompany(company));
+  })
+);
+
+/**
+ * DELETE /api/admin/companies/:id
+ *
+ * Deactivates rather than deletes once a company has any history: the handoff
+ * rows are the accountability record and must outlive the contract. A company
+ * that never took anything is genuinely removed, since there is nothing to
+ * account for.
+ */
+router.delete(
+  '/companies/:id',
+  writeLimiter,
+  audited('company_delete', 'companies'),
+  asyncHandler(async (req, res) => {
+    const company = await prisma.company.findUnique({ where: { id: req.params.id } });
+    if (!company) throw new HttpError(404, 'Company not found');
+
+    const history = await prisma.complaintAssignment.count({ where: { companyId: company.id } });
+    if (history > 0) {
+      const deactivated = await prisma.company.update({
+        where: { id: company.id },
+        data: { status: 'INACTIVE' },
+        include: { wards: { include: { ward: true } } },
+      });
+      return res.json({
+        deleted: false,
+        deactivated: true,
+        message: `${company.name} has ${history} handoff${history === 1 ? '' : 's'} on record — deactivated instead of deleted`,
+        company: serializeCompany(deactivated),
+      });
+    }
+
+    await prisma.company.delete({ where: { id: company.id } });
+    res.json({ deleted: true, deactivated: false, id: company.id });
+  })
+);
+
+// -------------------------------------------------- assignments & analytics ----
+
+/**
+ * GET /api/admin/assignments — the Assignment Overview.
+ *
+ * Officer -> company -> stream -> complaint -> quantity -> status -> date,
+ * filterable the same way the officer queue is.
+ */
+router.get(
+  '/assignments',
+  asyncHandler(async (req, res) => {
+    const q = z
+      .object({
+        wardId: z.string().optional(),
+        companyId: z.string().optional(),
+        officerId: z.string().optional(),
+        stream: z.enum(['BIO', 'NON_BIO', 'HAZARDOUS', 'E_WASTE', 'OTHER']).optional(),
+        status: z.enum(['PENDING_PICKUP', 'PICKED', 'COMPLETED', 'CANCELLED']).optional(),
+        search: z.string().trim().min(1).max(120).optional(),
+        days: z.coerce.number().min(1).max(365).optional(),
+        page: z.coerce.number().min(1).optional(),
+        pageSize: z.coerce.number().min(5).max(100).optional(),
+      })
+      .parse(req.query);
+
+    const page = q.page || 1;
+    const pageSize = q.pageSize || 25;
+
+    const filter = {
+      ...(q.companyId ? { companyId: q.companyId } : {}),
+      ...(q.officerId ? { assignedById: q.officerId } : {}),
+      ...(q.stream ? { wasteStream: q.stream } : {}),
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.wardId ? { complaint: { wardId: q.wardId } } : {}),
+      ...(q.days ? { createdAt: { gte: new Date(Date.now() - q.days * 86_400_000) } } : {}),
+      ...(q.search
+        ? {
+            OR: [
+              { complaint: { code: { contains: q.search, mode: 'insensitive' } } },
+              { company: { name: { contains: q.search, mode: 'insensitive' } } },
+              { assignedBy: { name: { contains: q.search, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, total, statusCounts] = await Promise.all([
+      prisma.complaintAssignment.findMany({
+        where: filter,
+        include: {
+          company: true,
+          assignedBy: { select: { id: true, name: true } },
+          complaint: { include: { ward: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.complaintAssignment.count({ where: filter }),
+      prisma.complaintAssignment.groupBy({ by: ['status'], where: filter, _count: { _all: true } }),
+    ]);
+
+    res.json({
+      page,
+      pageSize,
+      total,
+      pages: Math.ceil(total / pageSize),
+      statusCounts: Object.fromEntries(statusCounts.map((c) => [c.status, c._count._all])),
+      streams: WASTE_STREAMS,
+      items: rows.map((a) => serializeAssignment(a)),
+    });
+  })
+);
+
+/**
+ * GET /api/admin/analytics/waste — volume over time, and how it splits by
+ * stream, company and ward.
+ */
+router.get(
+  ['/analytics/waste', '/waste-analytics'],
+  asyncHandler(async (req, res) => {
+    const q = z
+      .object({
+        days: z.coerce.number().min(1).max(365).optional(),
+        companyId: z.string().optional(),
+        stream: z.enum(['BIO', 'NON_BIO', 'HAZARDOUS', 'E_WASTE', 'OTHER']).optional(),
+      })
+      .parse(req.query);
+
+    const [volume, streams] = await Promise.all([
+      analytics.wasteVolume(null, q.days || 30, { companyId: q.companyId ?? null, stream: q.stream ?? null }),
+      analytics.streamBreakdown(null),
+    ]);
+
+    res.json({ ...volume, openByStream: streams, streamVocabulary: WASTE_STREAMS });
+  })
+);
+
+/**
+ * GET /api/admin/audit-log — who did what, when.
+ *
+ * Reads the existing AuditLog table rather than a handoff-specific one, so the
+ * company assignments sit in the same trail as role changes and escalation
+ * overrides. Filterable by action so the assignment story can be read on its own.
+ */
+router.get(
+  ['/audit-log', '/audit'],
+  asyncHandler(async (req, res) => {
+    const q = z
+      .object({
+        action: z.string().trim().max(64).optional(),
+        targetTable: z.string().trim().max(64).optional(),
+        actorId: z.string().optional(),
+        days: z.coerce.number().min(1).max(365).optional(),
+        page: z.coerce.number().min(1).optional(),
+        pageSize: z.coerce.number().min(5).max(100).optional(),
+      })
+      .parse(req.query);
+
+    const page = q.page || 1;
+    const pageSize = q.pageSize || 50;
+
+    const filter = {
+      ...(q.action ? { action: { contains: q.action, mode: 'insensitive' } } : {}),
+      ...(q.targetTable ? { targetTable: q.targetTable } : {}),
+      ...(q.actorId ? { actorId: q.actorId } : {}),
+      ...(q.days ? { createdAt: { gte: new Date(Date.now() - q.days * 86_400_000) } } : {}),
+    };
+
+    const [rows, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: filter,
+        include: { actor: { select: { id: true, name: true, role: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.auditLog.count({ where: filter }),
+    ]);
+
+    res.json({
+      page,
+      pageSize,
+      total,
+      pages: Math.ceil(total / pageSize),
+      items: rows.map((r) => ({
+        id: r.id,
+        action: r.action,
+        targetTable: r.targetTable,
+        targetId: r.targetId,
+        actor: r.actor ? { id: r.actor.id, name: r.actor.name, role: r.actor.role } : null,
+        after: r.after ?? null,
+        ip: r.ip ?? null,
+        createdAt: r.createdAt,
+      })),
+    });
   })
 );
 

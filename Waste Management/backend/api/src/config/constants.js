@@ -49,6 +49,88 @@ export const WASTE_CATEGORIES = [
 
 export const CATEGORY_MAP = Object.fromEntries(WASTE_CATEGORIES.map((c) => [c.id, c]));
 
+/**
+ * Processing streams — the axis that decides *which company* takes the load,
+ * as opposed to WASTE_CATEGORIES above, which is what the citizen reported.
+ */
+export const WASTE_STREAMS = [
+  { id: 'BIO', label: 'Bio / wet', hint: 'Organic — kitchen, garden, animal remains', tone: 'success' },
+  { id: 'NON_BIO', label: 'Non-bio / dry', hint: 'Recyclable — paper, plastic, glass, metal, rubble', tone: 'info' },
+  { id: 'HAZARDOUS', label: 'Hazardous', hint: 'Licensed handler only — clinical, chemical, sewage', tone: 'danger' },
+  { id: 'E_WASTE', label: 'E-waste', hint: 'Electronics, batteries, cabling', tone: 'warning' },
+  { id: 'OTHER', label: 'Mixed / unsorted', hint: 'Needs an officer to determine the stream', tone: 'muted' },
+];
+
+export const STREAM_MAP = Object.fromEntries(WASTE_STREAMS.map((s) => [s.id, s]));
+
+/**
+ * Incident category -> processing stream.
+ *
+ * The vision model is trained on incident classes (garbage_pile,
+ * medical_waste, ...) and has no head that predicts a processing stream, so
+ * the stream is derived from the class it did predict rather than guessed at
+ * separately. That keeps one model, one confidence number and one review
+ * threshold, instead of a second classifier whose disagreements with the first
+ * nobody could adjudicate.
+ *
+ * `certainty` scales the inherited vision confidence. A class that determines
+ * its stream outright (medical waste is hazardous, full stop) keeps the
+ * model's own confidence; a class that genuinely spans streams is damped, so
+ * an unsorted pile the model was 95% sure about still lands under the 0.70
+ * review gate and reaches an officer instead of being auto-routed to a
+ * composting plant.
+ */
+export const STREAM_BY_CATEGORY = {
+  MEDICAL_WASTE: { stream: 'HAZARDOUS', certainty: 1 },
+  SEWAGE_OVERFLOW: { stream: 'HAZARDOUS', certainty: 1 },
+  BURNING_WASTE: { stream: 'HAZARDOUS', certainty: 1 },
+  CONSTRUCTION_DEBRIS: { stream: 'NON_BIO', certainty: 1 },
+  DEAD_ANIMAL: { stream: 'BIO', certainty: 1 },
+  OVERFLOWING_BIN: { stream: 'BIO', certainty: 0.85 },
+  // A heap in the street is whatever was thrown on it. The commonest answer is
+  // wet organic waste, but often enough it is not, so this never clears the
+  // review gate on its own.
+  GARBAGE_PILE: { stream: 'BIO', certainty: 0.6 },
+  // Fly-tipping is defined by the act, not the contents — the load could be
+  // anything, including the e-waste no incident class covers.
+  ILLEGAL_DUMPING: { stream: 'OTHER', certainty: 0.4 },
+  OTHER: { stream: 'OTHER', certainty: 0.3 },
+};
+
+/** Below this, the stream is a suggestion an officer has to confirm. */
+export const STREAM_REVIEW_THRESHOLD = 0.7;
+
+/**
+ * Nominal weights for the officer's quantity bands, in kg.
+ *
+ * Volume analytics prefer `actualQuantityKg` recorded at completion; these
+ * stand in for handoffs that have not been weighed yet, so a chart covering
+ * this week is never blank merely because collection is still in progress.
+ * They are estimates and are labelled as such wherever they are charted.
+ */
+export const QUANTITY_NOMINAL_KG = {
+  SMALL: 25,
+  MEDIUM: 100,
+  LARGE: 400,
+};
+
+/**
+ * Derive the processing stream from a classified incident category.
+ *
+ * @param {string|null} category   WasteCategory id
+ * @param {number} confidence      0-1, the vision model's confidence in it
+ */
+export function deriveWasteStream(category, confidence = 0) {
+  const rule = STREAM_BY_CATEGORY[category] ?? STREAM_BY_CATEGORY.OTHER;
+  const conf = Math.min(1, Math.max(0, Number(confidence) || 0));
+  const derived = Number((conf * rule.certainty).toFixed(3));
+  return {
+    stream: rule.stream,
+    confidence: derived,
+    reviewNeeded: derived < STREAM_REVIEW_THRESHOLD,
+  };
+}
+
 /** The red-button options on the citizen Emergency Report screen (plan §2.1). */
 export const EMERGENCY_TYPES = ['DEAD_ANIMAL', 'MEDICAL_WASTE', 'BURNING_WASTE', 'SEWAGE_OVERFLOW'];
 
@@ -61,7 +143,16 @@ export const SOCKET_EVENTS = {
   COMPLAINT_UPDATE: 'complaint:update',
   EMERGENCY_NEW: 'emergency:new',
   ESCALATION_NEW: 'escalation:new',
+  /** A complaint handed to a collection truck. */
   ASSIGNMENT_NEW: 'assignment:new',
+  /**
+   * A complaint handed to a processing company. Deliberately a separate event
+   * from ASSIGNMENT_NEW: the driver handsets listen on that one, and waking
+   * every truck in the ward for an office-side routing decision would be noise
+   * on the one screen that has to stay quiet while someone is driving.
+   */
+  COMPANY_ASSIGNMENT_CREATED: 'assignment:created',
+  COMPANY_ASSIGNMENT_UPDATE: 'assignment:update',
   SOS_NEW: 'sos:new',
   NOTIFICATION: 'notification:new',
   STATS_UPDATE: 'stats:update',
@@ -84,6 +175,12 @@ export default {
   ROLE_PORTAL,
   WASTE_CATEGORIES,
   CATEGORY_MAP,
+  WASTE_STREAMS,
+  STREAM_MAP,
+  STREAM_BY_CATEGORY,
+  STREAM_REVIEW_THRESHOLD,
+  QUANTITY_NOMINAL_KG,
+  deriveWasteStream,
   EMERGENCY_TYPES,
   COMPLAINT_FLOW,
   SOCKET_EVENTS,
