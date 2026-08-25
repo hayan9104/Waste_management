@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma.js';
-import { CATEGORY_MAP } from '../config/constants.js';
+import { CATEGORY_MAP, STREAM_MAP, STREAM_REVIEW_THRESHOLD, QUANTITY_NOMINAL_KG } from '../config/constants.js';
 import { predictHotspots } from './ai.service.js';
 import { env } from '../config/env.js';
 import { CALIBRATION } from '../config/calibration/index.js';
@@ -795,6 +795,150 @@ export async function perModelHealth(days = 14, visionReachable = false) {
   };
 }
 
+// ------------------------------------------------- waste streams & volume ----
+
+/**
+ * Open work in the ward, split by processing stream.
+ *
+ * Counts what is *outstanding*, not what was ever filed: this drives the
+ * officer's categorization page, where the question is "what do I still have
+ * to route", so resolved and rejected reports are noise. `null` is reported as
+ * its own bucket rather than folded into OTHER — a report the classifier never
+ * saw is a different problem from one it looked at and could not call, and
+ * only the first is fixed by re-running classification.
+ */
+export async function streamBreakdown(wardIds, { includeResolved = false } = {}) {
+  const rows = await prisma.complaint.groupBy({
+    by: ['wasteStream'],
+    where: {
+      ...wardScope(wardIds),
+      ...(includeResolved ? {} : { status: { notIn: ['RESOLVED', 'REJECTED'] } }),
+    },
+    _count: { _all: true },
+    _avg: { wasteStreamConfidence: true },
+  });
+
+  const total = rows.reduce((a, r) => a + r._count._all, 0) || 1;
+  return rows
+    .map((r) => ({
+      stream: r.wasteStream ?? 'UNCLASSIFIED',
+      label: r.wasteStream ? (STREAM_MAP[r.wasteStream]?.label ?? r.wasteStream) : 'Not yet classified',
+      count: r._count._all,
+      pct: Number(((r._count._all / total) * 100).toFixed(1)),
+      avgConfidence: Number((r._avg.wasteStreamConfidence ?? 0).toFixed(3)),
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** How many open reports in scope still need an officer to confirm the stream. */
+export async function streamReviewCount(wardIds) {
+  return prisma.complaint.count({
+    where: {
+      ...wardScope(wardIds),
+      status: { notIn: ['RESOLVED', 'REJECTED'] },
+      wasteStreamOverridden: false,
+      OR: [{ wasteStream: null }, { wasteStreamConfidence: { lt: STREAM_REVIEW_THRESHOLD } }],
+    },
+  });
+}
+
+/**
+ * Ward scoping for handoffs.
+ *
+ * A ComplaintAssignment has no ward of its own — it inherits the one on the
+ * complaint it describes — so scoping has to reach through the relation rather
+ * than filter a column that is not there.
+ */
+const assignmentWardScope = (wardIds) =>
+  wardIds === null ? {} : { complaint: { wardId: { in: wardIds } } };
+
+/**
+ * Volume handed to processors over time, and how it splits.
+ *
+ * Weighed kilograms where a handoff has been completed and weighed, the
+ * officer's estimate band where it has not — `estimatedKg` is reported
+ * alongside so a chart can show how much of a bar is still an estimate rather
+ * than presenting the two as one settled number.
+ */
+export async function wasteVolume(wardIds, days = 30, { companyId = null, stream = null } = {}) {
+  const from = startOfDay(days - 1);
+  const rows = await prisma.complaintAssignment.findMany({
+    where: {
+      ...assignmentWardScope(wardIds),
+      createdAt: { gte: from },
+      status: { not: 'CANCELLED' },
+      ...(companyId ? { companyId } : {}),
+      ...(stream ? { wasteStream: stream } : {}),
+    },
+    select: {
+      createdAt: true,
+      wasteStream: true,
+      companyId: true,
+      estimatedQuantity: true,
+      actualQuantityKg: true,
+      company: { select: { id: true, name: true, code: true } },
+      complaint: { select: { wardId: true, ward: { select: { id: true, name: true, code: true } } } },
+    },
+  });
+
+  const kg = (r) => (r.actualQuantityKg != null ? r.actualQuantityKg : QUANTITY_NOMINAL_KG[r.estimatedQuantity] ?? 0);
+
+  const series = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const start = startOfDay(i);
+    const end = startOfDay(i - 1);
+    const inDay = rows.filter((r) => r.createdAt >= start && r.createdAt < end);
+    series.push({
+      date: dayKey(start),
+      assignments: inDay.length,
+      totalKg: Math.round(inDay.reduce((a, r) => a + kg(r), 0)),
+      weighedKg: Math.round(inDay.filter((r) => r.actualQuantityKg != null).reduce((a, r) => a + kg(r), 0)),
+      estimatedKg: Math.round(inDay.filter((r) => r.actualQuantityKg == null).reduce((a, r) => a + kg(r), 0)),
+    });
+  }
+
+  const bucket = (keyOf, labelOf) => {
+    const map = new Map();
+    for (const r of rows) {
+      const key = keyOf(r);
+      if (key == null) continue;
+      const cur = map.get(key) ?? { key, label: labelOf(r), count: 0, totalKg: 0 };
+      cur.count += 1;
+      cur.totalKg += kg(r);
+      map.set(key, cur);
+    }
+    return [...map.values()]
+      .map((b) => ({ ...b, totalKg: Math.round(b.totalKg) }))
+      .sort((a, b) => b.totalKg - a.totalKg);
+  };
+
+  const totalKg = Math.round(rows.reduce((a, r) => a + kg(r), 0));
+  const weighedKg = Math.round(rows.filter((r) => r.actualQuantityKg != null).reduce((a, r) => a + kg(r), 0));
+
+  return {
+    days,
+    totalKg,
+    weighedKg,
+    estimatedKg: totalKg - weighedKg,
+    /** Share of the total that has actually been weighed — honesty about the chart. */
+    weighedShare: totalKg ? Number(((weighedKg / totalKg) * 100).toFixed(1)) : 0,
+    assignments: rows.length,
+    series,
+    byStream: bucket(
+      (r) => r.wasteStream,
+      (r) => STREAM_MAP[r.wasteStream]?.label ?? r.wasteStream
+    ),
+    byCompany: bucket(
+      (r) => r.companyId,
+      (r) => r.company?.name ?? 'Unknown'
+    ),
+    byWard: bucket(
+      (r) => r.complaint?.wardId,
+      (r) => r.complaint?.ward?.name ?? 'Unassigned ward'
+    ),
+  };
+}
+
 export { startOfDay, dayKey, median };
 export default {
   overview,
@@ -808,4 +952,7 @@ export default {
   perModelHealth,
   fuelAndExpenditure,
   slaPerformance,
+  streamBreakdown,
+  streamReviewCount,
+  wasteVolume,
 };

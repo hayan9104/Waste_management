@@ -1,7 +1,7 @@
 import axios from 'axios';
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
-import { CATEGORY_MAP, WASTE_CATEGORIES } from '../config/constants.js';
+import { CATEGORY_MAP, WASTE_CATEGORIES, STREAM_MAP, deriveWasteStream } from '../config/constants.js';
 
 const client = axios.create({ baseURL: env.aiServiceUrl, timeout: 15000 });
 
@@ -43,12 +43,34 @@ export function normalizeClassification(data, { latencyMs }) {
   if (confidence > 1) confidence /= 100;
   confidence = Math.min(1, Math.max(0, confidence));
 
+  const normalizedCategory = category ? String(category).trim().toUpperCase() : null;
+
+  /**
+   * The processing stream rides along with the classification.
+   *
+   * A downstream caller that has the category already has everything needed to
+   * work out the stream, so deriving it here means there is exactly one place
+   * that decides — rather than each of the citizen intake path, the officer
+   * re-classify path and the seed script arriving at their own answer.
+   *
+   * The service is allowed to send its own `waste_stream` if a future model
+   * gains that head; when it does, it wins over the derivation.
+   */
+  const declaredStream = data?.waste_stream ?? data?.wasteStream ?? null;
+  const derived = deriveWasteStream(normalizedCategory, confidence);
+  const stream = declaredStream
+    ? { stream: String(declaredStream).trim().toUpperCase(), confidence: Number(confidence.toFixed(3)) }
+    : derived;
+
   return {
     modelVersion: data?.modelVersion ?? data?.model_version ?? 'vision-service',
     engine: data?.engine ?? null,
-    category: category ? String(category).trim().toUpperCase() : null,
+    category: normalizedCategory,
     label: data?.label ?? null,
     confidence: Number(confidence.toFixed(3)),
+    wasteStream: STREAM_MAP[stream.stream] ? stream.stream : 'OTHER',
+    wasteStreamConfidence: stream.confidence,
+    wasteStreamDerived: !declaredStream,
     alternatives: Array.isArray(data?.alternatives) ? data.alternatives : [],
     detections: Array.isArray(data?.detections) ? data.detections : [],
     needsManualReview: data?.needs_manual_review ?? data?.needsManualReview ?? null,
@@ -147,27 +169,35 @@ export async function aiHealth() {
  * photo always yields the same category. Never claims high confidence.
  */
 export function localClassify(buffer, hint) {
-  if (hint && CATEGORY_MAP[hint]) {
+  /**
+   * The stream is attached here as well as in normalizeClassification, because
+   * this path never goes through it — classifyWaste spreads this object
+   * straight into its return when the vision service is unreachable. Leaving
+   * it out meant every complaint filed during an outage was stored with no
+   * stream at all, and those are exactly the ones an officer most needs to
+   * see flagged for review.
+   */
+  const withStream = (category, confidence) => {
+    const derived = deriveWasteStream(category, confidence);
     return {
       modelVersion: 'fallback-v1',
-      category: hint,
-      confidence: 0.55,
+      category,
+      confidence: Number(confidence.toFixed(3)),
+      wasteStream: STREAM_MAP[derived.stream] ? derived.stream : 'OTHER',
+      wasteStreamConfidence: derived.confidence,
+      wasteStreamDerived: true,
       alternatives: [],
       detections: [],
     };
-  }
+  };
+
+  if (hint && CATEGORY_MAP[hint]) return withStream(hint, 0.55);
 
   const digest = crypto.createHash('sha256').update(buffer ?? Buffer.from('safaai')).digest();
   const category = WASTE_CATEGORIES[digest[0] % WASTE_CATEGORIES.length].id;
   const confidence = 0.42 + (digest[1] / 255) * 0.22; // deliberately below the auto-approve gate
 
-  return {
-    modelVersion: 'fallback-v1',
-    category,
-    confidence: Number(confidence.toFixed(3)),
-    alternatives: [],
-    detections: [],
-  };
+  return withStream(category, confidence);
 }
 
 /**

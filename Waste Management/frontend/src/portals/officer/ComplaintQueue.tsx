@@ -166,25 +166,32 @@ export default function ComplaintQueue() {
         toast.info(`${res.skipped.length} could not be assigned — ${res.skipped[0].reason}`);
       }
     },
-    onError: (err) => toast.error(errorMessage(err, 'Could not auto-assign')),
+    onError: (err: any) => {
+      /**
+       * A 404 here is not a missing complaint, it is a missing route: the page
+       * is newer than the API it is talking to. Axios reports that as "Request
+       * failed with status code 404", which sends an officer looking for a
+       * report that was never the problem — so name the actual cause.
+       */
+      if (err?.response?.status === 404) {
+        toast.error('Auto-assign is not available on this server yet — the API needs redeploying.');
+        return;
+      }
+      toast.error(errorMessage(err, 'Could not auto-assign'));
+    },
   });
 
   /**
-   * Reports in view that no truck has been given yet.
+   * How many reports have no truck — the number the button offers to dispatch.
    *
-   * Keyed on assignedVehicleId, not on an `assignedVehicle` object — the queue
-   * serialises the id alongside a `vehicle` relation, so testing a field that
-   * is never present counted every row and offered to auto-assign seventeen
-   * reports of which twelve already had a crew.
-   *
-   * Counted from the page while the action covers every unassigned report in
-   * the officer's wards. Those agree at demo scale (a page holds 25, a ward
-   * queue is well under that); if a queue ever ran longer the button would
-   * dispatch more than it advertised, which the toast then reports.
+   * Comes from the server, which counts the officer's whole ward backlog on
+   * the same predicate the dispatcher selects on. Counting the rows on screen
+   * instead made the button lie in two directions: a queue past its first page
+   * showed a fraction of what would go out, and narrowing the status filter to
+   * one category shrank the number while the action still dispatched
+   * everything. The label and the effect are now the same figure.
    */
-  const unassignedCount = (data?.items ?? []).filter(
-    (c: any) => !c.assignedVehicleId && !['RESOLVED', 'REJECTED'].includes(c.status)
-  ).length;
+  const unassignedCount: number = data?.unassignedTotal ?? 0;
 
   const setFilter = (key: string, value?: string) => {
     const next = new URLSearchParams(params);

@@ -1,6 +1,14 @@
 import crypto from 'node:crypto';
 import { prisma } from '../lib/prisma.js';
-import { CATEGORY_MAP, CREDIT_RULES, SOCKET_EVENTS, ROLES } from '../config/constants.js';
+import {
+  CATEGORY_MAP,
+  CREDIT_RULES,
+  SOCKET_EVENTS,
+  ROLES,
+  STREAM_MAP,
+  STREAM_REVIEW_THRESHOLD,
+  deriveWasteStream,
+} from '../config/constants.js';
 import env from '../config/env.js';
 import { emitTo } from '../sockets/realtime.js';
 import { notify, notifyWardOfficers, awardCredits } from './notification.service.js';
@@ -81,6 +89,19 @@ export async function createComplaint({
 
   const emergency = isEmergency || meta.emergency;
 
+  /**
+   * Processing stream, derived from the category that was actually settled on
+   * above — not from `ai.wasteStream`.
+   *
+   * The classifier's stream describes the class the model picked, but when the
+   * model was unsure the citizen's own choice overrode it a few lines up. A
+   * report the citizen filed as medical waste has to be routed as hazardous
+   * even if the model thought it was a garbage pile, so the stream follows the
+   * decision rather than the prediction.
+   */
+  const streamSource = photo?.buffer ? confidence : 0.55;
+  const streamGuess = deriveWasteStream(category, streamSource);
+
   // ---- 2. Ward attribution (PostGIS ST_Contains, done in app code) -------
   const ward = await wardForPoint({ latitude, longitude });
   const detectedWardId = ward?.id ?? null;
@@ -124,6 +145,8 @@ export async function createComplaint({
       aiCategory: photo?.buffer ? aiCategory : null,
       aiConfidence: confidence,
       aiVerified: autoApproved && !ai.degraded,
+      wasteStream: streamGuess.stream,
+      wasteStreamConfidence: streamGuess.confidence,
       /**
        * An emergency never waits on a review.
        *
@@ -571,6 +594,18 @@ export function serializeComplaint(c, extra = {}) {
     categoryLabel: CATEGORY_MAP[c.category]?.label || c.category,
     aiCategory: c.aiCategory,
     aiConfidence: c.aiConfidence,
+    wasteStream: c.wasteStream ?? null,
+    wasteStreamLabel: c.wasteStream ? (STREAM_MAP[c.wasteStream]?.label ?? c.wasteStream) : null,
+    wasteStreamConfidence: c.wasteStreamConfidence ?? 0,
+    wasteStreamOverridden: c.wasteStreamOverridden ?? false,
+    /**
+     * Whether an officer still has to confirm the stream. Sent as a resolved
+     * boolean rather than leaving each client to compare against the threshold
+     * itself — the officer queue, the categorization page and the assign modal
+     * all ask the same question and must not be able to disagree on it.
+     */
+    wasteStreamReviewNeeded:
+      c.wasteStream != null && !c.wasteStreamOverridden && (c.wasteStreamConfidence ?? 0) < STREAM_REVIEW_THRESHOLD,
     aiVerified: c.aiVerified,
     reviewNeeded: c.reviewNeeded,
     /** Present only when an officer has actually deferred this report. */

@@ -14,7 +14,14 @@ import { prisma, connectDB, disconnectDB } from '../lib/prisma.js';
 import { hashPassword } from '../lib/password.js';
 import { polygonBBox } from '../lib/geo.js';
 import { CITY, WARDS, wardGeometry, pointInWard, STREETS } from './city.js';
-import { WASTE_CATEGORIES, CATEGORY_MAP, CREDIT_RULES, ROLES } from '../config/constants.js';
+import {
+  WASTE_CATEGORIES,
+  CATEGORY_MAP,
+  CREDIT_RULES,
+  ROLES,
+  deriveWasteStream,
+  QUANTITY_NOMINAL_KG,
+} from '../config/constants.js';
 import { solveLocal, roadSnappedRoute, snapToRoad } from '../services/routing.service.js';
 import { persist } from '../middleware/upload.js';
 
@@ -161,8 +168,90 @@ function jitterSmall(seed, scale) {
 const FIRST_NAMES = ['Priya', 'Rohit', 'Anjali', 'Mehul', 'Kiran', 'Nisha', 'Jignesh', 'Bhavna', 'Harsh', 'Devika', 'Ramesh', 'Falguni'];
 const LAST_NAMES = ['Patel', 'Shah', 'Desai', 'Mehta', 'Chauhan', 'Trivedi', 'Solanki', 'Parmar', 'Joshi', 'Vasava'];
 
+/**
+ * Processing companies for the demo city.
+ *
+ * Deliberately not one company per stream. The interesting cases in the admin
+ * and officer views are the ones a uniform registry cannot produce: a ward
+ * with a single licensed hazardous handler (so capacity pressure is visible
+ * rather than theoretical), a city-wide operator competing with a local one on
+ * the same stream, an e-waste specialist that only ever appears when an
+ * officer has overridden a stream by hand, and one inactive contract that must
+ * stay out of every suggestion list.
+ */
+const COMPANIES = [
+  {
+    code: 'GRN-BIO-01',
+    name: 'Gandhinagar Green Compost',
+    contactName: 'Rakesh Patel',
+    contactPhone: '9825011001',
+    contactEmail: 'ops@grncompost.example',
+    address: 'Plot 14, Sector 28 Industrial Estate',
+    acceptedStreams: ['BIO'],
+    capacityKgPerDay: 4000,
+    wardShare: 0.6,
+  },
+  {
+    code: 'SBH-DRY-02',
+    name: 'Sabarmati Dry Recovery',
+    contactName: 'Nita Shah',
+    contactPhone: '9825011002',
+    contactEmail: 'dispatch@sabarmatidry.example',
+    address: 'Survey 88, Kudasan Link Road',
+    acceptedStreams: ['NON_BIO', 'E_WASTE'],
+    capacityKgPerDay: 6000,
+    wardShare: 0.5,
+  },
+  {
+    code: 'CTY-MIX-03',
+    name: 'Civic Mixed Handling',
+    contactName: 'Imran Qureshi',
+    contactPhone: '9825011003',
+    address: 'Transfer Station, Sector 30',
+    acceptedStreams: ['BIO', 'NON_BIO', 'OTHER'],
+    capacityKgPerDay: 9000,
+    isCityWide: true,
+  },
+  {
+    // One licensed hazardous handler for the whole city, on purpose: this is
+    // what makes "at capacity but still assignable" a real state to look at.
+    code: 'HAZ-MED-04',
+    name: 'Saurashtra Biomedical Disposal',
+    contactName: 'Dr. Anand Rao',
+    contactPhone: '9825011004',
+    contactEmail: 'control@saurashtrabmd.example',
+    address: 'Licensed Facility, Chhatral GIDC',
+    acceptedStreams: ['HAZARDOUS'],
+    capacityKgPerDay: 900,
+    isCityWide: true,
+  },
+  {
+    code: 'EWS-TEC-05',
+    name: 'Tec-Recycle E-Waste',
+    contactName: 'Freny Mistry',
+    contactPhone: '9825011005',
+    address: 'Unit 7, Infocity Road',
+    acceptedStreams: ['E_WASTE'],
+    capacityKgPerDay: 1200,
+    isCityWide: true,
+  },
+  {
+    // Contract lapsed — must never surface as a suggestion.
+    code: 'OLD-BIO-06',
+    name: 'Northside Organics (contract ended)',
+    contactPhone: '9825011006',
+    acceptedStreams: ['BIO'],
+    capacityKgPerDay: 2000,
+    isCityWide: true,
+    status: 'INACTIVE',
+  },
+];
+
 async function wipe() {
   // Order matters: children before parents.
+  await prisma.complaintAssignment.deleteMany();
+  await prisma.companyWard.deleteMany();
+  await prisma.company.deleteMany();
   await prisma.scheduledPickupRequest.deleteMany();
   await prisma.greenCredit.deleteMany();
   await prisma.notification.deleteMany();
@@ -607,6 +696,17 @@ async function main() {
             aiCategory: !autoApproved && r() > 0.6 ? pick(r, WASTE_CATEGORIES).id : spec.id,
             aiConfidence: confidence,
             aiVerified: autoApproved,
+            /**
+             * Stream derived from the category exactly as the live pipeline
+             * derives it, so the seeded review backlog is the genuine one: a
+             * garbage pile is damped below the gate however sure the model
+             * was, and medical waste is not. Hand-picking these would produce
+             * a demo whose review counts the real classifier disagrees with.
+             */
+            ...(() => {
+              const s = deriveWasteStream(spec.id, confidence);
+              return { wasteStream: s.stream, wasteStreamConfidence: s.confidence };
+            })(),
             // Closed work is not awaiting review, and an emergency never was.
             reviewNeeded: meta.emergency || shouldResolve ? false : !autoApproved,
             fraudScore: Number((r() * 0.35).toFixed(3)),
@@ -731,6 +831,7 @@ async function main() {
         aiCategory: spec.id,
         aiConfidence: 0.82,
         aiVerified: true,
+        ...(() => { const t = deriveWasteStream(spec.id, 0.82); return { wasteStream: t.stream, wasteStreamConfidence: t.confidence }; })(),
         status: 'ASSIGNED',
         severity: meta.severity,
         isEmergency: false,
@@ -778,6 +879,7 @@ async function main() {
         aiCategory: spec.id,
         aiConfidence: 0.91,
         aiVerified: true,
+        ...(() => { const t = deriveWasteStream(spec.id, 0.91); return { wasteStream: t.stream, wasteStreamConfidence: t.confidence }; })(),
         reviewNeeded: false,
         status: 'PENDING',
         severity: 'CRITICAL',
@@ -1051,6 +1153,10 @@ async function main() {
         category: spec.category,
         aiCategory: spec.category,
         aiConfidence: spec.confidence,
+        ...(() => {
+          const t = deriveWasteStream(spec.category, spec.confidence);
+          return { wasteStream: t.stream, wasteStreamConfidence: t.confidence };
+        })(),
         // Below the auto-approve gate is exactly what "needs a human" means,
         // so the flag is derived from the score rather than set by hand.
         aiVerified: spec.confidence >= 0.7,
@@ -2070,6 +2176,125 @@ async function main() {
     });
   }
   console.log(`[seed] ${scheduledCount} scheduled event-pickup requests across the full status lifecycle`);
+
+  // ------------------------------------------ processing companies & handoffs ----
+  const companies = [];
+  for (const spec of COMPANIES) {
+    const r = rng(`company-${spec.code}`);
+    const { wardShare, ...data } = spec;
+    // A regional operator covers a subset of wards; a city-wide one covers all
+    // of them by flag and therefore needs no rows at all.
+    const covered = data.isCityWide
+      ? []
+      : wards.filter((_, i) => i % Math.max(2, Math.round(1 / (wardShare ?? 0.5))) === 0).map((w) => w.ward.id);
+
+    /**
+     * A depot on a real road, sited in one of the wards it serves.
+     *
+     * Reuses the road-snapped anchors the rest of the seed uses, so the
+     * proximity leg of the suggestion ranking is measured against plausible
+     * addresses rather than points in the middle of a field.
+     */
+    const homeWard = covered.length
+      ? wards.find((w) => w.ward.id === covered[0])
+      : wards[intBetween(r, 0, wards.length - 1)];
+    const depot = pointNear(wardAnchors, homeWard.index, intBetween(r, 0, 20));
+
+    companies.push(
+      await prisma.company.create({
+        data: {
+          ...data,
+          contactEmail: data.contactEmail ?? null,
+          latitude: depot.latitude,
+          longitude: depot.longitude,
+          wards: covered.length ? { create: covered.map((wardId) => ({ wardId })) } : undefined,
+        },
+        include: { wards: true },
+      })
+    );
+  }
+  console.log(`[seed] ${companies.length} processing companies (${companies.filter((c) => c.status === 'ACTIVE').length} active)`);
+
+  /**
+   * Handoffs across the whole lifecycle, dated back over the analytics window.
+   *
+   * Only complaints whose stream a licensed active company actually accepts
+   * are handed over — the same rule the API enforces — so the seeded data can
+   * never contain a handoff the product itself would have refused. Completed
+   * ones carry a weighed figure and open ones do not, which is what gives the
+   * admin volume chart its estimated-versus-weighed split.
+   */
+  const assignableComplaints = await prisma.complaint.findMany({
+    where: { wasteStream: { not: null }, status: { notIn: ['REJECTED'] } },
+    select: { id: true, wardId: true, wasteStream: true, createdAt: true, status: true },
+    orderBy: { createdAt: 'desc' },
+    take: 260,
+  });
+
+  const activeCompanies = companies.filter((c) => c.status === 'ACTIVE');
+  const officerIds = officers.map((o) => o.id);
+  let handoffs = 0;
+  const handoffTally = { PENDING_PICKUP: 0, PICKED: 0, COMPLETED: 0, CANCELLED: 0 };
+
+  for (const [i, complaint] of assignableComplaints.entries()) {
+    const r = rng(`handoff-${complaint.id}`);
+    // Roughly two in three of the eligible backlog has been routed, so the
+    // officer's categorization page still has real work waiting on it.
+    if (r() > 0.66) continue;
+
+    const eligible = activeCompanies.filter(
+      (c) =>
+        c.acceptedStreams.includes(complaint.wasteStream) &&
+        (c.isCityWide || c.wards.some((w) => w.wardId === complaint.wardId))
+    );
+    if (!eligible.length) continue;
+
+    const company = eligible[intBetween(r, 0, eligible.length - 1)];
+    const status =
+      complaint.status === 'RESOLVED'
+        ? 'COMPLETED'
+        : pick(r, ['PENDING_PICKUP', 'PENDING_PICKUP', 'PICKED', 'COMPLETED', 'CANCELLED']);
+
+    const createdAt = new Date(complaint.createdAt.getTime() + intBetween(r, 20, 300) * 60_000);
+    const pickedAt = ['PICKED', 'COMPLETED'].includes(status)
+      ? new Date(createdAt.getTime() + intBetween(r, 30, 240) * 60_000)
+      : null;
+    const completedAt = status === 'COMPLETED' ? new Date((pickedAt ?? createdAt).getTime() + intBetween(r, 40, 360) * 60_000) : null;
+    const estimatedQuantity = pick(r, ['SMALL', 'MEDIUM', 'MEDIUM', 'LARGE']);
+
+    await prisma.complaintAssignment.create({
+      data: {
+        complaintId: complaint.id,
+        companyId: company.id,
+        assignedById: officerIds[i % officerIds.length],
+        status,
+        wasteStream: complaint.wasteStream,
+        estimatedQuantity,
+        // Weighed only once it has actually been processed — an open handoff
+        // has nothing on the weighbridge yet, and inventing a figure would
+        // make the "estimated" share of the volume chart meaningless.
+        actualQuantityKg:
+          status === 'COMPLETED'
+            ? Number((QUANTITY_NOMINAL_KG[estimatedQuantity] * (0.7 + r() * 0.6)).toFixed(1))
+            : null,
+        note: status === 'CANCELLED' ? null : pick(r, [null, null, 'Access from the service lane', 'Call the ward office on arrival']),
+        pickedAt,
+        completedAt,
+        cancelledAt: status === 'CANCELLED' ? new Date(createdAt.getTime() + intBetween(r, 60, 400) * 60_000) : null,
+        cancelReason: status === 'CANCELLED' ? pick(r, ['Load refused — stream mismatch on arrival', 'Vehicle breakdown, rescheduled']) : null,
+        createdAt,
+        updatedAt: completedAt ?? pickedAt ?? createdAt,
+      },
+    });
+    handoffs += 1;
+    handoffTally[status] += 1;
+  }
+  console.log(
+    `[seed] ${handoffs} company handoffs — ` +
+      Object.entries(handoffTally)
+        .map(([k, v]) => `${v} ${k.toLowerCase()}`)
+        .join(', ')
+  );
 
   // ------------------------------------------------- emergency contacts ----
   /**
