@@ -190,6 +190,7 @@ model User {
   shifts                   DriverShift[]
   scheduledPickups         ScheduledPickupRequest[] @relation("CitizenScheduledPickups")
   assignedScheduledPickups ScheduledPickupRequest[] @relation("DriverScheduledPickups")
+  feedbacks                Feedback[]
   companyAssignments       ComplaintAssignment[]    @relation("CompanyAssignmentOfficer")
 
   @@index([role])
@@ -392,6 +393,20 @@ model Complaint {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  citizen          User                 @relation("ComplaintCitizen", fields: [citizenId], references: [id], onDelete: Cascade)
+  ward             Ward?                @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  detectedWard     Ward?                @relation("ComplaintDetectedWard", fields: [detectedWardId], references: [id], onDelete: SetNull)
+  assignedVehicle  Vehicle?             @relation(fields: [assignedVehicleId], references: [id], onDelete: SetNull)
+  assignedBy       User?                @relation("ComplaintAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  resolvedBy       User?                @relation("ComplaintResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  duplicateOf      Complaint?           @relation("ComplaintDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates       Complaint[]          @relation("ComplaintDuplicates")
+  duplicateLinks   ComplaintDuplicate[] @relation("DuplicateParent")
+  duplicateOfLinks ComplaintDuplicate[] @relation("DuplicateChild")
+  events           ComplaintEvent[]
+  escalations      Escalation[]
+  creditEntries    GreenCredit[]
+  feedbacks        Feedback[]
   citizen            User                  @relation("ComplaintCitizen", fields: [citizenId], references: [id], onDelete: Cascade)
   ward               Ward?                 @relation(fields: [wardId], references: [id], onDelete: SetNull)
   detectedWard       Ward?                 @relation("ComplaintDetectedWard", fields: [detectedWardId], references: [id], onDelete: SetNull)
@@ -972,3 +987,41 @@ model ScheduledPickupRequest {
   @@index([assignedDriverId, scheduledDate])
   @@map("scheduled_pickup_requests")
 }
+
+enum FeedbackCategory {
+  SERVICE_QUALITY
+  RESPONSE_TIME
+  STAFF_BEHAVIOR
+  APP_EXPERIENCE
+  OTHER
+}
+
+enum FeedbackStatus {
+  NEW
+  REVIEWED
+  RESOLVED
+}
+
+model Feedback {
+  id          String           @id @default(cuid())
+  citizenId   String
+  complaintId String?
+  rating      Int              // 1 to 5 stars
+  category    FeedbackCategory @default(SERVICE_QUALITY)
+  comment     String?
+  sentiment   String?          // POSITIVE, NEUTRAL, NEGATIVE
+  status      FeedbackStatus   @default(NEW)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  citizen   User       @relation(fields: [citizenId], references: [id], onDelete: Cascade)
+  complaint Complaint? @relation(fields: [complaintId], references: [id], onDelete: SetNull)
+
+  @@index([citizenId])
+  @@index([complaintId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("feedbacks")
+}
+
+

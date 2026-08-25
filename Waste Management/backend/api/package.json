@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
-    "@prisma/client": "^6.2.1",
+    "@prisma/client": "^6.19.3",
     "@supabase/supabase-js": "^2.112.3",
     "axios": "^1.7.9",
     "cookie-parser": "^1.4.7",
@@ -41,7 +41,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "prisma": "^6.2.1"
+    "prisma": "^6.19.3"
   },
   "optionalDependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
