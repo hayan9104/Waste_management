@@ -11,7 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { Building2, ChevronLeft, ChevronRight, Recycle, TriangleAlert } from 'lucide-react';
-import { api, assetUrl, errorMessage } from '../../lib/api';
+import { api, assetUrl, errorMessage, isRouteMissing, FEATURE_NOT_DEPLOYED } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, EvidencePhoto, Loading, Meter, SectionTitle, toast } from '../../components/ui';
 import {
   SEVERITY_TONE,
@@ -91,7 +91,7 @@ export default function WasteCategorization() {
   });
 
   if (isLoading) return <Loading />;
-  if (error) return <ErrorState message="Could not load waste categorization" onRetry={() => refetch()} />;
+  if (error) return <ErrorState message={isRouteMissing(error) ? FEATURE_NOT_DEPLOYED : 'Could not load waste categorization'} onRetry={() => refetch()} />;
 
   const items = data?.items ?? [];
   const breakdown = data?.breakdown ?? [];

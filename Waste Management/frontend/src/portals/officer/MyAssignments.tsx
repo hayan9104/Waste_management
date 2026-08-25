@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, PackageCheck, Search, Truck, X } from 'lucide-react';
-import { api, errorMessage } from '../../lib/api';
+import { api, errorMessage, isRouteMissing, FEATURE_NOT_DEPLOYED } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
 import {
   ASSIGNMENT_STATUS_LABELS,
@@ -78,7 +78,7 @@ export default function MyAssignments() {
   });
 
   if (isLoading) return <Loading />;
-  if (error) return <ErrorState message="Could not load your assignments" onRetry={() => refetch()} />;
+  if (error) return <ErrorState message={isRouteMissing(error) ? FEATURE_NOT_DEPLOYED : 'Could not load your assignments'} onRetry={() => refetch()} />;
 
   const items = data?.items ?? [];
   const counts = data?.statusCounts ?? {};
