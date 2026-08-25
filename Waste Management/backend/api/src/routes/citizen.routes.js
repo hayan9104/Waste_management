@@ -11,6 +11,7 @@ import { classifyWaste } from '../services/ai.service.js';
 import { notify, notifyWardOfficers } from '../services/notification.service.js';
 import { distanceMeters, boundsAround } from '../lib/geo.js';
 import { roadSnappedPolyline } from '../services/routing.service.js';
+import * as feedbackService from '../services/feedback.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.CITIZEN), loadUser);
@@ -838,6 +839,36 @@ router.post(
     }
 
     res.json({ ok: true, status: 'CANCELLED', item: updated });
+  })
+);
+
+/** POST /api/citizen/feedback — Submit rating and feedback */
+const submitFeedbackSchema = z.object({
+  complaintId: z.string().optional().nullable(),
+  rating: z.coerce.number().int().min(1).max(5),
+  category: z.enum(['SERVICE_QUALITY', 'RESPONSE_TIME', 'STAFF_BEHAVIOR', 'APP_EXPERIENCE', 'OTHER']).optional(),
+  comment: z.string().max(1000).optional(),
+});
+
+router.post(
+  '/feedback',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const data = submitFeedbackSchema.parse(req.body);
+    const feedback = await feedbackService.submitFeedback({
+      citizenId: req.user.id,
+      ...data,
+    });
+    res.status(201).json({ ok: true, feedback });
+  })
+);
+
+/** GET /api/citizen/feedback — Fetch citizen's feedback history */
+router.get(
+  '/feedback',
+  asyncHandler(async (req, res) => {
+    const list = await feedbackService.getCitizenFeedback(req.user.id);
+    res.json({ ok: true, feedback: list });
   })
 );
 

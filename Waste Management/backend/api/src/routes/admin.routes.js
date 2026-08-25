@@ -20,6 +20,7 @@ import { CITY } from '../seed/city.js';
 import { wardRoster } from '../services/roster.service.js';
 import { shiftBoard } from '../services/shift.service.js';
 import { gpsHealthFor } from '../services/gps.service.js';
+import * as feedbackService from '../services/feedback.service.js';
 
 const router = Router();
 router.use(requirePortal(PORTALS.ADMIN), loadUser);
@@ -969,6 +970,37 @@ router.post(
     });
 
     res.json({ ok: true, requested: codes, deleted: matches.map((c) => c.code) });
+  })
+);
+
+/** FEATURE: Citizen Feedback Analytics & Moderation */
+router.get(
+  '/feedback/analytics',
+  asyncHandler(async (req, res) => {
+    const { wardId, from, to } = req.query;
+    const analyticsData = await feedbackService.getFeedbackAnalytics({ wardId, from, to });
+    res.json(analyticsData);
+  })
+);
+
+router.patch(
+  '/feedback/:id/status',
+  writeLimiter,
+  asyncHandler(async (req, res) => {
+    const { status } = z.object({ status: z.enum(['NEW', 'REVIEWED', 'RESOLVED']) }).parse(req.body);
+    const updated = await feedbackService.updateFeedbackStatus(req.params.id, status);
+
+    await recordAudit({
+      actorId: req.user.id,
+      action: 'feedback_status_update',
+      targetTable: 'feedbacks',
+      targetId: req.params.id,
+      before: {},
+      after: { status },
+      req,
+    });
+
+    res.json({ ok: true, feedback: updated });
   })
 );
 
