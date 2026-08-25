@@ -11,6 +11,7 @@ import apiRoutes from './routes/index.js';
 import { requestId, notFound, errorHandler } from './middleware/error.js';
 import { ensureUploadDir } from './middleware/upload.js';
 import { initRealtime, onDriverLocation } from './sockets/realtime.js';
+import { bootstrapWasteStreams } from './services/waste_stream_bootstrap.service.js';
 import { ingestLocation } from './services/tracking.service.js';
 import { startEscalationWatcher } from './services/escalation.service.js';
 import { startSimulator } from './services/simulator.js';
@@ -61,6 +62,14 @@ const server = http.createServer(app);
 async function bootstrap() {
   assertDatabaseConfigured();
   await connectDB();
+
+  /**
+   * Runs before the port opens, so the first request already sees classified
+   * reports rather than a page of "Not classified" that fills in later.
+   * Idempotent and non-fatal — see the service for why it lives here rather
+   * than in a script someone has to remember.
+   */
+  await bootstrapWasteStreams();
 
   initRealtime(server);
   // The socket channel and the REST endpoint share one ingest path.
