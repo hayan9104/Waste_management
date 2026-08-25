@@ -36,6 +36,65 @@ export const SEVERITY_TONE: Record<string, 'neutral' | 'info' | 'warn' | 'danger
   CRITICAL: 'danger',
 };
 
+/**
+ * Processing streams — which company may take the load, as distinct from
+ * CATEGORY_LABELS above, which is what the citizen reported seeing.
+ */
+export const STREAM_LABELS: Record<string, string> = {
+  BIO: 'Bio / wet',
+  NON_BIO: 'Non-bio / dry',
+  HAZARDOUS: 'Hazardous',
+  E_WASTE: 'E-waste',
+  OTHER: 'Mixed / unsorted',
+  UNCLASSIFIED: 'Not yet classified',
+};
+
+export const STREAM_TONE: Record<string, 'neutral' | 'info' | 'warn' | 'ok' | 'danger'> = {
+  BIO: 'ok',
+  NON_BIO: 'info',
+  HAZARDOUS: 'danger',
+  E_WASTE: 'warn',
+  OTHER: 'neutral',
+  UNCLASSIFIED: 'neutral',
+};
+
+/** Chart colours, keyed so a stream is the same colour in every chart. */
+export const STREAM_COLOR: Record<string, string> = {
+  BIO: '#16a34a',
+  NON_BIO: '#0ea5e9',
+  HAZARDOUS: '#ef4444',
+  E_WASTE: '#f59e0b',
+  OTHER: '#a855f7',
+  UNCLASSIFIED: '#94a3b8',
+};
+
+export const ASSIGNMENT_STATUS_LABELS: Record<string, string> = {
+  PENDING_PICKUP: 'Awaiting pickup',
+  PICKED: 'Picked up',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+};
+
+export const ASSIGNMENT_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warn' | 'ok' | 'danger'> = {
+  PENDING_PICKUP: 'warn',
+  PICKED: 'info',
+  COMPLETED: 'ok',
+  CANCELLED: 'neutral',
+};
+
+export const QUANTITY_LABELS: Record<string, string> = {
+  SMALL: 'Small (~25kg)',
+  MEDIUM: 'Medium (~100kg)',
+  LARGE: 'Large (~400kg)',
+};
+
+/** Kilograms, rounded the way a weighbridge slip would read. */
+export const formatKg = (kg?: number | null) => {
+  if (kg == null) return '—';
+  if (kg >= 1000) return `${(kg / 1000).toFixed(kg >= 10_000 ? 0 : 1)} t`;
+  return `${Math.round(kg)} kg`;
+};
+
 export function timeAgo(input?: string | Date | null): string {
   if (!input) return '—';
   const then = new Date(input).getTime();

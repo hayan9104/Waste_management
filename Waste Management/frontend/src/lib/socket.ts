@@ -98,6 +98,9 @@ export const SOCKET_EVENTS = {
   EMERGENCY_NEW: 'emergency:new',
   ESCALATION_NEW: 'escalation:new',
   ASSIGNMENT_NEW: 'assignment:new',
+  /** A complaint handed to a processing company — distinct from the truck one. */
+  COMPANY_ASSIGNMENT_CREATED: 'assignment:created',
+  COMPANY_ASSIGNMENT_UPDATE: 'assignment:update',
   SOS_NEW: 'sos:new',
   NOTIFICATION: 'notification:new',
 } as const;

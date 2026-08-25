@@ -330,7 +330,19 @@ export async function updateAssignmentStatus({ assignmentId, status, actor, actu
     include: assignmentInclude,
   });
   if (!before) throw new HttpError(404, 'Assignment not found');
-  if (wardIds !== null && before.complaint?.wardId && !wardIds.includes(before.complaint.wardId)) {
+  /**
+   * The officer who made the handoff can always see it through.
+   *
+   * My Assignments lists by creator, not by ward, so a pure ward check
+   * contradicted the page that links here: an officer whose ward assignment
+   * changed — or who covered another ward for an afternoon — was shown their
+   * own handoff and then refused permission to complete it. Ward scope still
+   * governs everyone else, so a colleague cannot close someone else's work
+   * outside their patch.
+   */
+  const isCreator = before.assignedById && before.assignedById === actor.id;
+  const inScope = wardIds === null || !before.complaint?.wardId || wardIds.includes(before.complaint.wardId);
+  if (!isCreator && !inScope) {
     throw new HttpError(403, 'This handoff is not in your ward');
   }
   if (before.status === status) return serializeAssignment(before);
