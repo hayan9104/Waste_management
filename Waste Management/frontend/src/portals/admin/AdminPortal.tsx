@@ -25,6 +25,7 @@ import WardDrivers from './WardDrivers';
 import Companies from './Companies';
 import AssignmentOverview from './AssignmentOverview';
 import WasteAnalytics from './WasteAnalytics';
+import FeedbackAnalytics from './FeedbackAnalytics';
 
 /**
  * Shared by AdminPortal and the standalone /ai.health page, so both consoles
@@ -41,6 +42,7 @@ export function useAdminNav(): NavItem[] {
     { to: '/admin/assignments', label: t('admin.nav.assignments'), icon: PackageCheck },
     { to: '/admin/waste-analytics', label: t('admin.nav.wasteAnalytics'), icon: Recycle },
     { to: '/admin/analytics', label: t('admin.nav.analytics'), icon: BarChart3 },
+    { to: '/admin/feedback', label: 'Citizen Feedback', icon: Users },
     { to: '/admin/compliance', label: t('admin.nav.compliance'), icon: FileDown },
     { to: '/admin/audit', label: t('admin.nav.audit'), icon: ScrollText },
     { to: '/admin/wards', label: t('admin.nav.wards'), icon: MapPinned },
@@ -67,6 +69,7 @@ export default function AdminPortal() {
         <Route path="assignments" element={<AssignmentOverview />} />
         <Route path="waste-analytics" element={<WasteAnalytics />} />
         <Route path="analytics" element={<CityAnalytics />} />
+        <Route path="feedback" element={<FeedbackAnalytics />} />
         <Route path="compliance" element={<ComplianceExport />} />
         <Route path="audit" element={<AuditLog />} />
         <Route path="wards" element={<WardSettings />} />

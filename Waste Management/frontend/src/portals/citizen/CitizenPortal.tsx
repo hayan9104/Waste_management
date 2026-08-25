@@ -13,6 +13,7 @@ import EmergencyReport from './EmergencyReport';
 import Profile from './Profile';
 import SchedulePickup from './SchedulePickup';
 import MyScheduledRequests from './MyScheduledRequests';
+import Feedback from './Feedback';
 
 export default function CitizenPortal() {
   const t = useT();
@@ -37,6 +38,7 @@ export default function CitizenPortal() {
         <Route path="track/:id" element={<TrackTruck />} />
         <Route path="rewards" element={<Rewards />} />
         <Route path="directory" element={<Directory />} />
+        <Route path="feedback" element={<Feedback />} />
         <Route path="profile" element={<Profile />} />
       </Routes>
     </MobileShell>
