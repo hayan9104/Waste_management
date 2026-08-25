@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { api } from '../../lib/api';
+import { api, isRouteMissing, FEATURE_NOT_DEPLOYED } from '../../lib/api';
 import { Card, EmptyState, ErrorState, Loading, SectionTitle } from '../../components/ui';
 import { STREAM_COLOR, STREAM_LABELS, formatKg } from '../../lib/format';
 
@@ -41,7 +41,7 @@ export default function WasteAnalytics() {
   });
 
   if (isLoading) return <Loading />;
-  if (error) return <ErrorState message="Could not load waste analytics" onRetry={() => refetch()} />;
+  if (error) return <ErrorState message={isRouteMissing(error) ? FEATURE_NOT_DEPLOYED : 'Could not load waste analytics'} onRetry={() => refetch()} />;
 
   const axis = { fontSize: 11, fill: 'rgb(var(--muted))' };
   const tooltipStyle = {

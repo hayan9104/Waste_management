@@ -116,6 +116,21 @@ export function api(portal: Portal): AxiosInstance {
 }
 
 /** Turn any axios failure into a sentence worth showing a user. */
+/**
+ * A 404 from a *listing* endpoint means the route is missing, not the record.
+ *
+ * The page and the API deploy separately — Vercel and Render — so a frontend
+ * can go live carrying screens the running API has never heard of. Axios
+ * reports that as "Request failed with status code 404", which sends an
+ * officer hunting for data that was never the problem. Naming the real cause
+ * turns a page that looks broken into one that is merely waiting on a deploy.
+ */
+export const isRouteMissing = (err: unknown): boolean =>
+  (err as AxiosError)?.response?.status === 404;
+
+export const FEATURE_NOT_DEPLOYED =
+  'This page needs a newer API than the server is running. Ask an admin to redeploy the backend.';
+
 export function errorMessage(err: unknown, fallback = 'Something went wrong'): string {
   const axiosErr = err as AxiosError<{ error?: string; fields?: Record<string, string[]> }>;
   const data = axiosErr?.response?.data;

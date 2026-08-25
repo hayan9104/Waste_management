@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Loader2, Pencil, Plus, Power, Search, Trash2 } from 'lucide-react';
-import { api, errorMessage } from '../../lib/api';
+import { api, errorMessage, isRouteMissing, FEATURE_NOT_DEPLOYED } from '../../lib/api';
 import { Badge, Card, EmptyState, ErrorState, Loading, Modal, SectionTitle, toast } from '../../components/ui';
 import { STREAM_LABELS, STREAM_TONE, formatKg } from '../../lib/format';
 
@@ -123,7 +123,7 @@ export default function Companies() {
     }));
 
   if (isLoading) return <Loading />;
-  if (error) return <ErrorState message="Could not load companies" onRetry={() => refetch()} />;
+  if (error) return <ErrorState message={isRouteMissing(error) ? FEATURE_NOT_DEPLOYED : 'Could not load companies'} onRetry={() => refetch()} />;
 
   const items = data?.items ?? [];
   const valid = form.name.trim().length >= 2 && form.code.trim().length >= 2 &&
