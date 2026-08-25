@@ -2224,23 +2224,81 @@ async function main() {
    * ones carry a weighed figure and open ones do not, which is what gives the
    * admin volume chart its estimated-versus-weighed split.
    */
+  /**
+   * Drawn from the whole history, not the newest slice.
+   *
+   * Taking the 260 most recent complaints put 142 of 179 handoffs on a single
+   * day: the admin volume chart was then a flat line for four weeks with one
+   * spike at the right edge, which reads as a broken chart rather than as a
+   * city that collects waste every day. Sampling across the full window is
+   * what gives the trend something to be a trend of.
+   */
   const assignableComplaints = await prisma.complaint.findMany({
     where: { wasteStream: { not: null }, status: { notIn: ['REJECTED'] } },
     select: { id: true, wardId: true, wasteStream: true, createdAt: true, status: true },
+    /**
+     * Newest first, so each day's capped slots go to that day's most recent
+     * reports. Ascending order handed today's slots to the oldest of today's
+     * complaints — all of them already resolved — and the seed produced 162
+     * completed handoffs with nothing pending or picked, leaving the officer's
+     * My Assignments page with no row anyone could act on.
+     */
     orderBy: { createdAt: 'desc' },
-    take: 260,
   });
 
   const activeCompanies = companies.filter((c) => c.status === 'ACTIVE');
-  const officerIds = officers.map((o) => o.id);
+  /**
+   * Which officer owns which ward.
+   *
+   * Handoffs used to be dealt round-robin across all officers regardless of
+   * where the report was, which produced a state the product itself cannot
+   * reach: an officer holding handoffs for wards they do not cover. Their My
+   * Assignments page listed the row and the ward guard then refused every
+   * action on it. Seeded data has to be data the running system could have
+   * produced.
+   */
+  const officerByWard = new Map();
+  for (const officer of officers) {
+    const links = await prisma.wardOfficer.findMany({ where: { officerId: officer.id }, select: { wardId: true } });
+    for (const l of links) if (!officerByWard.has(l.wardId)) officerByWard.set(l.wardId, officer.id);
+  }
   let handoffs = 0;
   const handoffTally = { PENDING_PICKUP: 0, PICKED: 0, COMPLETED: 0, CANCELLED: 0 };
 
-  for (const [i, complaint] of assignableComplaints.entries()) {
+  /**
+   * A believable daily throughput, not whatever the complaint seed happened
+   * to create that day.
+   *
+   * The seed front-loads today — the showcase tickets, the live tickets and
+   * the demo top-up are all stamped now — so routing every eligible report put
+   * a hundred handoffs on today against three or four on each historical day.
+   * The volume chart was then a flat line under one cliff, which says nothing
+   * about how the city actually runs. A per-day ceiling gives the trend a
+   * shape an admin can read; the reports it turns away simply stay in the
+   * officer's categorization queue, which is where unrouted work belongs.
+   */
+  const PER_DAY_CAP = 14;
+  const perDay = new Map();
+
+  for (const complaint of assignableComplaints) {
     const r = rng(`handoff-${complaint.id}`);
-    // Roughly two in three of the eligible backlog has been routed, so the
-    // officer's categorization page still has real work waiting on it.
-    if (r() > 0.66) continue;
+    /**
+     * How much of the backlog has been routed, by whether the report is still
+     * open.
+     *
+     * A flat one-in-three gate discarded most of the open reports before the
+     * per-day cap ever saw them, and since every historical report is resolved
+     * the seed produced 175 completed handoffs and two live ones — a demo
+     * where the officer's My Assignments page has nothing to act on and the
+     * admin's status tiles are a single column. Open work is routed more often
+     * than closed work, which is also what actually happens: a report only
+     * closes once someone has dealt with it.
+     */
+    const routeChance = complaint.status === 'RESOLVED' ? 0.34 : 0.7;
+    if (r() > routeChance) continue;
+
+    const officerId = officerByWard.get(complaint.wardId);
+    if (!officerId) continue;
 
     const eligible = activeCompanies.filter(
       (c) =>
@@ -2255,7 +2313,31 @@ async function main() {
         ? 'COMPLETED'
         : pick(r, ['PENDING_PICKUP', 'PENDING_PICKUP', 'PICKED', 'COMPLETED', 'CANCELLED']);
 
-    const createdAt = new Date(complaint.createdAt.getTime() + intBetween(r, 20, 300) * 60_000);
+    /**
+     * A handoff happens some time *after* the report, and never in the future.
+     *
+     * Offsetting blindly put handoffs for reports filed minutes ago into the
+     * next hour, so My Assignments read "sent in 3 minutes". Clamping those to
+     * `now` instead was no better: every one of today's reports collapsed onto
+     * the same instant and the volume chart became four flat weeks and one
+     * 22-tonne spike. Bounding the offset by the report's actual age keeps
+     * each handoff inside its own day, and a report too fresh to have been
+     * triaged yet simply has not been routed — which is also what leaves the
+     * officer's categorization page with real work on it.
+     */
+    const ageMinutes = Math.floor((Date.now() - complaint.createdAt.getTime()) / 60_000);
+    // A report filed in the last few minutes has not been triaged yet. Beyond
+    // that the routing delay is bounded by the report's own age, so a handoff
+    // is always after the report and always in the past.
+    if (ageMinutes < 12) continue;
+    const createdAt = new Date(
+      complaint.createdAt.getTime() + intBetween(r, 5, Math.min(300, ageMinutes - 2)) * 60_000
+    );
+
+    const dayKey = createdAt.toISOString().slice(0, 10);
+    const onDay = perDay.get(dayKey) ?? 0;
+    if (onDay >= PER_DAY_CAP) continue;
+    perDay.set(dayKey, onDay + 1);
     const pickedAt = ['PICKED', 'COMPLETED'].includes(status)
       ? new Date(createdAt.getTime() + intBetween(r, 30, 240) * 60_000)
       : null;
@@ -2266,7 +2348,7 @@ async function main() {
       data: {
         complaintId: complaint.id,
         companyId: company.id,
-        assignedById: officerIds[i % officerIds.length],
+        assignedById: officerId,
         status,
         wasteStream: complaint.wasteStream,
         estimatedQuantity,

@@ -1,5 +1,14 @@
 ﻿import { prisma } from '../lib/prisma.js';
-import { getIo } from '../realtime/gateway.js';
+/**
+ * The realtime gateway lives at sockets/realtime.js and exports `getIO`.
+ *
+ * This imported `getIo` from `../realtime/gateway.js`, a path that exists
+ * nowhere in the repo, so the API refused to boot at all — every portal was
+ * down, not just feedback. The `try` below would have swallowed a wrong-name
+ * export, but an unresolvable module fails at import time, before any handler
+ * runs.
+ */
+import { getIO } from '../sockets/realtime.js';
 
 export async function submitFeedback({ citizenId, complaintId, rating, category, comment }) {
   let sentiment = 'NEUTRAL';
@@ -32,7 +41,7 @@ export async function submitFeedback({ citizenId, complaintId, rating, category,
 
   // Emit realtime notification to Admin & Officers
   try {
-    const io = getIo();
+    const io = getIO();
     io.emit('feedback:submitted', {
       id: feedback.id,
       rating: feedback.rating,

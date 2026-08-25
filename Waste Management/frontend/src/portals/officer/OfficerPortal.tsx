@@ -1,6 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { Route, Routes } from 'react-router-dom';
-import { LayoutDashboard, ListFilter, Siren, TrendingUp, Truck, ArrowUpRight, BarChart3, Calendar } from 'lucide-react';
+import {
+  LayoutDashboard,
+  ListFilter,
+  Siren,
+  TrendingUp,
+  Truck,
+  ArrowUpRight,
+  BarChart3,
+  Calendar,
+  Recycle,
+  PackageCheck,
+} from 'lucide-react';
 import { ConsoleShell, type NavItem } from '../../components/shells';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -9,6 +20,8 @@ import OfficerDashboard from './Dashboard';
 import ComplaintQueue from './ComplaintQueue';
 import Emergencies from './Emergencies';
 import Hotspots from './Hotspots';
+import WasteCategorization from './WasteCategorization';
+import MyAssignments from './MyAssignments';
 import Fleet from './Fleet';
 import Escalations from './Escalations';
 import Analytics from './Analytics';
@@ -27,6 +40,8 @@ export default function OfficerPortal() {
   const nav: NavItem[] = [
     { to: '/officer', label: t('officer.nav.dashboard'), icon: LayoutDashboard, end: true },
     { to: '/officer/queue', label: t('officer.nav.queue'), icon: ListFilter, badge: data?.kpis?.reviewNeeded },
+    { to: '/officer/waste-categorization', label: t('officer.nav.wasteCategorization'), icon: Recycle },
+    { to: '/officer/my-assignments', label: t('officer.nav.myAssignments'), icon: PackageCheck },
     { to: '/officer/scheduled-requests', label: 'Schedule', icon: Calendar },
     { to: '/officer/emergencies', label: t('officer.nav.emergencies'), icon: Siren, badge: data?.kpis?.emergenciesOpen },
     { to: '/officer/hotspots', label: t('officer.nav.hotspots'), icon: TrendingUp },
@@ -44,6 +59,8 @@ export default function OfficerPortal() {
       <Routes>
         <Route index element={<OfficerDashboard />} />
         <Route path="queue" element={<ComplaintQueue />} />
+        <Route path="waste-categorization" element={<WasteCategorization />} />
+        <Route path="my-assignments" element={<MyAssignments />} />
         <Route path="scheduled-requests" element={<ScheduledRequests />} />
         <Route path="emergencies" element={<Emergencies />} />
         <Route path="hotspots" element={<Hotspots />} />
