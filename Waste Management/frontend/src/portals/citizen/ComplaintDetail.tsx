@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+﻿import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import {
   Check,
@@ -9,15 +10,15 @@ import {
   Users,
   ShieldCheck,
   Navigation,
-  Calendar,
-  Layers,
-  ArrowLeft,
+  Star,
+  Send,
+  Heart,
 } from 'lucide-react';
-import { api, assetUrl } from '../../lib/api';
-import { Badge, Card, ErrorState, EvidencePhoto, Loading, Meter } from '../../components/ui';
+import { api, assetUrl, errorMessage } from '../../lib/api';
+import { Badge, Card, ErrorState, EvidencePhoto, Loading, Meter, toast } from '../../components/ui';
 import { BackLink } from '../../components/shells';
 import { BaseMap, PinMarker } from '../../components/map/Map';
-import { CATEGORY_LABELS, STATUS_LABELS, STATUS_TONE, formatDateTime, timeAgo } from '../../lib/format';
+import { STATUS_TONE, formatDateTime, timeAgo } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 import { useSocket, SOCKET_EVENTS } from '../../lib/socket';
 
@@ -26,11 +27,40 @@ const FLOW = ['PENDING', 'VERIFIED', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
 export default function ComplaintDetail() {
   const t = useT();
   const { id } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['citizen', 'complaint', id],
     queryFn: async () => (await api('citizen').get(`/citizen/complaints/${id}`)).data,
     enabled: Boolean(id),
+  });
+
+  const { data: feedbackData, isLoading: isLoadingFeedback } = useQuery({
+    queryKey: ['citizen-feedback', id],
+    queryFn: async () => {
+      const res = await api('citizen').get('/citizen/feedback');
+      return res.data.feedback.find((f: any) => f.complaintId === id);
+    },
+    enabled: Boolean(id && data?.status === 'RESOLVED'),
+  });
+
+  const [rating, setRating] = useState(5);
+  const [category, setCategory] = useState('SERVICE_QUALITY');
+  const [comment, setComment] = useState('');
+
+  const feedbackMutation = useMutation({
+    mutationFn: async () =>
+      api('citizen').post('/citizen/feedback', {
+        complaintId: id,
+        rating,
+        category,
+        comment,
+      }),
+    onSuccess: () => {
+      toast.success('Thank you! Your feedback has been submitted.');
+      queryClient.invalidateQueries({ queryKey: ['citizen-feedback'] });
+    },
+    onError: (err) => toast.error(errorMessage(err)),
   });
 
   // Live status changes without a refresh.
@@ -43,6 +73,7 @@ export default function ComplaintDetail() {
 
   const currentIndex = FLOW.indexOf(data.status);
   const rejected = data.status === 'REJECTED';
+  const resolved = data.status === 'RESOLVED';
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-12">
@@ -269,6 +300,109 @@ export default function ComplaintDetail() {
               </ol>
             )}
           </Card>
+
+          {/* Feedback & Rating Section (Appears ONLY if resolved) */}
+          {resolved && (
+            <Card className="p-5 border border-line shadow-xs rounded-2xl space-y-4 bg-gradient-to-br from-brand/5 to-transparent">
+              {isLoadingFeedback ? (
+                <div className="flex items-center gap-2 text-fluid-xs text-muted">
+                  <span className="animate-spin h-4 w-4 border-2 border-brand border-t-transparent rounded-full" />
+                  Loading feedback data...
+                </div>
+              ) : feedbackData ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-brand/10 pb-2">
+                    <span className="text-fluid-xs font-bold uppercase tracking-wider text-brand flex items-center gap-1.5">
+                      <Check className="h-4 w-4" /> Your Verified Review
+                    </span>
+                    <Badge tone="ok" className="text-[10px]">Submitted</Badge>
+                  </div>
+                  <div className="flex items-center gap-1 text-amber-400">
+                    {Array.from({ length: feedbackData.rating }).map((_, i) => (
+                      <Star key={i} className="h-5 w-5 fill-current" />
+                    ))}
+                  </div>
+                  <p className="text-fluid-sm font-semibold text-ink">
+                    {feedbackData.category.replace(/_/g, ' ')}
+                  </p>
+                  {feedbackData.comment && (
+                    <p className="text-fluid-xs text-muted italic bg-surface p-3 rounded-xl border border-line">
+                      "{feedbackData.comment}"
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-fluid-base font-bold text-ink flex items-center gap-2">
+                      <Heart className="h-4 w-4 text-brand fill-brand" />
+                      Rate Service & Earn Credits
+                    </h3>
+                    <p className="text-[11px] text-muted mt-1">
+                      This complaint has been resolved! Help us improve by rating the cleanup service.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-1 justify-center py-2 bg-surface rounded-xl border border-line">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setRating(star)}
+                          className="p-1 transition hover:scale-110 focus:outline-none"
+                        >
+                          <Star
+                            className={`h-7 w-7 transition-colors ${
+                              star <= rating ? 'fill-amber-400 text-amber-400' : 'text-line'
+                            }`}
+                          />
+                        </button>
+                      ))}
+                    </div>
+
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="field w-full text-fluid-xs"
+                    >
+                      <option value="SERVICE_QUALITY">Service Quality & Site Cleanliness</option>
+                      <option value="RESPONSE_TIME">Response Time & SLA Speed</option>
+                      <option value="STAFF_BEHAVIOR">Staff & Driver Conduct</option>
+                      <option value="APP_EXPERIENCE">Mobile App Experience</option>
+                      <option value="OTHER">Other Suggestions</option>
+                    </select>
+
+                    <textarea
+                      rows={2}
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      placeholder="Any comments? (Optional)"
+                      className="field w-full text-fluid-xs"
+                      maxLength={500}
+                    />
+
+                    <div className="flex items-center justify-between rounded-xl bg-brand/10 border border-brand/20 p-2.5 text-[11px] text-brand font-medium">
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <Sparkles className="h-3.5 w-3.5" /> Civic Feedback Bonus
+                      </span>
+                      <span>+10 Green Credits</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => feedbackMutation.mutate()}
+                      disabled={feedbackMutation.isPending}
+                      className="btn-primary w-full py-2.5 text-fluid-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-brand/20"
+                    >
+                      <Send className="h-4 w-4" />
+                      <span>{feedbackMutation.isPending ? 'Submitting...' : 'Submit Rating'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* Live Truck Tracking & Assigned Driver Card */}
           {data.assignedVehicle && (
