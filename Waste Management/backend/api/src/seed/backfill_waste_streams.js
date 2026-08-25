@@ -79,6 +79,24 @@ const COMPANIES = [
     capacityKgPerDay: 1200,
     isCityWide: true,
   },
+  {
+    /**
+     * A lapsed contract, carried over from the full seed so a backfilled
+     * database shows the same six companies a freshly seeded one does.
+     *
+     * Worth keeping rather than trimming to the five that can take work: it is
+     * the only row that demonstrates the inactive state in Company management,
+     * and it proves in the live demo that an out-of-contract processor is
+     * still never offered as a suggestion.
+     */
+    code: 'OLD-BIO-06',
+    name: 'Northside Organics (contract ended)',
+    contactPhone: '9825011006',
+    acceptedStreams: ['BIO'],
+    capacityKgPerDay: 2000,
+    isCityWide: true,
+    status: 'INACTIVE',
+  },
 ];
 
 async function upsertCompanies() {
