@@ -889,6 +889,28 @@ model ComplaintAssignment {
   @@map("complaint_assignments")
 }
 
+/// Neon's onboarding sample table — not ours, and deliberately left alone.
+///
+/// Every new Neon project ships with `playing_with_neon` pre-filled with ten
+/// rows. Prisma drops anything it finds in the database that is absent from
+/// this schema, so `prisma db push` refused to run on the deployed database
+/// rather than destroy a table it did not recognise — and because the Render
+/// build runs `db push`, that refusal failed the whole deploy and the API
+/// stayed on an old build.
+///
+/// Declaring it is the fix that costs nothing: Prisma now considers the table
+/// accounted for and leaves it and its rows untouched. Deleting it would also
+/// have unblocked the deploy, but destroying data to make a migration pass is
+/// a habit worth not starting, and `--accept-data-loss` would have suppressed
+/// the warning for every future table too, including ours.
+model PlayingWithNeon {
+  id    Int    @id @default(autoincrement())
+  name  String
+  value Float? @db.Real
+
+  @@map("playing_with_neon")
+}
+
 /// Model health panel (plan §2.4) — one row per inference batch summary.
 model ModelHealthSample {
   id                String   @id @default(cuid())
